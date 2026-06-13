@@ -30,6 +30,16 @@ const DEMO_MATCHES: ReadonlyArray<Match> = [
     confidence: 0.68,
     method: 'fuzzy_merchant',
   },
+  // Second candidate for txn-demo-002 — exercises Map grouping in getAmbiguousMatchGroups
+  {
+    id: 'match-demo-003',
+    transactionId: 'txn-demo-002',
+    orderItemId: 'oi-demo-002',
+    receiptItemId: null,
+    status: 'ambiguous',
+    confidence: 0.54,
+    method: 'fuzzy_merchant',
+  },
 ];
 
 // txn-demo-003 has no match row → surfaces via listUnmatchedTransactions
@@ -39,7 +49,7 @@ const DEMO_UNMATCHED: ReadonlyArray<Transaction> = [
     householdId: DEMO_HOUSEHOLD_ID,
     accountId: 'acct-demo-001',
     postedDate: '2025-02-10',
-    amountCents: -8750,
+    amountCents: -8750, // negative = money out (debit)
     direction: 'debit',
     normalizedMerchant: 'WHOLE FOODS',
   },
@@ -68,9 +78,13 @@ export class StubReconciliationGateway implements ReconciliationGateway {
 
   async getAmbiguousMatchGroups(scope: HouseholdScope): Promise<AmbiguousMatchGroup[]> {
     if (scope.householdId !== DEMO_HOUSEHOLD_ID) return [];
-    return DEMO_MATCHES.filter(m => m.status === 'ambiguous').map(m => ({
-      transactionId: m.transactionId,
-      candidates: [{ ...m }],
+    const map = new Map<string, Match[]>();
+    for (const m of DEMO_MATCHES.filter(m => m.status === 'ambiguous')) {
+      map.set(m.transactionId, [...(map.get(m.transactionId) ?? []), { ...m }]);
+    }
+    return [...map.entries()].map(([transactionId, candidates]) => ({
+      transactionId,
+      candidates,
     }));
   }
 
@@ -89,9 +103,10 @@ export class StubReconciliationGateway implements ReconciliationGateway {
   }
 
   async recomputeRollups(
-    _scope: HouseholdScope,
+    scope: HouseholdScope,
     _affectedTransactionIds: string[],
   ): Promise<void> {
+    if (scope.householdId !== DEMO_HOUSEHOLD_ID) return;
     // stub has no mutable state; recompute is a no-op
   }
 }

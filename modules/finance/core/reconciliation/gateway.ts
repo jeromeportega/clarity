@@ -15,8 +15,8 @@ import { LiveReconciliationGateway } from './live';
 
 export type GatewayEnv = {
   PUBLIC_DEMO_MODE?: string;
-  /** 'stub' | 'live'; defaults to 'stub' while H3 is unmerged */
-  RECON_BACKEND?: string;
+  /** Defaults to 'stub' while H3 is unmerged. */
+  RECON_BACKEND?: 'stub' | 'live';
 };
 
 /**

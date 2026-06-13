@@ -43,7 +43,8 @@ describe('gatewayFor — factory branch', () => {
   it('returns live when RECON_BACKEND=live (and PUBLIC_DEMO_MODE unset)', async () => {
     const gw = liveGateway();
     const matches = await gw.listMatches(DEMO_SCOPE);
-    // live wrapper is a thin stub returning empty until H3 merges
+    // TODO(H3): remove this assertion when LiveReconciliationGateway is wired;
+    // replace with shape conformance checks against real data.
     expect(matches).toEqual([]);
   });
 
@@ -101,7 +102,7 @@ describe('stub — shape conformance', () => {
     const gw = stubGateway();
     const matches = await gw.listMatches(DEMO_SCOPE);
     expect(matches.length).toBeGreaterThan(0);
-    const valid = new Set<string>(['confirmed', 'ambiguous', 'unmatched']);
+    const valid = new Set<string>(['confirmed', 'ambiguous']);
     for (const m of matches) {
       expect(valid).toContain(m.status);
     }
@@ -146,6 +147,18 @@ describe('stub — shape conformance', () => {
       expect(g.candidates.length).toBeGreaterThan(0);
     }
   });
+
+  it('multiple ambiguous candidates for same transactionId produce one group', async () => {
+    const gw = stubGateway();
+    const groups = await gw.getAmbiguousMatchGroups(DEMO_SCOPE);
+    // txn-demo-002 has two candidate matches; they must merge into a single group
+    const txnGroup = groups.find(g => g.transactionId === 'txn-demo-002');
+    expect(txnGroup).toBeDefined();
+    expect(txnGroup!.candidates.length).toBe(2);
+    // all transactionIds in groups must be unique
+    const ids = groups.map(g => g.transactionId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });
 
 // --- scope honored -----------------------------------------------------------
@@ -167,6 +180,12 @@ describe('stub — scope honored', () => {
     const gw = stubGateway();
     const rollups = await gw.getRollups(OTHER_SCOPE);
     expect(rollups).toEqual([]);
+  });
+
+  it('non-demo scope returns no ambiguous groups', async () => {
+    const gw = stubGateway();
+    const groups = await gw.getAmbiguousMatchGroups(OTHER_SCOPE);
+    expect(groups).toEqual([]);
   });
 
   it('demo scope returns the seeded DEMO_HOUSEHOLD_ID data', async () => {

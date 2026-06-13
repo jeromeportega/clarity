@@ -10,8 +10,19 @@ import type {
 /**
  * Thin H3 integration wrapper — returns empty results until the H3 reconcile
  * engine is wired in. Swap these stubs for real DB reads when H3 merges.
+ *
+ * TODO(H3): map DB status enum to MatchStatus at the read layer:
+ *   pending   → 'ambiguous'
+ *   matched   → 'confirmed'
+ *   rejected  → drop from listMatches (or add to MatchStatus if needed)
+ *   manual    → 'confirmed'
+ * Also normalise confidence: DB stores integer pct (0–100) → divide by 100.
  */
 export class LiveReconciliationGateway implements ReconciliationGateway {
+  constructor() {
+    console.warn('[LiveReconciliationGateway] H3 not yet wired — all reads return empty');
+  }
+
   async listMatches(_scope: HouseholdScope): Promise<Match[]> {
     return [];
   }
