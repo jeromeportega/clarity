@@ -1,0 +1,19 @@
+{
+  "files.exclude": {
+    "**/.loom/worktrees": true,
+    "**/.loom/integration": true
+  },
+  "files.watcherExclude": {
+    "**/.loom/worktrees": true,
+    "**/.loom/integration": true
+  },
+  "search.exclude": {
+    "**/.loom/worktrees": true,
+    "**/.loom/integration": true
+  },
+  "python.analysis.exclude": {
+    "**/.loom/worktrees": true,
+    "**/.loom/integration": true
+  },
+  "git.autoRepositoryDetection": false
+}
