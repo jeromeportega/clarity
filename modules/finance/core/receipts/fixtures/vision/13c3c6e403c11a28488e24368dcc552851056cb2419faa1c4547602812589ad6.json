@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE - ONLINE ORDER",
+  "purchasedAt": "2026-05-15",
+  "total": 4748,
+  "tax": 351,
+  "fees": [],
+  "paymentHint": { "method": "VISA", "last4": "4242" },
+  "lineItems": [
+    {
+      "sku": "100487",
+      "rawDescription": "KS PAPER TOWEL 12",
+      "quantity": 1,
+      "unitPrice": 2199,
+      "linePrice": 2199,
+      "discount": 0
+    },
+    {
+      "sku": "200912",
+      "rawDescription": "ORG QUINOA 4.5LB",
+      "quantity": 2,
+      "unitPrice": 1099,
+      "linePrice": 2198,
+      "discount": 0
+    }
+  ]
+}

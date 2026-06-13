@@ -1,0 +1,10 @@
+{
+  "readable": false,
+  "store": null,
+  "purchasedAt": null,
+  "total": null,
+  "tax": null,
+  "fees": [],
+  "paymentHint": null,
+  "lineItems": []
+}
