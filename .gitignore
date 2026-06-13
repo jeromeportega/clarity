@@ -25,3 +25,8 @@
 .cursor/mcp.json
 .cursor/rules/loom.mdc
 # <<< loom-managed <<<
+
+# Node
+node_modules/
+dist/
+
