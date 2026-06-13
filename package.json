@@ -1,1 +1,24 @@
-{}
+{
+  "name": "clarity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Home management platform — finance module (greenfield).",
+  "workspaces": [
+    "modules/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.8"
+  }
+}
