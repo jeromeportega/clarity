@@ -1,0 +1,21 @@
+{
+  "store": "COSTCO WHOLESALE",
+  "items": [
+    {
+      "sku": "701010",
+      "name": "Kirkland Signature Crew T-Shirts",
+      "category": "clothing"
+    },
+    {
+      "sku": "702020",
+      "name": "Kirkland Signature Dress Socks",
+      "category": "clothing"
+    },
+    {
+      "sku": "703030",
+      "name": "Kirkland Signature Paper Plates",
+      "category": "household"
+    }
+  ],
+  "totalCents": 4697
+}

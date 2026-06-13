@@ -1,0 +1,21 @@
+{
+  "store": "COSTCO WHOLESALE",
+  "items": [
+    {
+      "sku": "601111",
+      "name": "Kirkland Signature Coffee",
+      "category": "groceries"
+    },
+    {
+      "sku": "602222",
+      "name": "Kirkland Signature Bacon",
+      "category": "groceries"
+    },
+    {
+      "sku": "603333",
+      "name": "Caesar Salad Kit",
+      "category": "groceries"
+    }
+  ],
+  "totalCents": 3997
+}
