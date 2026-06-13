@@ -111,15 +111,30 @@ export interface ClassifiedItem {
   source: 'item_heuristic' | 'recurring' | 'merchant_fallback' | 'llm';
 }
 
-export interface LedgerEvent {
+type LedgerEventBase = {
   id: string;
   signedSpendCents: Cents;
   occurredOn: string; // YYYY-MM-DD
-  fundedBy: 'bank' | 'store_credit' | 'split';
-  sources: { transactionId?: string; orderId?: string; receiptId?: string };
   mergedItems: ClassifiedItem[];
   categoryFallback?: string;
-}
+};
+
+// Discriminated on fundedBy so downstream consumers that branch on fundedBy
+// get a compile error if they read a source field that cannot be present for
+// that variant (e.g. transactionId on a store_credit-funded event).
+export type LedgerEvent =
+  | (LedgerEventBase & {
+      fundedBy: 'bank';
+      sources: { transactionId: string; orderId?: string; receiptId?: string };
+    })
+  | (LedgerEventBase & {
+      fundedBy: 'store_credit';
+      sources: { orderId: string; transactionId?: string; receiptId?: string };
+    })
+  | (LedgerEventBase & {
+      fundedBy: 'split';
+      sources: { transactionId: string; orderId: string; receiptId?: string };
+    });
 
 export interface StoreCreditDrawdown {
   id: string;

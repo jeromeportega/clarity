@@ -16,10 +16,10 @@ export class FixtureReconcileSource implements ReconcileSource {
     return {
       ...FIXTURE_INPUTS,
       householdId,
-      bankLines: [...FIXTURE_INPUTS.bankLines],
-      orders: FIXTURE_INPUTS.orders.map((o) => ({ ...o, items: [...o.items] })),
-      receipts: FIXTURE_INPUTS.receipts.map((r) => ({ ...r, items: [...r.items] })),
-      storeCreditAccruals: [...FIXTURE_INPUTS.storeCreditAccruals],
+      bankLines: FIXTURE_INPUTS.bankLines.map((b) => ({ ...b })),
+      orders: FIXTURE_INPUTS.orders.map((o) => ({ ...o, items: o.items.map((i) => ({ ...i })) })),
+      receipts: FIXTURE_INPUTS.receipts.map((r) => ({ ...r, items: r.items.map((i) => ({ ...i })) })),
+      storeCreditAccruals: FIXTURE_INPUTS.storeCreditAccruals.map((a) => ({ ...a })),
     };
   }
 }
@@ -28,14 +28,7 @@ export class FixtureReconcileSource implements ReconcileSource {
 export class DrizzleReconcileSource implements ReconcileSource {
   constructor(private readonly db: FinanceDb) {}
 
-  async load(householdId: string): Promise<ReconcileInputs> {
-    void this.db; // referenced to satisfy the type; full impl not in scope here
-    return {
-      householdId,
-      bankLines: [],
-      orders: [],
-      receipts: [],
-      storeCreditAccruals: [],
-    };
+  async load(_householdId: string): Promise<ReconcileInputs> {
+    throw new Error('DrizzleReconcileSource.load: not implemented — wiring belongs to a later integration story');
   }
 }

@@ -49,13 +49,14 @@ export const FIXTURE_INPUTS: ReconcileInputs = {
       lastFour: '5678',
     },
     {
+      // card refund for a partial Costco return — no store-credit accrual,
+      // so there is no double-credit risk here.
       id: 'bank-line-004',
       accountId: 'fixture-account-001',
-      postedDate: '2024-02-14',
-      amountCents: 2400,
+      postedDate: '2024-03-22',
+      amountCents: 1600,
       direction: 'credit',
-      normalizedMerchant: 'AMAZON REFUND',
-      lastFour: '5678',
+      normalizedMerchant: 'COSTCO',
     },
     {
       id: 'bank-line-005',
@@ -179,6 +180,8 @@ export const FIXTURE_INPUTS: ReconcileInputs = {
       ],
     },
     {
+      // intentionally unmatched — no bank line on 2024-02-20 for $35.00.
+      // Exercises the unmatched.receipts code path in reconciliation.
       id: 'receipt-002',
       merchant: 'TARGET',
       capturedAt: '2024-02-20',

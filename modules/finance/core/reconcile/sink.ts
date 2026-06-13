@@ -30,6 +30,6 @@ export class DrizzleReconcileSink implements ReconcileSink {
   constructor(private readonly _db: FinanceDb) {}
 
   async persist(_householdId: string, _ledger: ReconciledLedger): Promise<void> {
-    // full impl not in scope here
+    throw new Error('DrizzleReconcileSink.persist: not implemented — wiring belongs to a later integration story');
   }
 }
