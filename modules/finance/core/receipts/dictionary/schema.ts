@@ -25,7 +25,9 @@ export const skuDictionary = sqliteTable(
     source: text('source', { enum: ['auto', 'human'] }).notNull(),
     updatedAt: integer('updated_at').notNull(), // epoch ms
   },
-  (table) => [primaryKey({ columns: [table.store, table.skuOrAbbrev] })],
+  (table) => ({
+    pk: primaryKey({ columns: [table.store, table.skuOrAbbrev] }),
+  }),
 );
 
 export const schema = { skuDictionary };

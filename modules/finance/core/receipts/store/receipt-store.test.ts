@@ -28,7 +28,7 @@ const RECEIPT_KEYS = [
 ].sort();
 
 const sampleReceipt = (overrides: Partial<NewReceipt> = {}): NewReceipt => ({
-  householdId: 1,
+  householdId: 'household-1',
   source: 'photo',
   store: 'COSTCO',
   purchasedAt: '2026-06-13',
@@ -80,8 +80,8 @@ describe.each(factories)('ReceiptStore contract — %s', (_name, make) => {
     const inserted = await store.insertReceipt(input);
 
     expect(Object.keys(inserted).sort()).toEqual(RECEIPT_KEYS);
-    expect(typeof inserted.id).toBe('number');
-    expect(typeof inserted.createdAt).toBe('number');
+    expect(typeof inserted.id).toBe('string');
+    expect(typeof inserted.createdAt).toBe('string');
     // Every supplied H1 column echoes back unchanged.
     expect(inserted).toMatchObject(input);
 
@@ -131,7 +131,7 @@ describe.each(factories)('ReceiptStore contract — %s', (_name, make) => {
     expect(inserted).toHaveLength(2);
     expect(new Set(inserted.map((i) => i.id)).size).toBe(2); // unique ids
     for (const item of inserted) {
-      expect(typeof item.id).toBe('number');
+      expect(typeof item.id).toBe('string');
       expect(item.receiptId).toBe(receipt.id); // linked
       expect(item.discountCents).toBeGreaterThanOrEqual(0);
     }

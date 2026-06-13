@@ -1,0 +1,47 @@
+name: CI
+
+# Offline suite gate (H1). This is the contract loom's finalize step relies on:
+# the whole Vitest suite must pass with no network, no API keys, and no real
+# data — it runs entirely against throwaway file:/temp libSQL DBs.
+on:
+  push:
+    branches:
+      - main
+      - 'epic/**'
+      - 'story/**'
+  pull_request:
+
+# A newer push to the same ref cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck + offline Vitest suite
+    runs-on: ubuntu-latest
+    # No `env:` with secrets and no `environment:` — the gate must never depend
+    # on credentials. Empty TURSO_* forces the file: fallback in resolveDbConfig,
+    # so an accidentally-set org secret can't point tests at a remote DB.
+    env:
+      TURSO_DATABASE_URL: ''
+      TURSO_AUTH_TOKEN: ''
+      CI: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run offline test suite
+        run: npm test

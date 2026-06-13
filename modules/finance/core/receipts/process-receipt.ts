@@ -40,8 +40,8 @@ export interface ReceiptPipelineDeps {
   // Receipt-context columns H1 requires on every row (`receipts.household_id`,
   // `receipts.source`) that the image input does not carry. Optional with
   // defaults so offline tests need not specify them; a real caller injects the
-  // authenticated household.
-  householdId?: number;
+  // authenticated household. `householdId` is H1's text UUID FK.
+  householdId?: string;
   source?: string;
 }
 
@@ -52,7 +52,7 @@ export interface ProcessReceiptResult {
   idempotent: boolean; // true => identical photo already processed (FR-2)
 }
 
-const DEFAULT_HOUSEHOLD_ID = 0;
+const DEFAULT_HOUSEHOLD_ID = 'default-household';
 const DEFAULT_SOURCE = 'photo';
 
 export async function processReceipt(

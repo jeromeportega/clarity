@@ -61,7 +61,7 @@ expectTypeOf<NewReceipt>().toEqualTypeOf<Omit<ReceiptRecord, 'id' | 'createdAt'>
 expectTypeOf<NewReceiptItem>().toEqualTypeOf<Omit<ReceiptItemRecord, 'id' | 'createdAt'>>();
 
 const baseReceipt: NewReceipt = {
-  householdId: 1,
+  householdId: 'household-1',
   source: 'photo',
   store: null,
   purchasedAt: null,
@@ -78,7 +78,7 @@ const driftReceipt: NewReceipt = { ...baseReceipt, paymentMethod: 'visa' };
 void driftReceipt;
 
 const baseItem: NewReceiptItem = {
-  receiptId: 1,
+  receiptId: 'receipt-1',
   lineNo: 1,
   sku: null,
   rawDescription: 'x',

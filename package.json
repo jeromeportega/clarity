@@ -3,19 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Home management platform — finance module (greenfield).",
+  "workspaces": [
+    "modules/*",
+    "apps/*"
+  ],
   "scripts": {
     "test": "vitest run --project unit",
+    "test:watch": "vitest",
     "vision:eval": "vitest run --project eval",
     "typecheck": "tsc --noEmit"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
-    "@libsql/client": "^0.17.3",
-    "drizzle-orm": "^0.45.2"
+    "@libsql/client": "^0.14.0",
+    "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.28.1",
     "typescript": "^6.0.3",
     "vitest": "^3.2.6"
   }

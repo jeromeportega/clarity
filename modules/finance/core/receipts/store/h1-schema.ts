@@ -1,132 +1,76 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type { Client } from '@libsql/client';
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 // =============================================================================
-// H1's schema — STUB.
+// H1's schema — the REAL tables (no longer a stub).
 //
-// H1 (epic H1 / story-001-002) owns the real `receipts`, `receipt_items` and
-// `categories` tables and their migrations. Until that schema lands, this file
-// stubs the exact same tables behind the identical column set so the H2 module
-// is independently testable (FR-16). When H1's migrations land, this stub is
-// replaced by importing H1's table definitions verbatim — the column names
-// here are the agreed contract H1 is building to, so the swap is a no-op for
-// every consumer of `ReceiptStore`.
+// H1 (epic-001 / story-001-002) owns the canonical `receipts`, `receipt_items`
+// and `categories` tables and their Drizzle migrations under
+// `modules/finance/db/`. This module re-exports those table objects verbatim so
+// the H2 libSQL store reads/writes H1's real tables — there is exactly one
+// Drizzle definition per table, living in H1's schema. H2 must never redefine
+// these tables here; any column it needs that H1 does not own is a cross-epic
+// contract negotiation, surfaced as a TypeScript failure via the contract test.
 //
-// These Drizzle table objects are the single source of truth for both the
-// libSQL store and the stub DDL below; keeping them in one file means any
-// divergence shows up here rather than silently at runtime.
+// Note the H1 column conventions (ADR-001): ids are app-generated UUID `text`
+// primary keys and `created_at` is an ISO-8601 `text` timestamp — the H2 record
+// types in `receipt-store.ts` are aligned to these.
 // =============================================================================
 
-// The category taxonomy (epic H3 item-level classifier). `listCategories()` is
-// the authoritative surface — these are the stub seed values pending H1's real
-// `categories` seed. No new categories are introduced beyond this list.
-export const CATEGORY_SEED = [
-  'groceries',
-  'household',
-  'electronics',
-  'clothing',
-  'utilities',
-  'mortgage_rent',
-  'subscriptions',
-  'dining',
-  'transport',
-] as const;
+import {
+  categories,
+  receiptItems,
+  receipts,
+  DEFAULT_CATEGORIES,
+} from '../../../db/schema';
 
-export const categories = sqliteTable('categories', {
-  id: text('id').primaryKey(), // taxonomy member id (slug)
-});
-
-export const receipts = sqliteTable('receipts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  householdId: integer('household_id').notNull(),
-  source: text('source').notNull(),
-  store: text('store'),
-  purchasedAt: text('purchased_at'),
-  subtotalCents: integer('subtotal_cents'),
-  taxCents: integer('tax_cents'),
-  totalCents: integer('total_cents'),
-  paymentLast4: text('payment_last4'),
-  imageHash: text('image_hash').notNull().unique(),
-  needsReview: integer('needs_review', { mode: 'boolean' }).notNull(),
-  createdAt: integer('created_at').notNull(),
-});
-
-export const receiptItems = sqliteTable('receipt_items', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  receiptId: integer('receipt_id')
-    .notNull()
-    .references(() => receipts.id),
-  lineNo: integer('line_no').notNull(),
-  sku: text('sku'),
-  rawDescription: text('raw_description').notNull(),
-  canonicalName: text('canonical_name'),
-  categoryId: text('category_id').references(() => categories.id),
-  quantity: real('quantity').notNull(),
-  unitPriceCents: integer('unit_price_cents'),
-  linePriceCents: integer('line_price_cents').notNull(),
-  discountCents: integer('discount_cents').notNull(),
-  nameConfidence: real('name_confidence'),
-  categoryConfidence: real('category_confidence'),
-  refundDestination: text('refund_destination', {
-    enum: ['card', 'store_credit', 'gift_card', 'account_balance'],
-  }),
-  needsReview: integer('needs_review', { mode: 'boolean' }).notNull(),
-  createdAt: integer('created_at').notNull(),
-});
+export { categories, receiptItems, receipts };
 
 export const schema = { categories, receipts, receiptItems };
 
-// DDL mirroring the Drizzle tables above, for materializing the stub schema in
-// a fresh (e.g. `:memory:`) libSQL database. H1's real migrations supersede
-// this once they land.
-export const STUB_H1_DDL = `
-CREATE TABLE IF NOT EXISTS categories (
-  id TEXT PRIMARY KEY NOT NULL
+// The category taxonomy seeded into a fresh test DB. H1's seed script populates
+// these names in production; `listCategories()` reads them back in insertion
+// order. This mirrors H1's DEFAULT_CATEGORIES (the source of truth).
+export const CATEGORY_SEED = DEFAULT_CATEGORIES;
+
+// Resolve H1's real migration SQL so a fresh (e.g. `:memory:`) libSQL database
+// can materialize the canonical schema for the offline contract tests.
+const MIGRATIONS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'db',
+  'migrations',
 );
 
-CREATE TABLE IF NOT EXISTS receipts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  household_id INTEGER NOT NULL,
-  source TEXT NOT NULL,
-  store TEXT,
-  purchased_at TEXT,
-  subtotal_cents INTEGER,
-  tax_cents INTEGER,
-  total_cents INTEGER,
-  payment_last4 TEXT,
-  image_hash TEXT NOT NULL UNIQUE,
-  needs_review INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
-);
+function h1MigrationSql(): string {
+  // 0000 ships every H1 table (ADR-004). Applying it verbatim keeps the test
+  // schema identical to production — no hand-maintained DDL to drift.
+  return readFileSync(join(MIGRATIONS_DIR, '0000_gorgeous_psylocke.sql'), 'utf8');
+}
 
-CREATE TABLE IF NOT EXISTS receipt_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  receipt_id INTEGER NOT NULL REFERENCES receipts(id),
-  line_no INTEGER NOT NULL,
-  sku TEXT,
-  raw_description TEXT NOT NULL,
-  canonical_name TEXT,
-  category_id TEXT REFERENCES categories(id),
-  quantity REAL NOT NULL,
-  unit_price_cents INTEGER,
-  line_price_cents INTEGER NOT NULL,
-  discount_cents INTEGER NOT NULL,
-  name_confidence REAL,
-  category_confidence REAL,
-  refund_destination TEXT,
-  needs_review INTEGER NOT NULL,
-  created_at INTEGER NOT NULL
-);
-`;
+// The household every offline receipt-store test row references. H1's
+// `receipts.household_id` is a FK to `households.id`, and libSQL enforces FKs by
+// default, so a fresh test DB must carry this row before a receipt inserts.
+export const TEST_HOUSEHOLD_ID = 'household-1';
 
-// Materialize the stub schema and seed the category taxonomy. Hermetic: caller
-// passes a fresh libSQL client (e.g. `createClient({ url: ':memory:' })`).
+// Materialize H1's real schema and seed the category taxonomy + a test
+// household. Hermetic: the caller passes a fresh libSQL client (e.g.
+// `createClient({ url: ':memory:' })`).
 export async function applyStubH1Schema(client: Client): Promise<void> {
-  await client.executeMultiple(STUB_H1_DDL);
+  await client.executeMultiple(h1MigrationSql());
+  await client.execute({
+    sql: 'INSERT OR IGNORE INTO households (id, name) VALUES (?, ?)',
+    args: [TEST_HOUSEHOLD_ID, 'Test Household'],
+  });
   await client.batch(
     CATEGORY_SEED.map((id) => ({
-      sql: 'INSERT OR IGNORE INTO categories (id) VALUES (?)',
-      args: [id],
+      sql: 'INSERT OR IGNORE INTO categories (id, name) VALUES (?, ?)',
+      args: [id, id],
     })),
     'write',
   );

@@ -29,20 +29,21 @@ export class StubReceiptStore implements ReceiptStore {
   }
 
   async insertReceipt(r: NewReceipt): Promise<ReceiptRecord> {
+    // Mirror H1's identity columns: a text id and an ISO-8601 createdAt.
     const record: ReceiptRecord = {
       ...r,
-      id: this.nextReceiptId++,
-      createdAt: this.now(),
+      id: `receipt-${this.nextReceiptId++}`,
+      createdAt: new Date(this.now()).toISOString(),
     };
     this.receipts.push(record);
     return { ...record };
   }
 
   async insertReceiptItems(items: NewReceiptItem[]): Promise<ReceiptItemRecord[]> {
-    const createdAt = this.now();
+    const createdAt = new Date(this.now()).toISOString();
     const records: ReceiptItemRecord[] = items.map((item) => ({
       ...item,
-      id: this.nextItemId++,
+      id: `item-${this.nextItemId++}`,
       createdAt,
     }));
     this.items.push(...records);

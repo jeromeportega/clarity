@@ -31,8 +31,8 @@ export type RefundDestination =
   | 'account_balance';
 
 export interface ReceiptRecord {
-  id: number;
-  householdId: number;
+  id: string; // H1 app-generated UUID (text PK)
+  householdId: string; // FK -> households.id (text UUID)
   source: string;
   store: string | null;
   purchasedAt: string | null; // ISO date
@@ -42,12 +42,12 @@ export interface ReceiptRecord {
   paymentLast4: string | null; // last-4 only, never a full PAN
   imageHash: string; // idempotency key (FR-2)
   needsReview: boolean;
-  createdAt: number; // epoch ms, assigned by the store on insert
+  createdAt: string; // ISO-8601, assigned by the store on insert
 }
 
 export interface ReceiptItemRecord {
-  id: number;
-  receiptId: number;
+  id: string; // H1 app-generated UUID (text PK)
+  receiptId: string; // FK -> receipts.id (text UUID)
   lineNo: number;
   sku: string | null;
   rawDescription: string;
@@ -61,7 +61,7 @@ export interface ReceiptItemRecord {
   categoryConfidence: number | null;
   refundDestination: RefundDestination | null;
   needsReview: boolean;
-  createdAt: number; // epoch ms, assigned by the store on insert
+  createdAt: string; // ISO-8601, assigned by the store on insert
 }
 
 // `id` and `created_at` are assigned by the store on insert. `receipt_id` is
