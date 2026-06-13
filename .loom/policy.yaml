@@ -110,7 +110,7 @@ agents:
   # baseline worker prompt is unchanged.
   #   off — guidance file is written but workers never read it (default)
   #   on  — workers read .loom/guidance/<story-id>.md at story-start + revisions
-  operator_guidance: "off"
+  operator_guidance: "on"
 
   # Integration gate — after the EpicFinalizer merges every story branch onto
   # epic/<id>, run the build/test suite on the INTEGRATED tree before opening
@@ -155,7 +155,7 @@ agents:
   # 'off' keeps the worker prompt byte-identical.
   #   off      — no QA pass (default)
   #   advisory — emit + inject per-story test plans
-  qa_planning: "on"
+  qa_planning: "advisory"
 
   # Rolling integration branch. When 'rolling', loom keeps a live epic/<id>
   # branch: workers branch from its tip and each story is merged back as it

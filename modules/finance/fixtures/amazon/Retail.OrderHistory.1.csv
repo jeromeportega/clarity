@@ -1,0 +1,5 @@
+ASIN,"Billing Address","Carrier Name & Tracking Number",Currency,"Gift Message","Gift Recipient Contact","Gift Sender Name","Item Serial Number","Order Date","Order ID","Order Status","Original Quantity","Payment Method Type","Product Condition","Product Name","Purchase Order Number","Ship Date","Shipment Item Subtotal","Shipment Item Subtotal Tax","Shipment Status","Shipping Address","Shipping Charge","Shipping Option","Total Amount","Total Discounts","Unit Price","Unit Price Tax",Website
+B0DEMO0001,,,USD,,,,,2026-02-08,AMZN-DEMO-001,Closed,1,Visa - 1234,New,USB-C Cable 2-pack,,2026-02-10,12.99,1.00,Shipped,,0.00,,13.99,0.00,12.99,1.00,Amazon.com
+B0DEMO0002,,,USD,,,,,2026-02-08,AMZN-DEMO-001,Closed,1,Visa - 1234,New,Phone Stand,,2026-02-10,9.99,0.50,Shipped,,0.00,,10.49,0.00,9.99,0.50,Amazon.com
+B0DEMO0003,,,USD,,,,,2026-03-01,AMZN-DEMO-002,Closed,1,Gift Card,New,eBook Reader Case,,2026-03-02,24.00,0.00,Shipped,,0.00,,24.00,0.00,24.00,0.00,Amazon.com
+B0DEMO0003,,,USD,,,,,2026-03-01,AMZN-DEMO-002,Refunded,1,Gift Card,New,eBook Reader Case,,2026-03-02,-24.00,0.00,Returned,,0.00,,-24.00,0.00,-24.00,0.00,Amazon.com
