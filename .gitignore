@@ -25,3 +25,42 @@
 .cursor/mcp.json
 .cursor/rules/loom.mdc
 # <<< loom-managed <<<
+
+# --- Application ignores (story-001-001) ---------------------------------
+# Real financial data must NEVER be committable. These exclusions ship in the
+# first commit so no statement export, upload, or local DB can ever be staged.
+
+# Dependencies / build output
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Real financial data + raw uploads (sanitized fixtures live under modules/finance/fixtures/)
+data/
+uploads/
+raw/
+**/uploads/
+
+# Local libSQL / SQLite database files (tests use throwaway temp files)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Test / coverage artifacts
+coverage/
+.vitest/
+
+# OS / editor noise
+.DS_Store
