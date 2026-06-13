@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE #0117",
+  "purchasedAt": "2026-04-12",
+  "total": 3422,
+  "tax": 224,
+  "fees": [],
+  "paymentHint": { "method": "MASTERCARD", "last4": "5454" },
+  "lineItems": [
+    {
+      "sku": "0011223",
+      "rawDescription": "KS AA BATTRY 48",
+      "quantity": 1,
+      "unitPrice": 1799,
+      "linePrice": 1799,
+      "discount": 0
+    },
+    {
+      "sku": "778",
+      "rawDescription": "MIXED NUTS 2.5",
+      "quantity": 1,
+      "unitPrice": 1399,
+      "linePrice": 1399,
+      "discount": 0
+    }
+  ]
+}
