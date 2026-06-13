@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE",
+  "purchasedAt": "2026-05-21",
+  "total": 1900,
+  "tax": 90,
+  "fees": [],
+  "paymentHint": null,
+  "lineItems": [
+    {
+      "sku": "660055",
+      "rawDescription": "ARTISAN BREAD 2PK",
+      "quantity": 1,
+      "unitPrice": 399,
+      "linePrice": 399,
+      "discount": 0
+    },
+    {
+      "sku": "660066",
+      "rawDescription": "KS SHARP CHEDDAR 2LB",
+      "quantity": 1,
+      "unitPrice": 699,
+      "linePrice": 699,
+      "discount": 0
+    }
+  ]
+}
