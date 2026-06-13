@@ -6,15 +6,13 @@ import { describe, expect, it } from 'vitest';
 
 const MIGRATION_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../db/migrations/0002_h3_matches.sql',
+  '../../../db/migrations/0001_h3_matches.sql',
 );
 
-describe('migration 0002_h3_matches shape (AC3, FR-3, FR-7)', () => {
-  let sql: string;
-
+describe('migration 0001_h3_matches shape (AC3, FR-3, FR-7)', () => {
   it('migration file exists and is readable', () => {
-    sql = readFileSync(MIGRATION_PATH, 'utf8');
-    expect(sql.length).toBeGreaterThan(0);
+    const content = readFileSync(MIGRATION_PATH, 'utf8');
+    expect(content.length).toBeGreaterThan(0);
   });
 
   it('adds rationale TEXT column (FR-3)', () => {
@@ -32,15 +30,19 @@ describe('migration 0002_h3_matches shape (AC3, FR-3, FR-7)', () => {
     expect(content).toContain('REFERENCES store_credit_balances');
   });
 
+  it('store_credit_balance_id FK has ON DELETE SET NULL', () => {
+    const content = readFileSync(MIGRATION_PATH, 'utf8');
+    expect(content).toContain('ON DELETE SET NULL');
+  });
+
   it('alters the matches table (not a new table)', () => {
     const content = readFileSync(MIGRATION_PATH, 'utf8');
     expect(content).toMatch(/ALTER TABLE matches/);
   });
 
-  it('contains no DROP or destructive statements', () => {
+  it('contains no DROP or DML DELETE statements (ON DELETE FK clause is fine)', () => {
     const content = readFileSync(MIGRATION_PATH, 'utf8');
-    // Case-sensitive: SQL DDL keywords are uppercase; comments may say "never drop"
     expect(content).not.toMatch(/\bDROP\b/);
-    expect(content).not.toMatch(/\bDELETE\b/);
+    expect(content).not.toMatch(/\bDELETE\s+FROM\b/i);
   });
 });

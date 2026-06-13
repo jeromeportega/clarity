@@ -12,45 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { FIXTURE_INPUTS } from '../__fixtures__/index';
-
-// ── Scanner ─────────────────────────────────────────────────────────────────
-
-/** 13–19 consecutive digits is PAN-length. */
-const PAN_PATTERN = /\d{13,19}/;
-
-/** Known API-key prefix patterns. */
-const API_KEY_PATTERNS: RegExp[] = [
-  /\bsk-[A-Za-z0-9_-]{20,}/,  // OpenAI / Anthropic-style secret keys (sk-... or sk-proj-...)
-  /\bAKIA[A-Z0-9]{16}\b/,     // AWS IAM access key ID
-];
-
-export interface GateViolation {
-  kind: 'pan' | 'api_key';
-  match: string;
-}
-
-/**
- * Serialises `data` to JSON and scans for violations.
- * Returns an empty array when the data is clean.
- */
-export function scanForViolations(data: unknown): GateViolation[] {
-  const json = JSON.stringify(data);
-  const violations: GateViolation[] = [];
-
-  const panMatch = json.match(PAN_PATTERN);
-  if (panMatch) {
-    violations.push({ kind: 'pan', match: panMatch[0] });
-  }
-
-  for (const pattern of API_KEY_PATTERNS) {
-    const m = json.match(pattern);
-    if (m) {
-      violations.push({ kind: 'api_key', match: m[0] });
-    }
-  }
-
-  return violations;
-}
+import { scanForViolations } from '../gate-scanner';
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +45,12 @@ describe('gate-safety: scanner demonstrably catches violations', () => {
     const poisoned = { cardNumber: '4111111111111111' };
     const violations = scanForViolations(poisoned).filter((v) => v.kind === 'pan');
     expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it('detects multiple PANs in a single fixture (exhaustive scan)', () => {
+    const poisoned = { card1: '4111111111111111', card2: '5500005555555559' };
+    const violations = scanForViolations(poisoned).filter((v) => v.kind === 'pan');
+    expect(violations.length).toBeGreaterThanOrEqual(2);
   });
 
   it('does not flag short numeric fixture IDs as PANs', () => {

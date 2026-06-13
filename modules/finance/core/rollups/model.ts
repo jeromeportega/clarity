@@ -9,10 +9,7 @@ export interface RollupCell {
 
 export type Rollup = RollupCell[];
 
-export interface Correction {
-  kind: 'relink_match' | 'reject_match' | 'reclassify_item';
-  matchId?: string;
-  itemRef?: ClassifiedItem['itemRef'];
-  newTransactionId?: string;
-  newCategory?: string;
-}
+export type Correction =
+  | { kind: 'relink_match'; matchId: string; newTransactionId: string }
+  | { kind: 'reject_match'; matchId: string }
+  | { kind: 'reclassify_item'; itemRef: ClassifiedItem['itemRef']; newCategory: string };

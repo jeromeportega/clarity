@@ -14,6 +14,7 @@ export type Cents = number; // signed integer cents
  * bank credit refund:  amountCents > 0 → signedSpendCents < 0 (value returning)
  */
 export function bankSignToSignedSpend(amountCents: Cents): Cents {
+  // -0 === 0 in JS but Object.is(-0, 0) is false; explicit guard keeps the return type clean.
   return amountCents === 0 ? 0 : -amountCents;
 }
 
@@ -114,7 +115,7 @@ export interface LedgerEvent {
   id: string;
   signedSpendCents: Cents;
   occurredOn: string; // YYYY-MM-DD
-  fundedBy: 'bank' | 'store_credit' | 'bank+store_credit';
+  fundedBy: 'bank' | 'store_credit' | 'split';
   sources: { transactionId?: string; orderId?: string; receiptId?: string };
   mergedItems: ClassifiedItem[];
   categoryFallback?: string;

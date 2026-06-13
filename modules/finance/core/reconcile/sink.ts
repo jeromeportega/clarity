@@ -27,9 +27,9 @@ export class InMemorySink implements ReconcileSink {
 
 /** Demo stub — full write implementation belongs to a later integration story. */
 export class DrizzleReconcileSink implements ReconcileSink {
-  constructor(private readonly db: FinanceDb) {}
+  constructor(private readonly _db: FinanceDb) {}
 
   async persist(_householdId: string, _ledger: ReconciledLedger): Promise<void> {
-    void this.db; // referenced to satisfy the type; full impl not in scope here
+    // full impl not in scope here
   }
 }

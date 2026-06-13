@@ -206,10 +206,11 @@ export const matches = sqliteTable('matches', {
     .default('pending'),
   confidence: real('confidence'),
   method: text('method'),
-  // H3 additive columns (migration 0002_h3_matches, ADR-006):
+  // H3 additive columns (migration 0001_h3_matches, ADR-006):
   rationale: text('rationale'),                                          // FR-3
   storeCreditBalanceId: text('store_credit_balance_id').references(     // FR-7
     (): AnySQLiteColumn => storeCreditBalances.id,
+    { onDelete: 'set null' },
   ),
   createdAt: createdAt(),
 });

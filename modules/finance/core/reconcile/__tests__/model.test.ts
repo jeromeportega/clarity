@@ -118,8 +118,8 @@ describe('compile/type smoke — one literal of every domain type', () => {
     expect(item.source).toBe('item_heuristic');
   });
 
-  it('constructs LedgerEvent', () => {
-    const event: LedgerEvent = {
+  it('constructs LedgerEvent — all three fundedBy variants', () => {
+    const bankFunded: LedgerEvent = {
       id: 'le-1',
       signedSpendCents: 4999,
       occurredOn: '2024-01-15',
@@ -128,7 +128,25 @@ describe('compile/type smoke — one literal of every domain type', () => {
       mergedItems: [],
       categoryFallback: 'groceries',
     };
-    expect(event.signedSpendCents).toBeGreaterThan(0);
+    const creditFunded: LedgerEvent = {
+      id: 'le-2',
+      signedSpendCents: 2400,
+      occurredOn: '2024-02-14',
+      fundedBy: 'store_credit',
+      sources: { orderId: 'ord-1' },
+      mergedItems: [],
+    };
+    const splitFunded: LedgerEvent = {
+      id: 'le-3',
+      signedSpendCents: 6750,
+      occurredOn: '2024-02-03',
+      fundedBy: 'split',
+      sources: { transactionId: 'tx-2', orderId: 'ord-2' },
+      mergedItems: [],
+    };
+    expect(bankFunded.fundedBy).toBe('bank');
+    expect(creditFunded.fundedBy).toBe('store_credit');
+    expect(splitFunded.fundedBy).toBe('split');
   });
 
   it('constructs StoreCreditDrawdown', () => {
@@ -166,20 +184,24 @@ describe('compile/type smoke — one literal of every domain type', () => {
     expect(rollup).toHaveLength(1);
   });
 
-  it('constructs Correction from rollups/model', () => {
-    const correction: Correction = {
+  it('constructs Correction from rollups/model — all three variants', () => {
+    const reclassify: Correction = {
       kind: 'reclassify_item',
       itemRef: { receiptItemId: 'ri-1' },
       newCategory: 'dining',
     };
-    expect(correction.kind).toBe('reclassify_item');
+    const relink: Correction = { kind: 'relink_match', matchId: 'mr-1', newTransactionId: 'tx-2' };
+    const reject: Correction = { kind: 'reject_match', matchId: 'mr-2' };
+    expect(reclassify.kind).toBe('reclassify_item');
+    expect(relink.kind).toBe('relink_match');
+    expect(reject.kind).toBe('reject_match');
   });
 
   it('constructs InsightFlag from insights/model', () => {
     const flag: InsightFlag = {
       code: 'merchant_above_avg',
       message: 'Whole Foods spending is 40% above your 3-month average',
-      number: { observedCents: 14997, comparisonCents: 10713, deltaPct: 40 },
+      amounts: { observedCents: 14997, comparisonCents: 10713, deltaPct: 40 },
       basis: '3-month rolling average',
     };
     expect(flag.code).toBe('merchant_above_avg');

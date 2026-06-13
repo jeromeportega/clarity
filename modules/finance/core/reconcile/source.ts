@@ -13,7 +13,14 @@ export interface ReconcileSource {
  */
 export class FixtureReconcileSource implements ReconcileSource {
   async load(householdId: string): Promise<ReconcileInputs> {
-    return { ...FIXTURE_INPUTS, householdId };
+    return {
+      ...FIXTURE_INPUTS,
+      householdId,
+      bankLines: [...FIXTURE_INPUTS.bankLines],
+      orders: FIXTURE_INPUTS.orders.map((o) => ({ ...o, items: [...o.items] })),
+      receipts: FIXTURE_INPUTS.receipts.map((r) => ({ ...r, items: [...r.items] })),
+      storeCreditAccruals: [...FIXTURE_INPUTS.storeCreditAccruals],
+    };
   }
 }
 
