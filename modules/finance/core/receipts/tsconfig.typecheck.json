@@ -1,0 +1,15 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // H2's receipts module + tests were authored against a config without
+    // noUncheckedIndexedAccess. H1's base scaffold turns it on globally; relax
+    // it for this module's Vitest typecheck project so the H2 unit suite and the
+    // type-level contract (*.test-d.ts) build, without weakening H1's canonical
+    // strictness for the foundation code (which keeps the strict base via the
+    // root tsconfig).
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "**/dist", "**/.next"]
+}

@@ -1,0 +1,21 @@
+{
+  "store": "COSTCO WHOLESALE",
+  "items": [
+    {
+      "sku": "401122",
+      "name": "Organic Bananas",
+      "category": "groceries"
+    },
+    {
+      "sku": "405533",
+      "name": "Rotisserie Chicken",
+      "category": "groceries"
+    },
+    {
+      "sku": "409876",
+      "name": "Kirkland Signature Large Eggs",
+      "category": "groceries"
+    }
+  ],
+  "totalCents": 1447
+}

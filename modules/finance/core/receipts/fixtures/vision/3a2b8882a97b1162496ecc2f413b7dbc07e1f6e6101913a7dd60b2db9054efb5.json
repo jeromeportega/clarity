@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE #0480",
+  "purchasedAt": null,
+  "total": 2498,
+  "tax": null,
+  "fees": [],
+  "paymentHint": null,
+  "lineItems": [
+    {
+      "sku": "5550001",
+      "rawDescription": "KS BATH TISSUE 30",
+      "quantity": 1,
+      "unitPrice": 2299,
+      "linePrice": 2299,
+      "discount": 0
+    },
+    {
+      "sku": null,
+      "rawDescription": "BANANAS",
+      "quantity": 1,
+      "unitPrice": 199,
+      "linePrice": 199,
+      "discount": 0
+    }
+  ]
+}
