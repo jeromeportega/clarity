@@ -1,0 +1,21 @@
+{
+  "store": "COSTCO WHOLESALE",
+  "items": [
+    {
+      "sku": "511234",
+      "name": "Kirkland Signature Laundry Detergent",
+      "category": "household"
+    },
+    {
+      "sku": "522345",
+      "name": "Kirkland Signature AAA Batteries",
+      "category": "household"
+    },
+    {
+      "sku": "533456",
+      "name": "HDMI Cable",
+      "category": "electronics"
+    }
+  ],
+  "totalCents": 5828
+}
