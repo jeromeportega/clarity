@@ -23,6 +23,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { processReceipt } from '../modules/finance/core/receipts/process-receipt';
 import type { ProcessReceiptResult } from '../modules/finance/core/receipts/process-receipt';
 import type { ReceiptItemRecord, ReceiptRecord } from '../modules/finance/core/receipts/store/receipt-store';
+import { DEFAULT_MAX_UPLOAD_BYTES } from '../modules/finance/core/receipts/upload';
 import { POST } from '../apps/web/app/api/receipts/upload/route';
 
 // --- Fixture builders ---------------------------------------------------------
@@ -200,6 +201,17 @@ describe('POST /api/receipts/upload', () => {
     );
   });
 
+  // -- Size cap (413) ---
+
+  it('returns 413 for a file exceeding DEFAULT_MAX_UPLOAD_BYTES without calling processReceipt', async () => {
+    // Allocate a buffer 1 byte over the cap so file.size triggers the route guard.
+    const bigBytes = new Uint8Array(DEFAULT_MAX_UPLOAD_BYTES + 1);
+    const res = await POST(makeRequest(bigBytes, 'image/jpeg', VALID_TOKEN));
+    expect(res.status).toBe(413);
+    expect(mockProcess).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
   // -- Error handling ---
 
   it('returns 500 when the H2 pipeline throws', async () => {
@@ -208,5 +220,13 @@ describe('POST /api/receipts/upload', () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('Processing failed');
+  });
+
+  it('returns 500 when the filesystem write fails', async () => {
+    mockWriteFile.mockRejectedValueOnce(new Error('ENOSPC'));
+    const res = await POST(makeRequest(new Uint8Array([1]), 'image/jpeg', VALID_TOKEN));
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('Storage failed');
   });
 });

@@ -5,7 +5,6 @@ import React, { useRef, useState } from 'react';
 
 import type { ReceiptItemRecord } from '../../../../../modules/finance/core/receipts/store/receipt-store';
 import type { UploadedReceiptResult } from '../../../../../modules/finance/core/receipts/upload';
-import { uploadReceiptAction } from '../../actions/uploadReceipt';
 
 // Pure presentational component — exported for unit tests.
 export function ReceiptItemList({ items }: { items: ReceiptItemRecord[] }) {
@@ -34,27 +33,41 @@ type UploadState =
   | { phase: 'done'; result: UploadedReceiptResult }
   | { phase: 'error'; message: string };
 
-export function ReceiptDrop() {
+export function ReceiptDrop({ mutationToken }: { mutationToken: string | null }) {
   const [state, setState] = useState<UploadState>({ phase: 'idle' });
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
+    if (!mutationToken) {
+      setState({ phase: 'error', message: 'Uploads are disabled on this server.' });
+      return;
+    }
     setState({ phase: 'uploading' });
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const actionResult = await uploadReceiptAction(formData);
+      const res = await fetch('/api/receipts/upload', {
+        method: 'POST',
+        headers: { 'x-reconcile-token': mutationToken },
+        body: formData,
+      });
 
-      if (!actionResult.ok) {
-        setState({ phase: 'error', message: actionResult.error });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setState({ phase: 'error', message: body.error ?? `Upload failed (${res.status})` });
+        // Reset so the same file can be re-tried.
+        if (inputRef.current) inputRef.current.value = '';
         return;
       }
 
-      setState({ phase: 'done', result: actionResult.result });
+      const result = (await res.json()) as UploadedReceiptResult;
+      setState({ phase: 'done', result });
     } catch {
       setState({ phase: 'error', message: 'Network error — please try again.' });
+    } finally {
+      if (inputRef.current) inputRef.current.value = '';
     }
   }
 

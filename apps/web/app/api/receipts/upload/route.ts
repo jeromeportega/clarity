@@ -124,8 +124,12 @@ export async function POST(request: Request): Promise<Response> {
   const ext = MIME_EXT[mimeType] ?? '.bin';
   const safeFilename = `${randomUUID()}${ext}`;
   const dataDir = join('/tmp', 'receipts');
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(join(dataDir, safeFilename), bytes);
+  try {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(join(dataDir, safeFilename), bytes);
+  } catch {
+    return Response.json({ error: 'Storage failed' }, { status: 500 });
+  }
 
   return Response.json(outcome.result);
 }
