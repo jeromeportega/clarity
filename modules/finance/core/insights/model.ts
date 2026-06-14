@@ -3,7 +3,7 @@ import type { Cents } from '../reconcile/model';
 export interface InsightFlag {
   code: 'merchant_above_avg' | 'category_tracking_over' | 'new_recurring_charge';
   message: string;
-  number: { observedCents: Cents; comparisonCents?: Cents; deltaPct?: number };
+  amounts: { observedCents: Cents; comparisonCents?: Cents; deltaPct?: number };
   /** Human-readable explanation of how the flag was derived. */
   basis: string;
   /**

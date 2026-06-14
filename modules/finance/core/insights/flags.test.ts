@@ -151,7 +151,7 @@ describe('deriveInsights — ≥2 flags with number + basis (FR-13)', () => {
   it('every flag has a populated number block', () => {
     const flags = deriveInsights(rollup, ledger, CFG);
     for (const flag of flags) {
-      expect(flag.number.observedCents).toBeGreaterThan(0);
+      expect(flag.amounts.observedCents).toBeGreaterThan(0);
     }
   });
 
@@ -178,9 +178,9 @@ describe('deriveInsights — merchant_above_avg', () => {
       (f) => f.code === 'merchant_above_avg' && f.basis.includes('COSTCO'),
     );
     expect(flag).toBeDefined();
-    expect(flag!.number.observedCents).toBe(20_000);
-    expect(flag!.number.comparisonCents).toBe(10_000);
-    expect(flag!.number.deltaPct).toBe(100);
+    expect(flag!.amounts.observedCents).toBe(20_000);
+    expect(flag!.amounts.comparisonCents).toBe(10_000);
+    expect(flag!.amounts.deltaPct).toBe(100);
     expect(flag!.basis).toMatch(/3-month avg for COSTCO/);
     expect(flag!.inconclusive).toBeUndefined();
   });
@@ -208,7 +208,7 @@ describe('deriveInsights — merchant_above_avg', () => {
     const flag = flags.find(
       (f) => f.code === 'merchant_above_avg' && f.basis.includes('COSTCO'),
     )!;
-    expect(flag.number.deltaPct).toBe(
+    expect(flag.amounts.deltaPct).toBe(
       Math.round(((20_000 - 10_000) / 10_000) * 100),
     );
   });
@@ -228,9 +228,9 @@ describe('deriveInsights — category_tracking_over', () => {
       (f) => f.code === 'category_tracking_over' && f.basis.includes('Groceries'),
     );
     expect(flag).toBeDefined();
-    expect(flag!.number.observedCents).toBe(30_000);
-    expect(flag!.number.comparisonCents).toBe(20_000);
-    expect(flag!.number.deltaPct).toBe(50);
+    expect(flag!.amounts.observedCents).toBe(30_000);
+    expect(flag!.amounts.comparisonCents).toBe(20_000);
+    expect(flag!.amounts.deltaPct).toBe(50);
     expect(flag!.basis).toMatch(/prior month \(2024-03\) for Groceries/);
     expect(flag!.inconclusive).toBeUndefined();
   });
@@ -285,9 +285,9 @@ describe('deriveInsights — category_tracking_over', () => {
     );
     expect(flag).toBeDefined();
     expect(flag!.basis).toBe('insufficient_history');
-    expect(flag!.number.observedCents).toBe(8_000);
-    expect(flag!.number.comparisonCents).toBeUndefined();
-    expect(flag!.number.deltaPct).toBeUndefined();
+    expect(flag!.amounts.observedCents).toBe(8_000);
+    expect(flag!.amounts.comparisonCents).toBeUndefined();
+    expect(flag!.amounts.deltaPct).toBeUndefined();
   });
 });
 
@@ -303,7 +303,7 @@ describe('deriveInsights — new_recurring_charge', () => {
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find((f) => f.code === 'new_recurring_charge');
     expect(flag).toBeDefined();
-    expect(flag!.number.observedCents).toBe(999);
+    expect(flag!.amounts.observedCents).toBe(999);
     expect(flag!.basis).toMatch(/2024-02/);
     expect(flag!.inconclusive).toBeUndefined();
   });
@@ -351,7 +351,7 @@ describe('deriveInsights — in-app only (AC2)', () => {
       expect(typeof flag).toBe('object');
       expect(typeof flag.code).toBe('string');
       expect(typeof flag.basis).toBe('string');
-      expect(typeof flag.number).toBe('object');
+      expect(typeof flag.amounts).toBe('object');
     }
   });
 
@@ -376,8 +376,8 @@ describe('deriveInsights — sparse-history policy', () => {
     )!;
 
     expect(flag.inconclusive).toBeUndefined();
-    expect(flag.number.comparisonCents).toBeDefined();
-    expect(flag.number.deltaPct).toBeDefined();
+    expect(flag.amounts.comparisonCents).toBeDefined();
+    expect(flag.amounts.deltaPct).toBeDefined();
   });
 
   it('sparse branch: merchant with <3 prior months emits inconclusive with basis insufficient_history', () => {
@@ -399,9 +399,9 @@ describe('deriveInsights — sparse-history policy', () => {
     expect(flag).toBeDefined();
     expect(flag!.basis).toBe('insufficient_history');
     // No fabricated average
-    expect(flag!.number.comparisonCents).toBeUndefined();
-    expect(flag!.number.deltaPct).toBeUndefined();
-    expect(flag!.number.observedCents).toBe(8_000);
+    expect(flag!.amounts.comparisonCents).toBeUndefined();
+    expect(flag!.amounts.deltaPct).toBeUndefined();
+    expect(flag!.amounts.observedCents).toBe(8_000);
   });
 
   it('populated branch: category with prior-month data emits real comparison (not inconclusive)', () => {
@@ -416,7 +416,7 @@ describe('deriveInsights — sparse-history policy', () => {
 
     expect(flag).toBeDefined();
     expect(flag.inconclusive).toBeUndefined();
-    expect(flag.number.comparisonCents).toBeDefined();
+    expect(flag.amounts.comparisonCents).toBeDefined();
   });
 
   it('sparse branch: category with no prior-month data emits inconclusive with basis insufficient_history', () => {
@@ -435,9 +435,9 @@ describe('deriveInsights — sparse-history policy', () => {
     );
     expect(flag).toBeDefined();
     expect(flag!.basis).toBe('insufficient_history');
-    expect(flag!.number.comparisonCents).toBeUndefined();
-    expect(flag!.number.deltaPct).toBeUndefined();
-    expect(flag!.number.observedCents).toBe(50_000);
+    expect(flag!.amounts.comparisonCents).toBeUndefined();
+    expect(flag!.amounts.deltaPct).toBeUndefined();
+    expect(flag!.amounts.observedCents).toBe(50_000);
   });
 
   it('sparse branch emits no fabricated average for merchant_above_avg', () => {
@@ -459,8 +459,27 @@ describe('deriveInsights — sparse-history policy', () => {
 
     expect(flag).toBeDefined();
     // Must not contain a fabricated comparison value
-    expect(flag.number.comparisonCents).toBeUndefined();
-    expect(flag.number.deltaPct).toBeUndefined();
+    expect(flag.amounts.comparisonCents).toBeUndefined();
+    expect(flag.amounts.deltaPct).toBeUndefined();
+  });
+
+  it('brand-new merchant (0 prior months) does NOT emit an inconclusive flag', () => {
+    // A merchant appearing only in the current month with no prior history should be
+    // skipped rather than flooding callers with low-signal inconclusive noise.
+    const rationale = 'merchant: NEW STORE; keyword match → Misc';
+    const events = [
+      makeBankEvent({ id: 'ns1', signedSpendCents: 5_000, occurredOn: '2024-04-10',
+        items: [makeItem('Misc', { rationale })] }),
+    ];
+    const ledger = makeLedger(events);
+    const rollup = rollupNetSpend(ledger);
+
+    const flags = deriveInsights(rollup, ledger, CFG);
+    // No merchant_above_avg inconclusive flag should be emitted for a brand-new merchant.
+    const inconclusiveFlag = flags.find(
+      (f) => f.code === 'merchant_above_avg' && f.inconclusive === true,
+    );
+    expect(inconclusiveFlag).toBeUndefined();
   });
 });
 
@@ -485,7 +504,7 @@ describe('deriveInsights — insightComparisonMonths configuration', () => {
       (f) => f.code === 'merchant_above_avg' && !f.inconclusive,
     );
     expect(flag).toBeDefined();
-    expect(flag!.number.comparisonCents).toBe(7_000);
-    expect(flag!.number.deltaPct).toBe(100);
+    expect(flag!.amounts.comparisonCents).toBe(7_000);
+    expect(flag!.amounts.deltaPct).toBe(100);
   });
 });

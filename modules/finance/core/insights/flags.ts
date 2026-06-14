@@ -10,9 +10,9 @@ const MERCHANT_PREFIX = 'merchant: ';
 function merchantFromRationale(rationale: string): string | null {
   if (!rationale.startsWith(MERCHANT_PREFIX)) return null;
   const semi = rationale.indexOf(';', MERCHANT_PREFIX.length);
-  return semi > 0
-    ? rationale.slice(MERCHANT_PREFIX.length, semi)
-    : rationale.slice(MERCHANT_PREFIX.length);
+  return semi !== -1
+    ? rationale.slice(MERCHANT_PREFIX.length, semi).trim()
+    : rationale.slice(MERCHANT_PREFIX.length).trim();
 }
 
 function monthOf(isoDate: string): string {
@@ -87,13 +87,18 @@ function deriveMerchantAboveAvg(
     }
 
     if (priorSpends.length < insightComparisonMonths) {
-      flags.push({
-        code: 'merchant_above_avg',
-        message: `Insufficient history to compare ${merchant} spend`,
-        number: { observedCents: currentSpend },
-        basis: 'insufficient_history',
-        inconclusive: true,
-      });
+      // Only emit inconclusive when the merchant has appeared before (has history but
+      // not enough). Completely new merchants (0 prior months) are skipped to avoid
+      // flooding callers with low-signal noise on first import (ADR-010).
+      if (priorSpends.length >= 1) {
+        flags.push({
+          code: 'merchant_above_avg',
+          message: `Insufficient history to compare ${merchant} spend`,
+          amounts: { observedCents: currentSpend },
+          basis: 'insufficient_history',
+          inconclusive: true,
+        });
+      }
       continue;
     }
 
@@ -102,7 +107,7 @@ function deriveMerchantAboveAvg(
       flags.push({
         code: 'merchant_above_avg',
         message: `${merchant} spend this month is above the ${insightComparisonMonths}-month average`,
-        number: {
+        amounts: {
           observedCents: currentSpend,
           comparisonCents: avgCents,
           deltaPct: calcDeltaPct(currentSpend, avgCents),
@@ -147,7 +152,7 @@ function deriveCategoryTrackingOver(
       flags.push({
         code: 'category_tracking_over',
         message: `No meaningful prior-month baseline to compare ${category} spend`,
-        number: { observedCents: currentSpend },
+        amounts: { observedCents: currentSpend },
         basis: 'insufficient_history',
         inconclusive: true,
       });
@@ -158,7 +163,7 @@ function deriveCategoryTrackingOver(
       flags.push({
         code: 'category_tracking_over',
         message: `${category} spend is tracking above last month`,
-        number: {
+        amounts: {
           observedCents: currentSpend,
           comparisonCents: priorSpend,
           deltaPct: calcDeltaPct(currentSpend, priorSpend),
@@ -187,10 +192,10 @@ function deriveNewRecurringCharge(
   // Window start: the oldest month that is still "recent" (inclusive).
   const windowStart = addMonths(currentMonth, -(insightComparisonMonths - 1));
 
-  // For each recurring merchant, track the earliest month seen.
+  // For each recurring merchant, track the earliest month seen and the current-month amount.
   const recurringByMerchant = new Map<
     string,
-    { earliestMonth: string; representativeAmount: Cents }
+    { earliestMonth: string; representativeAmount: Cents; currentMonthAmount?: Cents }
   >();
 
   for (const event of events) {
@@ -203,22 +208,28 @@ function deriveNewRecurringCharge(
 
     const month = monthOf(event.occurredOn);
     const existing = recurringByMerchant.get(merchant);
+    const currentMonthAmount =
+      month === currentMonth ? event.signedSpendCents : existing?.currentMonthAmount;
+
     if (!existing || month < existing.earliestMonth) {
       recurringByMerchant.set(merchant, {
         earliestMonth: month,
         representativeAmount: event.signedSpendCents,
+        currentMonthAmount,
       });
+    } else {
+      recurringByMerchant.set(merchant, { ...existing, currentMonthAmount });
     }
   }
 
   const flags: InsightFlag[] = [];
 
-  for (const [merchant, { earliestMonth, representativeAmount }] of recurringByMerchant) {
+  for (const [merchant, { earliestMonth, representativeAmount, currentMonthAmount }] of recurringByMerchant) {
     if (earliestMonth >= windowStart) {
       flags.push({
         code: 'new_recurring_charge',
         message: `New recurring charge for ${merchant} detected`,
-        number: { observedCents: representativeAmount },
+        amounts: { observedCents: currentMonthAmount ?? representativeAmount },
         basis: `new subscription first seen ${earliestMonth}, within last ${insightComparisonMonths} months`,
       });
     }
