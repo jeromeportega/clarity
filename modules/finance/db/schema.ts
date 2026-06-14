@@ -187,6 +187,8 @@ export const receiptItems = sqliteTable('receipt_items', {
   categoryConfidence: real('category_confidence'),
   refundDestination: text('refund_destination', { enum: REFUND_DESTINATIONS }),
   needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
+  /** JSON-encoded bounding box {x,y,width,height} as fractions [0,1] of image dims. NULL when coordinates unavailable (ADR-007 graceful-degradation). */
+  bbox: text('bbox'),
   createdAt: createdAt(),
 });
 
