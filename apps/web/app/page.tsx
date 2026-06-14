@@ -1,6 +1,8 @@
 import { fetchQueue, resolveHouseholdScope } from '@/lib/queue';
 import { QueueView } from './components/queue/QueueView';
 
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const scope = resolveHouseholdScope();
   const items = await fetchQueue(scope);
