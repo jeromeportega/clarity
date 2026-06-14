@@ -5,6 +5,7 @@ import React, { useRef, useState } from 'react';
 
 import type { ReceiptItemRecord } from '../../../../../modules/finance/core/receipts/store/receipt-store';
 import type { UploadedReceiptResult } from '../../../../../modules/finance/core/receipts/upload';
+import { uploadReceiptAction } from '../../actions/uploadReceipt';
 
 // Pure presentational component — exported for unit tests.
 export function ReceiptItemList({ items }: { items: ReceiptItemRecord[] }) {
@@ -40,24 +41,18 @@ export function ReceiptDrop() {
   async function upload(file: File) {
     setState({ phase: 'uploading' });
 
-    const form = new FormData();
-    form.append('file', file);
+    const formData = new FormData();
+    formData.append('file', file);
 
     try {
-      const res = await fetch('/api/receipts/upload', {
-        method: 'POST',
-        headers: { 'x-reconcile-token': process.env.NEXT_PUBLIC_RECONCILE_MUTATION_TOKEN ?? '' },
-        body: form,
-      });
+      const actionResult = await uploadReceiptAction(formData);
 
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setState({ phase: 'error', message: body.error ?? `Upload failed (${res.status})` });
+      if (!actionResult.ok) {
+        setState({ phase: 'error', message: actionResult.error });
         return;
       }
 
-      const result = (await res.json()) as UploadedReceiptResult;
-      setState({ phase: 'done', result });
+      setState({ phase: 'done', result: actionResult.result });
     } catch {
       setState({ phase: 'error', message: 'Network error — please try again.' });
     }
@@ -74,20 +69,29 @@ export function ReceiptDrop() {
     if (file) void upload(file);
   }
 
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      inputRef.current?.click();
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div
-        role="region"
+        role="button"
+        tabIndex={0}
         aria-label="Receipt upload"
         onDrop={onDrop}
         onDragOver={(e) => e.preventDefault()}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={onKeyDown}
         className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/40 p-8 text-center transition hover:border-muted-foreground/70"
       >
         <input
           ref={inputRef}
           type="file"
-          accept="image/*,application/pdf"
+          accept="image/jpeg,image/png,application/pdf"
           onChange={onFileChange}
           className="sr-only"
           aria-label="Choose receipt file"

@@ -1,5 +1,5 @@
 import { processReceipt, type ReceiptPipelineDeps, type ProcessReceiptResult } from './process-receipt';
-import type { SupportedMimeType } from './vision/vision-provider';
+import { SUPPORTED_MIME_TYPES, type SupportedMimeType } from './vision/vision-provider';
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MiB
 
@@ -15,10 +15,10 @@ export type UploadOutcome =
   | { ok: true; result: UploadedReceiptResult }
   | { ok: false; error: UploadError };
 
-// Broad gate: accept any image subtype or PDF. H2's vision boundary enforces the
-// narrower SupportedMimeType set (JPEG/PNG/PDF) on the bytes it actually reads.
+// Narrow gate: only accept the MIME types the vision provider can process.
+// SVG is excluded despite being an image/* because it can embed scripts.
 export function isAcceptedUploadMime(mimeType: string): boolean {
-  return mimeType.startsWith('image/') || mimeType === 'application/pdf';
+  return (SUPPORTED_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
 // Validate then invoke the H2 pipeline. Validation (MIME, size) is always
