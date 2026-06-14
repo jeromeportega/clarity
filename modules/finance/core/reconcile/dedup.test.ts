@@ -174,6 +174,30 @@ describe('mergeCounted — dedup triple (keystone, FR-5)', () => {
     expect(e1.sources.orderId).toBe('O-alpha');
     expect(e2.sources.orderId).toBe('O-alpha');
   });
+
+  it('multiple receipts on the same bank anchor: receiptId is deterministic regardless of match order', () => {
+    // Two receipts matched to the same bank line — receiptId should be lexicographic min, not first-seen.
+    const bl = bankDebit('B1', 5000);
+    const r1 = receipt('R-alpha', 5000, ['RI1']);
+    const r2 = receipt('R-zeta', 5000, ['RI2']);
+
+    // Pass matches in reverse lexicographic order to prove we don't just pick the first.
+    const matchesZetaFirst: MatchRecord[] = [
+      receiptBankMatch('m2', 'B1', 'R-zeta'),
+      receiptBankMatch('m1', 'B1', 'R-alpha'),
+    ];
+    const matchesAlphaFirst: MatchRecord[] = [
+      receiptBankMatch('m1', 'B1', 'R-alpha'),
+      receiptBankMatch('m2', 'B1', 'R-zeta'),
+    ];
+
+    const [e1] = mergeCounted(matchesZetaFirst, inputs([bl], [r1, r2], []));
+    const [e2] = mergeCounted(matchesAlphaFirst, inputs([bl], [r1, r2], []));
+
+    // Both orderings should produce the same primary receiptId (lexicographic min).
+    expect(e1.sources.receiptId).toBe('R-alpha');
+    expect(e2.sources.receiptId).toBe('R-alpha');
+  });
 });
 
 // ── Net-spend property ─────────────────────────────────────────────────────────
