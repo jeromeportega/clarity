@@ -1,26 +1,41 @@
 import { timingSafeEqual } from 'node:crypto';
 
 /**
- * Throws a Response(401) if the request does not carry a valid x-reconcile-token.
+ * Returns null if the request carries a valid mutation token, or a Response(401) if not.
  *
- * Uses constant-time comparison (Security T6) to prevent timing attacks. The
- * comparison buffer is normalised to the secret's byte-length so timingSafeEqual
- * never receives unequal-length inputs; a separate length check still rejects
- * tokens of a different length.
+ * Accepts x-reconcile-token (primary) and Authorization: Bearer <token> (deprecated —
+ * emits console.warn when used). Uses constant-time comparison (Security T6) so
+ * timingSafeEqual never receives unequal-length buffers; a separate length check still
+ * rejects tokens whose byte-length differs from the secret's.
+ *
+ * Usage: `const denied = requireMutationToken(req); if (denied) return denied;`
  */
-export function requireMutationToken(req: Request): void {
+export function requireMutationToken(req: Request): Response | null {
   const secret = process.env.RECONCILE_MUTATION_TOKEN;
   if (!secret) {
-    throw new Response('Unauthorized', { status: 401 });
+    return new Response('Unauthorized', { status: 401 });
   }
 
-  const provided = req.headers.get('x-reconcile-token') ?? '';
+  let provided = req.headers.get('x-reconcile-token');
+  if (provided === null) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      provided = authHeader.slice('Bearer '.length);
+      console.warn(
+        '[requireMutationToken] Authorization: Bearer is deprecated; switch to x-reconcile-token',
+      );
+    }
+  }
+
+  if (!provided) {
+    return new Response('Unauthorized', { status: 401 });
+  }
 
   const secretBuf = Buffer.from(secret, 'utf8');
   const providedBuf = Buffer.from(provided, 'utf8');
 
-  // Normalize provided to the same byte-length as secret. timingSafeEqual
-  // requires equal-length buffers; the separate length check below rejects
+  // Normalize provided to the same byte-length as secret so timingSafeEqual
+  // never receives unequal-length inputs; the separate length check rejects
   // any token whose byte-length differs from the secret's.
   const compareBuf = Buffer.alloc(secretBuf.length, 0);
   providedBuf.copy(compareBuf);
@@ -29,6 +44,8 @@ export function requireMutationToken(req: Request): void {
   const contentMatch = timingSafeEqual(secretBuf, compareBuf);
 
   if (!lengthMatch || !contentMatch) {
-    throw new Response('Unauthorized', { status: 401 });
+    return new Response('Unauthorized', { status: 401 });
   }
+
+  return null;
 }

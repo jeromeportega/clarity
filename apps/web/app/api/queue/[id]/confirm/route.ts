@@ -10,7 +10,8 @@ export async function POST(
   request: Request,
   context: { params: { id: string } | Promise<{ id: string }> },
 ): Promise<Response> {
-  try { requireMutationToken(request); } catch (e) { if (e instanceof Response) return e; throw e; }
+  const denied = requireMutationToken(request);
+  if (denied) return denied;
 
   const params = context.params instanceof Promise
     ? await context.params

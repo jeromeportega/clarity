@@ -10,18 +10,9 @@ function makeReq(token?: string): Request {
   return new Request('http://test/', { method: 'POST', headers });
 }
 
-function catchThrown(fn: () => void): unknown {
-  try {
-    fn();
-    return undefined;
-  } catch (e) {
-    return e;
-  }
-}
-
-function assertIs401(thrown: unknown): void {
-  expect(thrown).toBeInstanceOf(Response);
-  expect((thrown as Response).status).toBe(401);
+function assertIs401(result: Response | null): void {
+  expect(result).toBeInstanceOf(Response);
+  expect((result as Response).status).toBe(401);
 }
 
 describe('requireMutationToken', () => {
@@ -29,38 +20,70 @@ describe('requireMutationToken', () => {
     vi.unstubAllEnvs();
   });
 
-  it('does not throw for a valid token', () => {
+  it('returns null for a valid token', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    expect(() => requireMutationToken(makeReq('super-secret-token'))).not.toThrow();
+    expect(requireMutationToken(makeReq('super-secret-token'))).toBeNull();
   });
 
-  it('throws 401 when x-reconcile-token header is missing', () => {
+  it('returns 401 when x-reconcile-token header is missing', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    assertIs401(catchThrown(() => requireMutationToken(makeReq())));
+    assertIs401(requireMutationToken(makeReq()));
   });
 
-  it('throws 401 for a wrong token', () => {
+  it('returns 401 for a wrong token', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    assertIs401(catchThrown(() => requireMutationToken(makeReq('wrong-token'))));
+    assertIs401(requireMutationToken(makeReq('wrong-token')));
   });
 
-  it('throws 401 for an empty-string token', () => {
+  it('returns 401 for an empty-string token', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    assertIs401(catchThrown(() => requireMutationToken(makeReq(''))));
+    assertIs401(requireMutationToken(makeReq('')));
   });
 
-  it('throws 401 for a token shorter than the secret — no crash (Security T6)', () => {
+  it('returns 401 for a token shorter than the secret — no crash (Security T6)', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    assertIs401(catchThrown(() => requireMutationToken(makeReq('short'))));
+    assertIs401(requireMutationToken(makeReq('short')));
   });
 
-  it('throws 401 for a token longer than the secret — no crash (Security T6)', () => {
+  it('returns 401 for a token longer than the secret — no crash (Security T6)', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
-    assertIs401(catchThrown(() => requireMutationToken(makeReq('super-secret-token-extra-chars'))));
+    assertIs401(requireMutationToken(makeReq('super-secret-token-extra-chars')));
   });
 
-  it('throws 401 when RECONCILE_MUTATION_TOKEN env var is not set', () => {
+  it('returns 401 when RECONCILE_MUTATION_TOKEN env var is not set', () => {
     vi.stubEnv('RECONCILE_MUTATION_TOKEN', undefined as unknown as string);
-    assertIs401(catchThrown(() => requireMutationToken(makeReq('any-token'))));
+    assertIs401(requireMutationToken(makeReq('any-token')));
+  });
+
+  describe('Authorization: Bearer fallback (deprecated)', () => {
+    it('accepts a correct token via Authorization: Bearer and returns null', () => {
+      vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
+      const req = new Request('http://test/', {
+        method: 'POST',
+        headers: { authorization: 'Bearer super-secret-token' },
+      });
+      expect(requireMutationToken(req)).toBeNull();
+    });
+
+    it('returns 401 for a wrong token via Authorization: Bearer', () => {
+      vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
+      const req = new Request('http://test/', {
+        method: 'POST',
+        headers: { authorization: 'Bearer wrong-token' },
+      });
+      assertIs401(requireMutationToken(req));
+    });
+
+    it('x-reconcile-token takes precedence over Authorization: Bearer', () => {
+      vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
+      const req = new Request('http://test/', {
+        method: 'POST',
+        headers: {
+          'x-reconcile-token': 'super-secret-token',
+          authorization: 'Bearer wrong-token',
+        },
+      });
+      expect(requireMutationToken(req)).toBeNull();
+    });
   });
 });

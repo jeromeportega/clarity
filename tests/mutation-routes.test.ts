@@ -26,6 +26,8 @@ const MUTATION_ROUTES: Array<{ name: string; handler: RouteHandler }> = [
   { name: 'POST /api/queue/[id]/confirm', handler: postConfirm },
   { name: 'POST /api/queue/[id]/correct', handler: postCorrect },
   { name: 'POST /api/queue/[id]/dismiss', handler: postDismiss },
+  // TODO(story-004-005): add { name: 'POST /api/receipts/upload', handler: postUpload }
+  // once story-004-005 ships; importing its route handler here enforces the gate.
 ];
 
 const TEST_TOKEN = 'mutation-gate-test-secret-123';

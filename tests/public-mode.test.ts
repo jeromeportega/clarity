@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveHouseholdScope } from '../apps/web/app/lib/public-mode';
+import { resolveHouseholdScope } from '../apps/web/lib/public-mode';
 import { DEMO_HOUSEHOLD_ID } from '../modules/finance/core/scope';
 
 describe('resolveHouseholdScope', () => {
