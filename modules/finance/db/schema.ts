@@ -187,6 +187,8 @@ export const receiptItems = sqliteTable('receipt_items', {
   categoryConfidence: real('category_confidence'),
   refundDestination: text('refund_destination', { enum: REFUND_DESTINATIONS }),
   needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
+  /** JSON-encoded bounding box {x,y,width,height} as fractions [0,1] of image dims. NULL when coordinates unavailable (ADR-007 graceful-degradation). */
+  bbox: text('bbox'),
   createdAt: createdAt(),
 });
 
@@ -230,6 +232,32 @@ export const categories = sqliteTable(
   },
   (table) => ({
     uxCategoriesName: uniqueIndex('ux_categories_name').on(table.name),
+  }),
+);
+
+/**
+ * review_decisions — one row per (householdId, itemType, itemId) decision.
+ * Created in story-004-002 so the queue anti-join predicate has a live table.
+ * story-004-003 writes to this table; story-004-002 reads it for the anti-join.
+ * payload_json stores correction detail for 'correct' decisions (added in 0004 migration).
+ */
+export const reviewDecisions = sqliteTable(
+  'review_decisions',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id').notNull(),
+    itemType: text('item_type').notNull(),
+    itemId: text('item_id').notNull(),
+    decision: text('decision', { enum: ['confirm', 'correct', 'dismiss'] }).notNull(),
+    payloadJson: text('payload_json'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxReviewDecisionsItem: uniqueIndex('ux_review_decisions_item').on(
+      table.householdId,
+      table.itemType,
+      table.itemId,
+    ),
   }),
 );
 
