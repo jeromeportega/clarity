@@ -94,6 +94,7 @@ export interface MatchRecord {
   id: string;
   type: MatchType;
   transactionId?: string;
+  transactionIds?: string[]; // all constituent bank-line IDs for split matches (order_bank_split)
   orderId?: string;
   orderItemId?: string;
   receiptId?: string;

@@ -84,6 +84,35 @@ export const FIXTURE_INPUTS: ReconcileInputs = {
       normalizedMerchant: 'WHOLE FOODS MARKET',
       lastFour: '1234',
     },
+    // Amazon bank lines required for order-matching AC (FR-2).
+    // bank-line-008: direct single-charge match for order-001 (4298¢).
+    {
+      id: 'bank-line-008',
+      accountId: 'fixture-account-001',
+      postedDate: '2024-01-23',
+      amountCents: -4298,
+      direction: 'debit',
+      normalizedMerchant: 'AMAZON',
+    },
+    // bank-line-009 + bank-line-010: split-shipment pair for order-005 (4000+3000=7000¢).
+    // Each charge is > tipAdjustmentToleranceCents (1500¢) away from the order total (7000¢)
+    // so they cannot direct-match individually, forcing the subset-sum path.
+    {
+      id: 'bank-line-009',
+      accountId: 'fixture-account-001',
+      postedDate: '2024-03-11',
+      amountCents: -4000,
+      direction: 'debit',
+      normalizedMerchant: 'AMAZON',
+    },
+    {
+      id: 'bank-line-010',
+      accountId: 'fixture-account-001',
+      postedDate: '2024-03-13',
+      amountCents: -3000,
+      direction: 'debit',
+      normalizedMerchant: 'AMAZON',
+    },
   ],
 
   orders: [
@@ -158,6 +187,31 @@ export const FIXTURE_INPUTS: ReconcileInputs = {
           shipmentId: 'SHIP-004',
           description: 'Phone Case',
           amountCents: 1999,
+          isReturn: false,
+        },
+      ],
+    },
+    {
+      // Split-shipment order: two separate Amazon charges (bank-line-009 + bank-line-010)
+      // sum to 7000¢. Each individual charge is > tipAdjustmentToleranceCents away from
+      // the total, so only the subset-sum path resolves this order.
+      id: 'order-005',
+      externalOrderId: 'AMZN-FIXTURE-005',
+      orderDate: '2024-03-12',
+      orderTotalCents: 7000,
+      items: [
+        {
+          id: 'order-item-005a',
+          shipmentId: 'SHIP-005A',
+          description: 'Mechanical Keyboard',
+          amountCents: 4000,
+          isReturn: false,
+        },
+        {
+          id: 'order-item-005b',
+          shipmentId: 'SHIP-005B',
+          description: 'Desk Mat',
+          amountCents: 3000,
           isReturn: false,
         },
       ],
