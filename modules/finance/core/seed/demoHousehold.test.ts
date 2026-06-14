@@ -82,7 +82,10 @@ describe('seedDemoHousehold', () => {
       expect(await rowCount(receiptItems)).toBe(1);
       expect(await rowCount(orders)).toBe(2);
       expect(await rowCount(orderItems)).toBe(2);
-      expect(await rowCount(matches)).toBe(3);
+      // The 3 curated matches PLUS engine-produced item-level matches from the
+      // composed reconcile() run (the seed now persists real reconciliation
+      // output). At least the 3 curated rows are always present.
+      expect(await rowCount(matches)).toBeGreaterThanOrEqual(3);
     });
 
     it('returns the DemoSeedResult with accurate counts', async () => {
@@ -102,14 +105,17 @@ describe('seedDemoHousehold', () => {
     it('at least one transaction is matched to an order/receipt item', async () => {
       await seedDemoHousehold(db);
 
-      // txn-demo-001 → oi-demo-001 (status='matched') is the confirmed pair
-      const confirmed = await db
+      // txn-demo-001 → oi-demo-001 (status='matched') is the curated confirmed
+      // pair; the engine adds its own order_bank match for the same pair too.
+      const rows = await db
         .select()
         .from(matches)
         .where(eq(matches.transactionId, DEMO_TXN_1_ID));
-      expect(confirmed).toHaveLength(1);
-      expect(confirmed[0]?.orderItemId).toBe(DEMO_OI_1_ID);
-      expect(confirmed[0]?.status).toBe('matched');
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      const curated = rows.find((m) => m.id === DEMO_MATCH_1_ID);
+      expect(curated).toBeDefined();
+      expect(curated?.orderItemId).toBe(DEMO_OI_1_ID);
+      expect(curated?.status).toBe('matched');
     });
   });
 
@@ -181,6 +187,7 @@ describe('seedDemoHousehold', () => {
   describe('determinism and reproducibility', () => {
     it('is idempotent — re-running the seed does not add duplicate rows', async () => {
       await seedDemoHousehold(db);
+      const matchesAfterFirst = await rowCount(matches);
       await seedDemoHousehold(db);
 
       expect(await rowCount(households)).toBe(1);
@@ -190,7 +197,9 @@ describe('seedDemoHousehold', () => {
       expect(await rowCount(receiptItems)).toBe(1);
       expect(await rowCount(orders)).toBe(2);
       expect(await rowCount(orderItems)).toBe(2);
-      expect(await rowCount(matches)).toBe(3);
+      // Engine match rows use deterministic ids + onConflictDoNothing, so the
+      // second run adds nothing — count is stable across re-runs.
+      expect(await rowCount(matches)).toBe(matchesAfterFirst);
     });
 
     it('two fresh DBs produce identical row sets (hard-coded IDs, dates, amounts)', async () => {
@@ -294,7 +303,12 @@ describe('seedDemoHousehold', () => {
         .from(matches)
         .orderBy(asc(matches.id));
 
-      expect(matchRows).toEqual([
+      // The curated rows that mirror the stub gateway must be present with the
+      // expected statuses (engine-produced rows are additive and ignored here).
+      const curated = matchRows.filter((m) =>
+        [DEMO_MATCH_1_ID, DEMO_MATCH_2_ID, DEMO_MATCH_3_ID].includes(m.id),
+      );
+      expect(curated).toEqual([
         { id: DEMO_MATCH_1_ID, status: 'matched' },
         { id: DEMO_MATCH_2_ID, status: 'pending' },
         { id: DEMO_MATCH_3_ID, status: 'pending' },

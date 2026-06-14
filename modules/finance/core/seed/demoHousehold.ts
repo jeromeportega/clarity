@@ -2,6 +2,9 @@ import { count, inArray } from 'drizzle-orm';
 
 import { DEMO_HOUSEHOLD_ID } from '../scope';
 import { sha256Hex, transactionDedupKey } from '../idempotency/keys';
+import { reconcile } from '../reconcile/engine';
+import { DrizzleReconcileSink } from '../reconcile/sink';
+import type { ReconcileInputs } from '../reconcile/model';
 import type { FinanceDb } from '../../db/client';
 import {
   accounts,
@@ -290,6 +293,103 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
       },
     ])
     .onConflictDoNothing();
+
+  // 9. Run the real reconciliation pipeline over the seeded raw sources and
+  // persist the result. This is what gives the demo household REAL, DB-backed
+  // item-level rollups: the engine matches receipt-demo-001 ↔ txn-demo-002 and
+  // order-demo-001 ↔ txn-demo-001, classifies the merged items, and the sink
+  // stamps receipt_items.category_id + writes the engine's match rows.
+  //
+  // Inputs are built deterministically from the same constants seeded above
+  // (offline; no DB round-trip / no Date.now / no Math.random), using the frozen
+  // reconcile-model sign convention (bank debits negative).
+  const reconcileInputs: ReconcileInputs = {
+    householdId: DEMO_HOUSEHOLD_ID,
+    bankLines: [
+      {
+        id: DEMO_TXN_1_ID,
+        accountId: DEMO_ACCOUNT_ID,
+        postedDate: '2025-01-15',
+        amountCents: -1200,
+        direction: 'debit',
+        normalizedMerchant: 'AMAZON',
+      },
+      {
+        id: DEMO_TXN_2_ID,
+        accountId: DEMO_ACCOUNT_ID,
+        postedDate: '2025-01-20',
+        amountCents: -4999,
+        direction: 'debit',
+        normalizedMerchant: 'BEST BUY',
+      },
+      {
+        id: DEMO_TXN_3_ID,
+        accountId: DEMO_ACCOUNT_ID,
+        postedDate: '2025-02-10',
+        amountCents: -8750,
+        direction: 'debit',
+        normalizedMerchant: 'WHOLE FOODS',
+      },
+    ],
+    orders: [
+      {
+        id: DEMO_ORDER_1_ID,
+        externalOrderId: 'AMZN-DEMO-001',
+        orderDate: '2025-01-15',
+        orderTotalCents: 1200,
+        items: [
+          {
+            id: DEMO_OI_1_ID,
+            shipmentId: 'ship-demo-001',
+            description: 'Organic Apples 3lb Bag',
+            amountCents: 1200,
+            isReturn: false,
+          },
+        ],
+      },
+      {
+        id: DEMO_ORDER_2_ID,
+        externalOrderId: 'AMZN-DEMO-002',
+        orderDate: '2025-01-19',
+        orderTotalCents: 4999,
+        items: [
+          {
+            id: DEMO_OI_2_ID,
+            shipmentId: 'ship-demo-002',
+            description: 'USB-C Charging Cable',
+            amountCents: 4999,
+            isReturn: false,
+          },
+        ],
+      },
+    ],
+    receipts: [
+      {
+        id: DEMO_RECEIPT_1_ID,
+        merchant: 'Best Buy',
+        capturedAt: '2025-01-20',
+        totalCents: 4999,
+        items: [
+          {
+            id: DEMO_RI_1_ID,
+            description: 'Wireless Headphones',
+            amountCents: 4999,
+          },
+        ],
+      },
+      {
+        id: DEMO_RECEIPT_2_ID,
+        merchant: 'Corner Market',
+        capturedAt: '2025-01-14',
+        totalCents: 2000,
+        items: [],
+      },
+    ],
+    storeCreditAccruals: [],
+  };
+
+  const ledger = reconcile(reconcileInputs);
+  await new DrizzleReconcileSink(db).persist(DEMO_HOUSEHOLD_ID, ledger);
 
   // Derive actual counts by querying the specific IDs we attempted to insert.
   // onConflictDoNothing preserves pre-existing rows, so these counts reflect
