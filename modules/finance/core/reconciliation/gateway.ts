@@ -20,13 +20,16 @@ export type GatewayEnv = {
 };
 
 /**
- * Returns the stub when PUBLIC_DEMO_MODE=1 or RECON_BACKEND is not 'live'
- * (the default). Returns the live backend only when explicitly opted in via
- * RECON_BACKEND=live without public-mode override.
+ * Selects the reconciliation backend.
+ *
+ * RECON_BACKEND is the sole stub-vs-live switch: 'live' selects the DB-backed
+ * LiveReconciliationGateway; anything else (the default) selects the stub.
+ * PUBLIC_DEMO_MODE controls SCOPE/household only — it does NOT force the stub, so
+ * a public demo can be live-backed (PUBLIC_DEMO_MODE=1, RECON_BACKEND=live).
  */
 export function gatewayFor(env: GatewayEnv): ReconciliationGateway {
-  if (env.PUBLIC_DEMO_MODE === '1' || env.RECON_BACKEND !== 'live') {
-    return new StubReconciliationGateway();
+  if (env.RECON_BACKEND === 'live') {
+    return new LiveReconciliationGateway();
   }
-  return new LiveReconciliationGateway();
+  return new StubReconciliationGateway();
 }
