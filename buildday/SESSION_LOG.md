@@ -167,6 +167,23 @@ Durable supervisor state. Append continuously. On restart: re-read this +
   stall; fallback = per-story `loom retry`.
 - Migration ownership across parallel epics: H1=0000, H2=0001, H3=0002, H4=0003.
 
+## Live reconciliation backend wired (2026-06-14 ~08:10 PDT — task #9, operator-requested)
+
+- **PR #8:** composed `reconcile()` (matchers + dedup `mergeCounted` +
+  `reconcileRefunds` + classifier), implemented `DrizzleReconcileSink.persist()`,
+  fully implemented `LiveReconciliationGateway` (DB reads incl. item-level
+  rollups via truespend/assemble), fixed `gatewayFor` (PUBLIC_DEMO_MODE = scope
+  only; RECON_BACKEND=live selects live), and the demo seed now runs the engine
+  + persists. **npm test 830 (+8), next build green.**
+- **Redeployed** with `RECON_BACKEND=live` + Turso reseeded (engine run).
+  **Live verified:** /api/true-spend now returns the Electronics category with
+  **real item-level entries** (Wireless Headphones $49.99) — closes the M4 −1
+  gap; /api/queue 200 (3 real items); e2e 2/2 green.
+- **Minor cosmetic (non-blocking):** the real demo dataset is thin (1 categorized
+  receipt item → 1 category) and the rollup item list includes a duplicate
+  bank-txn row from an ambiguous match. Optional future polish: richer seed +
+  dedup the rollup item list.
+
 ## Final verification (fresh subagent, 2026-06-14 ~07:30 PDT)
 
 - **Global gates 28/30; milestones 99/100.** Privacy **8/8** (clean — searched
