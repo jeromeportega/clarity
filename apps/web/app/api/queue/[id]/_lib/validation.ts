@@ -1,5 +1,5 @@
-import type { QueueItemType } from '../../../../../../../../modules/finance/core/queue/types';
-import type { CorrectionVariant } from '../../../../../../../../modules/finance/core/corrections/apply';
+import type { QueueItemType } from '../../../../../../../modules/finance/core/queue/types';
+import type { CorrectionVariant } from '../../../../../../../modules/finance/core/corrections/apply';
 
 export const VALID_ITEM_TYPES: readonly QueueItemType[] = [
   'sku_resolution',

@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
-import { fetchEvidence } from '../../../lib/truespend';
-import type { EvidenceRef } from '../../../../modules/finance/core/evidence/types';
+import { fetchEvidence } from '../../../../lib/truespend';
+import type { EvidenceRef } from '../../../../../../modules/finance/core/evidence/types';
+
+export const dynamic = 'force-dynamic';
 
 interface EvidencePageProps {
   params: { itemId: string } | Promise<{ itemId: string }>;

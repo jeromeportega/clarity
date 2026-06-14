@@ -146,22 +146,25 @@ export async function processReceipt(
     needsReview,
   });
 
-  const newItems: NewReceiptItem[] = extracted.lineItems.map((li, i) => ({
-    receiptId: receipt.id,
-    lineNo: i + 1,
-    sku: li.sku,
-    rawDescription: li.rawDescription,
-    canonicalName: resolutions[i].canonicalName,
-    categoryId: resolutions[i].category,
-    quantity: li.quantity,
-    unitPriceCents: li.unitPrice,
-    linePriceCents: li.linePrice,
-    discountCents: li.discount,
-    nameConfidence: resolutions[i].nameConfidence,
-    categoryConfidence: resolutions[i].categoryConfidence,
-    refundDestination: null,
-    needsReview: itemNeedsReview[i],
-  }));
+  const newItems: NewReceiptItem[] = extracted.lineItems.map((li, i) => {
+    const res = resolutions[i]!;
+    return {
+      receiptId: receipt.id,
+      lineNo: i + 1,
+      sku: li.sku,
+      rawDescription: li.rawDescription,
+      canonicalName: res.canonicalName,
+      categoryId: res.category,
+      quantity: li.quantity,
+      unitPriceCents: li.unitPrice,
+      linePriceCents: li.linePrice,
+      discountCents: li.discount,
+      nameConfidence: res.nameConfidence,
+      categoryConfidence: res.categoryConfidence,
+      refundDestination: null,
+      needsReview: itemNeedsReview[i] ?? false,
+    };
+  });
 
   const items =
     newItems.length > 0 ? await deps.store.insertReceiptItems(newItems) : [];

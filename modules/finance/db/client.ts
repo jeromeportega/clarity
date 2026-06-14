@@ -87,7 +87,7 @@ function applyMigrations(client: Client): void {
  * migration applied. Each call is isolated (unique temp file), and `cleanup()`
  * closes the client and removes the file with no leak.
  */
-export function createTestDb(): { db: FinanceDb; cleanup: () => void } {
+export function createTestDb(): { db: FinanceDb; cleanup: () => void; file: string } {
   const file = tempDbFile();
   const client = openClient(`file:${file}`);
   const db = drizzle(client);
@@ -104,5 +104,5 @@ export function createTestDb(): { db: FinanceDb; cleanup: () => void } {
     }
   };
 
-  return { db, cleanup };
+  return { db, cleanup, file };
 }
