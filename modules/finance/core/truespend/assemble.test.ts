@@ -9,7 +9,17 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { FinanceDb } from '../../db/client';
-import { accounts, categories, households, receiptItems, receipts } from '../../db/schema';
+import {
+  accounts,
+  categories,
+  households,
+  matches,
+  orderItems,
+  orders,
+  receiptItems,
+  receipts,
+  transactions,
+} from '../../db/schema';
 import type {
   AmbiguousMatchGroup,
   HouseholdScope,
@@ -178,6 +188,31 @@ describe('assembleBreakdown', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Month format validation: invalid month is treated as absent
+  // -------------------------------------------------------------------------
+
+  it('invalid month format is treated as absent (returns all months)', async () => {
+    const rollup: SpendRollup = {
+      key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' },
+      netCents: -500,
+    };
+    const gw = new ControllableGateway([rollup]);
+
+    // A wildcard-like month should NOT expand to all rows; it is treated as absent
+    const result = await assembleBreakdown(SCOPE, gw, db, '%');
+    // Gateway is called without month filter → returns all rollups
+    expect(result.categories.length).toBeGreaterThanOrEqual(1);
+    // No LIKE wildcard abuse: the returned month is empty string (no valid month provided)
+    expect(result.month).toBe('');
+  });
+
+  it('well-formed month is preserved in the result', async () => {
+    const gw = new ControllableGateway([]);
+    const result = await assembleBreakdown(SCOPE, gw, db, '2025-07');
+    expect(result.month).toBe('2025-07');
+  });
+
+  // -------------------------------------------------------------------------
   // Totals come from gw.getRollups — NOT recomputed from DB items
   // -------------------------------------------------------------------------
 
@@ -223,6 +258,126 @@ describe('assembleBreakdown', () => {
     expect(cat.items[0]!.id).toBe(itemId);
     expect(cat.items[0]!.description).toBe('Organic Apples');
     expect(cat.items[0]!.amountCents).toBe(-399);
+  });
+
+  // -------------------------------------------------------------------------
+  // Category drill-down: order items via matches → receipt_items → categories
+  // -------------------------------------------------------------------------
+
+  it('order items appear in drill-down when matched to a categorised receipt item', async () => {
+    const groceryCatId = await seedCategory(db, 'groceries');
+    const receiptId = await seedReceipt(db, '2025-01');
+    const riId = await seedReceiptItem(db, receiptId, groceryCatId, 1, -399, 'Olive Oil');
+
+    // Seed account + transaction (required for matches.transactionId FK)
+    const acctId = randomUUID();
+    await db.insert(accounts).values({ id: acctId, householdId: HOUSEHOLD_ID, name: 'Checking' });
+    const txnId = randomUUID();
+    await db.insert(transactions).values({
+      id: txnId,
+      accountId: acctId,
+      postedDate: '2025-01-10',
+      amountCents: -4999,
+      direction: 'debit',
+      normalizedMerchant: 'AMAZON',
+      sourceRowHash: `hash-${randomUUID()}`,
+      dedupKey: `dedup-${randomUUID()}`,
+    });
+
+    // Seed order + order item
+    const orderId = randomUUID();
+    await db.insert(orders).values({
+      id: orderId,
+      householdId: HOUSEHOLD_ID,
+      source: 'amazon',
+      externalOrderId: `AMZ-${randomUUID()}`,
+      orderDate: '2025-01-10',
+      currency: 'USD',
+    });
+    const oiId = randomUUID();
+    await db.insert(orderItems).values({
+      id: oiId,
+      orderId,
+      shipmentId: 'SHIP-001',
+      itemSeq: 1,
+      description: 'Echo Dot',
+      quantity: 1,
+      amountCents: -4999,
+      sourceRowHash: `hash-${randomUUID()}`,
+    });
+
+    // Seed match linking order item to receipt item (provides the category)
+    await db.insert(matches).values({
+      id: randomUUID(),
+      transactionId: txnId,
+      orderItemId: oiId,
+      receiptItemId: riId,
+      status: 'matched',
+    });
+
+    const rollups: SpendRollup[] = [
+      { key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' }, netCents: -5398 },
+    ];
+    const gw = new ControllableGateway(rollups);
+
+    const result = await assembleBreakdown(SCOPE, gw, db, '2025-01');
+    const grocery = result.categories.find((c) => c.category === 'groceries');
+    expect(grocery).toBeDefined();
+
+    const orderItem = grocery!.items.find((i) => i.id === oiId);
+    expect(orderItem).toBeDefined();
+    expect(orderItem!.description).toBe('Echo Dot');
+    expect(orderItem!.amountCents).toBe(-4999);
+    expect(orderItem!.category).toBe('groceries');
+  });
+
+  // -------------------------------------------------------------------------
+  // Category drill-down: transactions via matches → receipt_items → categories
+  // -------------------------------------------------------------------------
+
+  it('transactions appear in drill-down when matched to a categorised receipt item', async () => {
+    const groceryCatId = await seedCategory(db, 'groceries');
+    const receiptId = await seedReceipt(db, '2025-01');
+    const riId = await seedReceiptItem(db, receiptId, groceryCatId, 1, -399, 'Olive Oil');
+
+    // Seed account + transaction
+    const acctId = randomUUID();
+    await db.insert(accounts).values({ id: acctId, householdId: HOUSEHOLD_ID, name: 'Checking' });
+    const txnId = randomUUID();
+    await db.insert(transactions).values({
+      id: txnId,
+      accountId: acctId,
+      postedDate: '2025-01-20',
+      amountCents: -8750,
+      direction: 'debit',
+      normalizedMerchant: 'WHOLE FOODS',
+      sourceRowHash: `hash-${randomUUID()}`,
+      dedupKey: `dedup-${randomUUID()}`,
+    });
+
+    // Seed match linking transaction to receipt item (provides the category)
+    await db.insert(matches).values({
+      id: randomUUID(),
+      transactionId: txnId,
+      orderItemId: null,
+      receiptItemId: riId,
+      status: 'matched',
+    });
+
+    const rollups: SpendRollup[] = [
+      { key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' }, netCents: -9149 },
+    ];
+    const gw = new ControllableGateway(rollups);
+
+    const result = await assembleBreakdown(SCOPE, gw, db, '2025-01');
+    const grocery = result.categories.find((c) => c.category === 'groceries');
+    expect(grocery).toBeDefined();
+
+    const txnItem = grocery!.items.find((i) => i.id === txnId);
+    expect(txnItem).toBeDefined();
+    expect(txnItem!.description).toBe('WHOLE FOODS');
+    expect(txnItem!.amountCents).toBe(-8750);
+    expect(txnItem!.category).toBe('groceries');
   });
 
   // -------------------------------------------------------------------------

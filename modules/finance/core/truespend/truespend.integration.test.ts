@@ -331,6 +331,30 @@ describe('GET /api/true-spend — month filter boundary', () => {
     const res = await getTrueSpend(makeTrueSpendRequest('2025-01'));
     expect(res.status).toBe(200);
   });
+
+  it('rejects a wildcard month with 400', async () => {
+    const gw = new MutableGateway([]);
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(gw);
+
+    const res = await getTrueSpend(new Request('http://localhost/api/true-spend?month=%'));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-YYYY-MM month string with 400', async () => {
+    const gw = new MutableGateway([]);
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(gw);
+
+    const res = await getTrueSpend(new Request('http://localhost/api/true-spend?month=2025%'));
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a well-formed YYYY-MM month', async () => {
+    const gw = new MutableGateway([]);
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(gw);
+
+    const res = await getTrueSpend(makeTrueSpendRequest('2025-06'));
+    expect(res.status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------

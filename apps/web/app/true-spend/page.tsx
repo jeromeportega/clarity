@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import { fetchBreakdown, resolveHouseholdScope } from '../../lib/truespend';
 import { TrueSpendView } from '../components/truespend/TrueSpendView';
 
@@ -6,6 +7,10 @@ interface TrueSpendPageProps {
 }
 
 export default async function TrueSpendPage({ searchParams }: TrueSpendPageProps) {
+  if (!process.env.PUBLIC_DEMO_MODE) {
+    notFound();
+  }
+
   const params = searchParams instanceof Promise ? await searchParams : searchParams;
   const month = params.month;
 

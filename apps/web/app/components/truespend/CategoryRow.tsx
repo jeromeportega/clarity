@@ -62,11 +62,9 @@ export function CategoryRow({ category }: CategoryRowProps) {
             </td>
             <td className="py-2 px-4 text-right">
               <a
-                href={`/api/true-spend/evidence/${item.id}`}
+                href={`/true-spend/evidence/${item.id}`}
                 aria-label={`View evidence for ${item.description}`}
                 className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
-                target="_blank"
-                rel="noreferrer"
                 data-testid="evidence-link"
               >
                 Evidence

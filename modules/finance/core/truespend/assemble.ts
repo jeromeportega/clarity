@@ -1,6 +1,6 @@
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, isNotNull, like } from 'drizzle-orm';
 import type { FinanceDb } from '../../db/client';
-import { receiptItems, receipts, categories } from '../../db/schema';
+import { receiptItems, receipts, categories, orderItems, orders, matches, transactions, accounts } from '../../db/schema';
 import type { ReconciliationGateway } from '../reconciliation/types';
 import type { HouseholdScope } from '../scope';
 
@@ -22,6 +22,8 @@ export interface TrueSpendBreakdown {
   categories: TrueSpendCategory[];
 }
 
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
 /**
  * Assemble the true-spend breakdown for a household / month.
  *
@@ -29,8 +31,8 @@ export interface TrueSpendBreakdown {
  * via recomputeRollups — do NOT recompute from raw items here). Items are
  * fetched from the DB for the drill-down path; they do not affect the total.
  *
- * When month is omitted or empty, all months are returned and items are not
- * filtered by month.
+ * month must be YYYY-MM; values that fail validation are treated as absent
+ * (no filter) to prevent LIKE-wildcard abuse.
  */
 export async function assembleBreakdown(
   scope: HouseholdScope,
@@ -38,13 +40,14 @@ export async function assembleBreakdown(
   db: FinanceDb,
   month?: string,
 ): Promise<TrueSpendBreakdown> {
-  const rollups = await gw.getRollups(scope, month ? { month } : undefined);
+  const safeMonth = month && MONTH_RE.test(month) ? month : undefined;
+  const rollups = await gw.getRollups(scope, safeMonth ? { month: safeMonth } : undefined);
 
   if (rollups.length === 0) {
-    return { month: month ?? '', categories: [] };
+    return { month: safeMonth ?? '', categories: [] };
   }
 
-  const items = await queryReceiptItems(scope, db, month);
+  const items = await queryItems(scope, db, safeMonth);
 
   const itemsByCategory = new Map<string, TrueSpendItem[]>();
   for (const item of items) {
@@ -59,20 +62,42 @@ export async function assembleBreakdown(
     items: itemsByCategory.get(r.key.category) ?? [],
   }));
 
-  return { month: month ?? '', categories: cats };
+  return { month: safeMonth ?? '', categories: cats };
 }
 
-async function queryReceiptItems(
+/**
+ * Fetch contributing items for the drill-down across all three source tables:
+ *   1. receipt_items (direct categoryId)
+ *   2. order_items (category via matches → receipt_items)
+ *   3. transactions (category via matches → receipt_items)
+ *
+ * Items from tables 2 and 3 only appear when a match exists linking them to a
+ * categorised receipt_item; unmatched order/transaction items have no category
+ * assignment in H1 and are correctly absent.
+ */
+async function queryItems(
   scope: HouseholdScope,
   db: FinanceDb,
   month: string | undefined,
 ): Promise<TrueSpendItem[]> {
   const monthFilter = month ? `${month}-%` : undefined;
 
+  const [riRows, oiRows, txRows] = await Promise.all([
+    queryReceiptItems(scope, db, monthFilter),
+    queryOrderItems(scope, db, monthFilter),
+    queryTransactionItems(scope, db, monthFilter),
+  ]);
+
+  return [...riRows, ...oiRows, ...txRows];
+}
+
+async function queryReceiptItems(
+  scope: HouseholdScope,
+  db: FinanceDb,
+  monthFilter: string | undefined,
+): Promise<TrueSpendItem[]> {
   const conditions = [eq(receipts.householdId, scope.householdId)];
-  if (monthFilter) {
-    conditions.push(like(receipts.purchasedAt, monthFilter));
-  }
+  if (monthFilter) conditions.push(like(receipts.purchasedAt, monthFilter));
 
   const rows = await db
     .select({
@@ -91,6 +116,74 @@ async function queryReceiptItems(
     id: row.id,
     description: row.canonicalName ?? row.rawDescription,
     amountCents: row.linePriceCents,
+    category: row.categoryName,
+  }));
+}
+
+async function queryOrderItems(
+  scope: HouseholdScope,
+  db: FinanceDb,
+  monthFilter: string | undefined,
+): Promise<TrueSpendItem[]> {
+  const conditions = [
+    eq(orders.householdId, scope.householdId),
+    isNotNull(matches.receiptItemId),
+    isNotNull(receiptItems.categoryId),
+  ];
+  if (monthFilter) conditions.push(like(orders.orderDate, monthFilter));
+
+  const rows = await db
+    .select({
+      id: orderItems.id,
+      description: orderItems.description,
+      amountCents: orderItems.amountCents,
+      categoryName: categories.name,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orderItems.orderId, orders.id))
+    .innerJoin(matches, eq(matches.orderItemId, orderItems.id))
+    .innerJoin(receiptItems, eq(matches.receiptItemId, receiptItems.id))
+    .innerJoin(categories, eq(receiptItems.categoryId, categories.id))
+    .where(and(...conditions));
+
+  return rows.map((row) => ({
+    id: row.id,
+    description: row.description,
+    amountCents: row.amountCents,
+    category: row.categoryName,
+  }));
+}
+
+async function queryTransactionItems(
+  scope: HouseholdScope,
+  db: FinanceDb,
+  monthFilter: string | undefined,
+): Promise<TrueSpendItem[]> {
+  const conditions = [
+    eq(accounts.householdId, scope.householdId),
+    isNotNull(matches.receiptItemId),
+    isNotNull(receiptItems.categoryId),
+  ];
+  if (monthFilter) conditions.push(like(transactions.postedDate, monthFilter));
+
+  const rows = await db
+    .select({
+      id: transactions.id,
+      merchant: transactions.normalizedMerchant,
+      amountCents: transactions.amountCents,
+      categoryName: categories.name,
+    })
+    .from(transactions)
+    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+    .innerJoin(matches, eq(matches.transactionId, transactions.id))
+    .innerJoin(receiptItems, eq(matches.receiptItemId, receiptItems.id))
+    .innerJoin(categories, eq(receiptItems.categoryId, categories.id))
+    .where(and(...conditions));
+
+  return rows.map((row) => ({
+    id: row.id,
+    description: row.merchant,
+    amountCents: row.amountCents,
     category: row.categoryName,
   }));
 }
