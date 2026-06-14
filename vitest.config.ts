@@ -24,6 +24,9 @@ export default defineConfig({
             '**/dist/**',
             '**/.next/**',
             '**/*.eval.test.ts',
+            // Playwright golden-path E2E lives in ./e2e and is its own gate
+            // (`npm run e2e`). Keep it out of the offline Vitest unit gate.
+            'e2e/**',
           ],
           // H1's harness runs fully offline against file:/temp libSQL DBs.
           testTimeout: 20_000,
