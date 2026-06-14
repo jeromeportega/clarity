@@ -179,7 +179,7 @@ function makeRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TEST_TOKEN}`,
+      'x-reconcile-token': TEST_TOKEN,
     },
     body: JSON.stringify(body),
   });
@@ -326,7 +326,7 @@ describe('anti-stub integration: input validation', () => {
     const res = await postConfirm(
       new Request('http://localhost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({ itemType: 'not_a_real_type' }),
       }),
       makeContext('some-id'),
@@ -338,7 +338,7 @@ describe('anti-stub integration: input validation', () => {
     const res = await postCorrect(
       new Request('http://localhost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'notAVariant' } }),
       }),
       makeContext('some-id'),
@@ -350,7 +350,7 @@ describe('anti-stub integration: input validation', () => {
     const res = await postCorrect(
       new Request('http://localhost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({
           itemType: 'sku_resolution',
           correction: { variant: 'editResolution', skuOrAbbrev: 'X', canonicalName: 'Y', category: 'groceries' },
@@ -365,7 +365,7 @@ describe('anti-stub integration: input validation', () => {
     const res = await postCorrect(
       new Request('http://localhost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'pickCategoryId' } }),
       }),
       makeContext('some-id'),
@@ -377,7 +377,7 @@ describe('anti-stub integration: input validation', () => {
     const res = await postCorrect(
       new Request('http://localhost', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'pickMatchCandidateId' } }),
       }),
       makeContext('some-id'),

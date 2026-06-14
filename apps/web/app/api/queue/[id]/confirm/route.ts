@@ -4,18 +4,14 @@ import { gatewayFor } from '../../../../../../../modules/finance/core/reconcilia
 import { applyCorrection } from '../../../../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
 import { VALID_ITEM_TYPES, isValidItemType } from '../_lib/validation';
+import { requireMutationToken } from '../../../../lib/auth/token';
 
 export async function POST(
   request: Request,
   context: { params: { id: string } | Promise<{ id: string }> },
 ): Promise<Response> {
-  const token = process.env.RECONCILE_MUTATION_TOKEN;
-  if (token) {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${token}`) {
-      return new Response('Unauthorized', { status: 401 });
-    }
-  }
+  const denied = requireMutationToken(request);
+  if (denied) return denied;
 
   const params = context.params instanceof Promise
     ? await context.params
