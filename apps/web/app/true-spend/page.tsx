@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { fetchBreakdown, resolveHouseholdScope } from '../../lib/truespend';
 import { TrueSpendView } from '../components/truespend/TrueSpendView';
 
+export const dynamic = 'force-dynamic';
+
 interface TrueSpendPageProps {
   searchParams: { month?: string } | Promise<{ month?: string }>;
 }

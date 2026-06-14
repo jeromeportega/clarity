@@ -1,4 +1,4 @@
-import { closeSync, mkdtempSync, openSync, readdirSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -88,15 +88,16 @@ describe('createTestDb', () => {
   });
 
   it('cleanup() removes the temp file with no leak', async () => {
-    const before = new Set(tmpDbFiles());
-    const { db, cleanup } = createTestDb();
+    // Assert on THIS db's own file (isolation-safe) rather than counting all
+    // clarity-finance-*.db files in the shared tmpdir, which races other test
+    // files using createTestDb() under vitest's parallel execution.
+    const { db, cleanup, file } = createTestDb();
     await db.run(sql`select 1`);
-
-    const created = tmpDbFiles().filter((f) => !before.has(f));
-    expect(created.length).toBe(1);
+    expect(existsSync(file)).toBe(true);
 
     cleanup();
-    const remaining = tmpDbFiles().filter((f) => !before.has(f));
-    expect(remaining).toEqual([]);
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      expect(existsSync(`${file}${suffix}`)).toBe(false);
+    }
   });
 });
