@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -52,6 +53,20 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
   const [canonicalName, setCanonicalName] = React.useState('');
   const [category, setCategory] = React.useState('groceries');
 
+  // Reset all form state each time the dialog opens so stale input is never shown.
+  React.useEffect(() => {
+    if (open) {
+      setMode('editResolution');
+      setCategoryId('');
+      setCandidateId('');
+      setStore('');
+      setSkuOrAbbrev('');
+      setCanonicalName('');
+      setCategory('groceries');
+      setSubmitError(null);
+    }
+  }, [open]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
@@ -79,9 +94,10 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Correct item</DialogTitle>
+          <DialogDescription>{item.reason}</DialogDescription>
         </DialogHeader>
 
         {/* Mode selector — radiogroup for correct ARIA ownership */}
@@ -114,8 +130,6 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
             Pick match
           </button>
         </div>
-
-        <p className="text-sm text-muted-foreground">{item.reason}</p>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-3">
           {mode === 'pickCategoryId' && (

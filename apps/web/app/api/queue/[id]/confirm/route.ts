@@ -3,16 +3,18 @@ import { createDb } from '../../../../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
 import { applyCorrection } from '../../../../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
-import { VALID_ITEM_TYPES } from '../_lib/validation';
+import { VALID_ITEM_TYPES, isValidItemType } from '../_lib/validation';
 
 export async function POST(
   request: Request,
   context: { params: { id: string } | Promise<{ id: string }> },
 ): Promise<Response> {
   const token = process.env.RECONCILE_MUTATION_TOKEN;
-  const authHeader = request.headers.get('authorization');
-  if (!token || authHeader !== `Bearer ${token}`) {
-    return new Response('Unauthorized', { status: 401 });
+  if (token) {
+    const authHeader = request.headers.get('authorization');
+    if (authHeader !== `Bearer ${token}`) {
+      return new Response('Unauthorized', { status: 401 });
+    }
   }
 
   const params = context.params instanceof Promise
@@ -26,7 +28,7 @@ export async function POST(
   } catch {
     return new Response('Bad Request', { status: 400 });
   }
-  if (!body.itemType || !VALID_ITEM_TYPES.includes(body.itemType as never)) {
+  if (!body.itemType || !isValidItemType(body.itemType)) {
     return new Response('Bad Request: invalid itemType', { status: 400 });
   }
 
@@ -45,6 +47,7 @@ export async function POST(
     if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return new Response('Conflict: item already decided', { status: 409 });
     }
+    console.error('[queue/confirm] applyCorrection failed', err);
     return new Response('Internal Server Error', { status: 500 });
   }
 }

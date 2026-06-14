@@ -31,6 +31,18 @@ import { DEMO_HOUSEHOLD_ID } from '../scope';
 import { eq } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
+// Mock gatewayFor so we can inject a spy into the route handlers.
+// Route handlers call gatewayFor() internally; mocking it here intercepts that
+// call so the same gateway instance is observable from the test.
+// ---------------------------------------------------------------------------
+
+vi.mock('../reconciliation/gateway', () => ({
+  gatewayFor: vi.fn(),
+}));
+
+import * as gatewayModule from '../reconciliation/gateway';
+
+// ---------------------------------------------------------------------------
 // Import the actual route handlers (anti-stub requirement)
 // ---------------------------------------------------------------------------
 // These are the real production route files — not mocks, not wrappers.
@@ -41,8 +53,7 @@ import { POST as postConfirm } from '../../../../apps/web/app/api/queue/[id]/con
 import { POST as postDismiss } from '../../../../apps/web/app/api/queue/[id]/dismiss/route';
 
 // ---------------------------------------------------------------------------
-// Null gateway — real assertions are on DB state, not gateway calls.
-// recomputeRollups is a spy so we can assert propagation.
+// Null gateway — real assertions are on DB state and call-count.
 // ---------------------------------------------------------------------------
 
 class NullGateway implements ReconciliationGateway {
@@ -160,8 +171,11 @@ function nextLineNo(): number {
   return lineNoCounter++;
 }
 
-function makeRequest(body: unknown): Request {
-  return new Request('http://localhost/api/queue/test/correct', {
+function makeRequest(
+  body: unknown,
+  action: 'confirm' | 'correct' | 'dismiss' = 'correct',
+): Request {
+  return new Request(`http://localhost/api/queue/test/${action}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -181,13 +195,15 @@ function makeContext(itemId: string) {
 
 describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)', () => {
   let skuItemId: string;
+  let routeGw: NullGateway;
 
   beforeAll(async () => {
     skuItemId = await seedReceiptItem(nextLineNo());
+    routeGw = new NullGateway();
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(routeGw);
   });
 
-  it('persists decision, upserts sku_dictionary at confidence=1.0, removes item from queue', async () => {
-    const nullGw = new NullGateway();
+  it('persists decision, upserts sku_dictionary at confidence=1.0, removes item from queue, propagates rollup', async () => {
     const body = {
       itemType: 'sku_resolution',
       correction: {
@@ -199,14 +215,14 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
       },
     };
 
-    const res = await postCorrect(makeRequest(body), makeContext(skuItemId));
+    const res = await postCorrect(makeRequest(body, 'correct'), makeContext(skuItemId));
 
     expect(res.status).toBe(200);
     const json = await res.json() as { removedItemId: string };
     expect(json.removedItemId).toBe(skuItemId);
 
     // (a) Item no longer appears in assembleQueue
-    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
     expect(queueItems.map((i) => i.id)).not.toContain(skuItemId);
 
     // (b) sku_dictionary has the new canonical entry at confidence 1.0
@@ -226,6 +242,10 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
     );
     expect(decRows).toHaveLength(1);
     expect(decRows[0]!.decision).toBe('correct');
+
+    // (d) rollup propagation: route handler called recomputeRollups with [skuItemId]
+    expect(routeGw.recomputeRollupsCalls).toHaveLength(1);
+    expect(routeGw.recomputeRollupsCalls[0]!.ids).toEqual([skuItemId]);
   });
 });
 
@@ -234,20 +254,20 @@ describe('anti-stub integration: POST /api/queue/[id]/confirm', () => {
 
   beforeAll(async () => {
     confirmItemId = await seedReceiptItem(nextLineNo());
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
   });
 
   it('item leaves the queue; decision row written, no sku_dictionary write', async () => {
-    const nullGw = new NullGateway();
     const body = { itemType: 'sku_resolution' };
 
-    const res = await postConfirm(makeRequest(body), makeContext(confirmItemId));
+    const res = await postConfirm(makeRequest(body, 'confirm'), makeContext(confirmItemId));
 
     expect(res.status).toBe(200);
     const json = await res.json() as { removedItemId: string };
     expect(json.removedItemId).toBe(confirmItemId);
 
     // Item no longer in queue
-    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
     expect(queueItems.map((i) => i.id)).not.toContain(confirmItemId);
 
     // Decision row
@@ -264,24 +284,28 @@ describe('anti-stub integration: POST /api/queue/[id]/dismiss', () => {
 
   beforeAll(async () => {
     dismissItemId = await seedReceiptItem(nextLineNo());
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
   });
 
   it('item leaves the queue', async () => {
-    const nullGw = new NullGateway();
     const body = { itemType: 'sku_resolution' };
 
-    const res = await postDismiss(makeRequest(body), makeContext(dismissItemId));
+    const res = await postDismiss(makeRequest(body, 'dismiss'), makeContext(dismissItemId));
 
     expect(res.status).toBe(200);
     const json = await res.json() as { removedItemId: string };
     expect(json.removedItemId).toBe(dismissItemId);
 
-    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
     expect(queueItems.map((i) => i.id)).not.toContain(dismissItemId);
   });
 });
 
 describe('anti-stub integration: auth guard', () => {
+  beforeAll(() => {
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
   it('returns 401 without a valid token', async () => {
     const req = new Request('http://localhost/api/queue/test/correct', {
       method: 'POST',
@@ -294,6 +318,10 @@ describe('anti-stub integration: auth guard', () => {
 });
 
 describe('anti-stub integration: input validation', () => {
+  beforeAll(() => {
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
   it('returns 400 for invalid itemType', async () => {
     const res = await postConfirm(
       new Request('http://localhost', {
@@ -312,6 +340,45 @@ describe('anti-stub integration: input validation', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
         body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'notAVariant' } }),
+      }),
+      makeContext('some-id'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for editResolution with missing store field', async () => {
+    const res = await postCorrect(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({
+          itemType: 'sku_resolution',
+          correction: { variant: 'editResolution', skuOrAbbrev: 'X', canonicalName: 'Y', category: 'groceries' },
+        }),
+      }),
+      makeContext('some-id'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for pickCategoryId with missing categoryId', async () => {
+    const res = await postCorrect(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'pickCategoryId' } }),
+      }),
+      makeContext('some-id'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for pickMatchCandidateId with missing candidateId', async () => {
+    const res = await postCorrect(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'pickMatchCandidateId' } }),
       }),
       makeContext('some-id'),
     );

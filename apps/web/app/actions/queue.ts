@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { createDb } from '../../../modules/finance/db/client';
 import { gatewayFor } from '../../../modules/finance/core/reconciliation/gateway';
 import {
@@ -10,6 +11,18 @@ import { DEMO_HOUSEHOLD_ID } from '../../../modules/finance/core/scope';
 import type { QueueItemType } from '../../../modules/finance/core/queue/types';
 
 const SCOPE = { householdId: DEMO_HOUSEHOLD_ID };
+
+// When RECONCILE_MUTATION_TOKEN is configured (production), Server Actions require
+// the same Bearer token. Without the token set (dev / demo), they are open — Next.js
+// CSRF protection applies in all cases.
+async function requireMutationToken(): Promise<void> {
+  const token = process.env.RECONCILE_MUTATION_TOKEN;
+  if (!token) return;
+  const h = await headers();
+  if (h.get('authorization') !== `Bearer ${token}`) {
+    throw new Error('Unauthorized');
+  }
+}
 
 function getDb() {
   return createDb();
@@ -26,6 +39,7 @@ export async function confirmItem(
   itemId: string,
   itemType: QueueItemType,
 ): Promise<{ removedItemId: string }> {
+  await requireMutationToken();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
@@ -39,6 +53,7 @@ export async function dismissItem(
   itemId: string,
   itemType: QueueItemType,
 ): Promise<{ removedItemId: string }> {
+  await requireMutationToken();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
@@ -53,6 +68,7 @@ export async function correctItem(
   itemType: QueueItemType,
   correction: CorrectionVariant,
 ): Promise<{ removedItemId: string }> {
+  await requireMutationToken();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },

@@ -13,3 +13,11 @@ export const VALID_CORRECTION_VARIANTS: readonly CorrectionVariant['variant'][] 
   'pickMatchCandidateId',
   'editResolution',
 ];
+
+export function isValidItemType(v: string): v is QueueItemType {
+  return (VALID_ITEM_TYPES as readonly string[]).includes(v);
+}
+
+export function isValidCorrectionVariant(v: string): v is CorrectionVariant['variant'] {
+  return (VALID_CORRECTION_VARIANTS as readonly string[]).includes(v);
+}

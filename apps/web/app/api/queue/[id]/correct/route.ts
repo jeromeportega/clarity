@@ -3,16 +3,46 @@ import { createDb } from '../../../../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
 import { applyCorrection, type CorrectionVariant } from '../../../../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
-import { VALID_ITEM_TYPES, VALID_CORRECTION_VARIANTS } from '../_lib/validation';
+import { VALID_ITEM_TYPES, isValidItemType, isValidCorrectionVariant } from '../_lib/validation';
+
+const MAX_FIELD_LEN = 128;
+
+function validateCorrectionFields(
+  correction: Record<string, unknown>,
+  variant: CorrectionVariant['variant'],
+): string | null {
+  if (variant === 'pickCategoryId') {
+    const v = correction['categoryId'];
+    if (typeof v !== 'string' || v.length === 0 || v.length > MAX_FIELD_LEN) {
+      return 'pickCategoryId requires non-empty categoryId (max 128 chars)';
+    }
+  } else if (variant === 'pickMatchCandidateId') {
+    const v = correction['candidateId'];
+    if (typeof v !== 'string' || v.length === 0 || v.length > MAX_FIELD_LEN) {
+      return 'pickMatchCandidateId requires non-empty candidateId (max 128 chars)';
+    }
+  } else {
+    // editResolution
+    for (const field of ['store', 'skuOrAbbrev', 'canonicalName', 'category'] as const) {
+      const v = correction[field];
+      if (typeof v !== 'string' || v.length === 0 || v.length > MAX_FIELD_LEN) {
+        return `editResolution requires non-empty ${field} (max 128 chars)`;
+      }
+    }
+  }
+  return null;
+}
 
 export async function POST(
   request: Request,
   context: { params: { id: string } | Promise<{ id: string }> },
 ): Promise<Response> {
   const token = process.env.RECONCILE_MUTATION_TOKEN;
-  const authHeader = request.headers.get('authorization');
-  if (!token || authHeader !== `Bearer ${token}`) {
-    return new Response('Unauthorized', { status: 401 });
+  if (token) {
+    const authHeader = request.headers.get('authorization');
+    if (authHeader !== `Bearer ${token}`) {
+      return new Response('Unauthorized', { status: 401 });
+    }
   }
 
   const params = context.params instanceof Promise
@@ -20,17 +50,22 @@ export async function POST(
     : context.params;
   const itemId = params.id;
 
-  let body: { itemType: string; correction: CorrectionVariant };
+  let body: { itemType: string; correction: Record<string, unknown> & { variant?: string } };
   try {
-    body = await request.json() as { itemType: string; correction: CorrectionVariant };
+    body = await request.json() as typeof body;
   } catch {
     return new Response('Bad Request', { status: 400 });
   }
-  if (!body.itemType || !VALID_ITEM_TYPES.includes(body.itemType as never)) {
+  if (!body.itemType || !isValidItemType(body.itemType)) {
     return new Response('Bad Request: invalid itemType', { status: 400 });
   }
-  if (!body.correction || !VALID_CORRECTION_VARIANTS.includes(body.correction?.variant)) {
+  if (!body.correction || typeof body.correction.variant !== 'string' || !isValidCorrectionVariant(body.correction.variant)) {
     return new Response('Bad Request: invalid correction variant', { status: 400 });
+  }
+  const variant = body.correction.variant as CorrectionVariant['variant'];
+  const fieldError = validateCorrectionFields(body.correction, variant);
+  if (fieldError) {
+    return new Response(`Bad Request: ${fieldError}`, { status: 400 });
   }
 
   const scope = { householdId: DEMO_HOUSEHOLD_ID };
@@ -45,7 +80,7 @@ export async function POST(
     const result = await applyCorrection(
       scope,
       item,
-      { type: 'correct', correction: body.correction },
+      { type: 'correct', correction: body.correction as unknown as CorrectionVariant },
       gw,
       db,
     );
@@ -54,6 +89,7 @@ export async function POST(
     if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return new Response('Conflict: item already decided', { status: 409 });
     }
+    console.error('[queue/correct] applyCorrection failed', err);
     return new Response('Internal Server Error', { status: 500 });
   }
 }
