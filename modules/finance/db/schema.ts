@@ -231,6 +231,7 @@ export const categories = sqliteTable(
  * review_decisions — one row per (householdId, itemType, itemId) decision.
  * Created in story-004-002 so the queue anti-join predicate has a live table.
  * story-004-003 writes to this table; story-004-002 reads it for the anti-join.
+ * payload_json stores correction detail for 'correct' decisions (added in 0004 migration).
  */
 export const reviewDecisions = sqliteTable(
   'review_decisions',
@@ -240,6 +241,7 @@ export const reviewDecisions = sqliteTable(
     itemType: text('item_type').notNull(),
     itemId: text('item_id').notNull(),
     decision: text('decision', { enum: ['confirm', 'correct', 'dismiss'] }).notNull(),
+    payloadJson: text('payload_json'),
     createdAt: createdAt(),
   },
   (table) => ({
