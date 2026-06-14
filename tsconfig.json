@@ -1,7 +1,13 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    // tests/ holds React component tests (e.g. receipts-component.test.ts) that
+    // import .tsx client components from apps/web; the root typecheck must
+    // understand JSX + DOM to follow those imports. Runtime stays node-only
+    // (the tests use React.createElement + renderToStaticMarkup).
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": [
     "modules/finance/db/**/*.ts",
