@@ -15,7 +15,7 @@ function receipt(id: string, totalCents: number, itemIds: string[]): ReceiptView
     merchant: 'MERCHANT',
     capturedAt: '2024-01-15',
     totalCents,
-    items: itemIds.map((iid) => ({ id: iid, amountCents: totalCents / itemIds.length })),
+    items: itemIds.map((iid) => ({ id: iid, amountCents: Math.round(totalCents / itemIds.length) })),
   };
 }
 
@@ -149,6 +149,30 @@ describe('mergeCounted — dedup triple (keystone, FR-5)', () => {
     expect(event.sources.transactionId).toBe('B1');
     expect(event.sources.orderId).toBe('O1');
     expect(event.sources.receiptId).toBe('R1');
+  });
+
+  it('multiple orders on the same bank anchor: orderId is deterministic regardless of match order', () => {
+    // Two orders matched to the same bank line — orderId should be lexicographic min, not first-seen.
+    const bl = bankDebit('B1', 5000);
+    const o1 = order('O-alpha', 2500, [{ id: 'OI1', amountCents: 2500 }]);
+    const o2 = order('O-zeta', 2500, [{ id: 'OI2', amountCents: 2500 }]);
+
+    // Pass matches in reverse lexicographic order to prove we don't just pick the first.
+    const matchesZetaFirst: MatchRecord[] = [
+      orderBankMatch('m2', 'B1', 'O-zeta'),
+      orderBankMatch('m1', 'B1', 'O-alpha'),
+    ];
+    const matchesAlphaFirst: MatchRecord[] = [
+      orderBankMatch('m1', 'B1', 'O-alpha'),
+      orderBankMatch('m2', 'B1', 'O-zeta'),
+    ];
+
+    const [e1] = mergeCounted(matchesZetaFirst, inputs([bl], [], [o1, o2]));
+    const [e2] = mergeCounted(matchesAlphaFirst, inputs([bl], [], [o1, o2]));
+
+    // Both orderings should produce the same primary orderId (lexicographic min).
+    expect(e1.sources.orderId).toBe('O-alpha');
+    expect(e2.sources.orderId).toBe('O-alpha');
   });
 });
 
@@ -299,10 +323,36 @@ describe('mergeCounted — anchor precedence (ADR-002)', () => {
 
     const events = mergeCounted(matches, inputs([bl], [], [ord], [sc]));
 
-    // Bank line is the anchor; no duplicate event from the SC match.
+    // Exactly one event total — no duplicate SC event alongside the bank event.
+    expect(events).toHaveLength(1);
     const bankEvents = events.filter((e) => e.fundedBy === 'bank');
     expect(bankEvents).toHaveLength(1);
     expect(bankEvents[0].sources.transactionId).toBe('B1');
+  });
+
+  it('bank > SC precedence: suppresses SC event even when SC balance has multiple linked orders and the matched order is not first', () => {
+    // SC balance linked to both O1 (claimed by bank) and O2 (not claimed).
+    // If only the first orderId is checked, O2 could slip through and emit a duplicate.
+    const bl = bankDebit('B1', 5000);
+    const sc = storeCreditAccrual('SC1', 3000, 'O1');
+    const o1 = order('O1', 5000, [{ id: 'OI1', amountCents: 5000 }]);
+    const o2 = order('O2', 3000, [{ id: 'OI2', amountCents: 3000 }]);
+
+    // SC balance matches two orders: O2 first (won't be in orderIdsClaimedByBank),
+    // then O1 (will be claimed by bank). The SC event should still be suppressed
+    // because at least one of its orderIds was claimed by bank.
+    const matches: MatchRecord[] = [
+      orderBankMatch('m1', 'B1', 'O1'),
+      // SC with O2 first, O1 second — triggers via separate match records
+      storeCreditDrawdownMatch('m2', 'SC1', 'O2'),
+      storeCreditDrawdownMatch('m3', 'SC1', 'O1'),
+    ];
+
+    const events = mergeCounted(matches, inputs([bl], [], [o1, o2], [sc]));
+
+    // SC event suppressed because O1 was claimed by bank anchor.
+    expect(events).toHaveLength(1);
+    expect(events[0].fundedBy).toBe('bank');
   });
 });
 
@@ -341,6 +391,20 @@ describe('mergeCounted — split-shipment (order_bank_split)', () => {
     const orderItemIds = event.mergedItems.map((i) => i.itemRef.orderItemId).filter(Boolean);
     expect(orderItemIds).toContain('OI1');
     expect(orderItemIds).toContain('OI2');
+  });
+
+  it('split shipment with a missing constituent bank line produces no event (completeness guard)', () => {
+    // B2 is referenced by the match but absent from inputs — a partial set would under-count.
+    const b1 = bankDebit('B1', 4000, '2024-01-10');
+    // B2 intentionally omitted from inputs
+    const ord = order('O1', 7000, [{ id: 'OI1', amountCents: 7000 }]);
+
+    const matches: MatchRecord[] = [orderBankSplitMatch('m1', ['B1', 'B2'], 'O1')];
+
+    const events = mergeCounted(matches, inputs([b1], [], [ord]));
+
+    // Emitting a partial event would silently under-count — correct behavior is no event.
+    expect(events).toHaveLength(0);
   });
 });
 
@@ -383,5 +447,24 @@ describe('mergeCounted — edge cases', () => {
     const orderItemIds = event.mergedItems.map((i) => i.itemRef.orderItemId).filter(Boolean);
     expect(orderItemIds).toContain('OI1');
     expect(orderItemIds).not.toContain('OI2'); // return excluded
+  });
+
+  it('dedup_merge match type is not processed (no explicit handler)', () => {
+    // dedup_merge has no anchor semantics in mergeCounted — it must be resolved
+    // to a standard anchor type by the caller before being passed here.
+    const bl = bankDebit('B1', 5000);
+    const dedupMatch: MatchRecord = {
+      id: 'm1',
+      type: 'dedup_merge',
+      transactionId: 'B1',
+      confidence: 1.0,
+      rationale: 'dedup',
+      status: 'auto_linked',
+    };
+
+    const events = mergeCounted([dedupMatch], inputs([bl], [], []));
+
+    // dedup_merge is not in purchaseTypes — no event should be emitted.
+    expect(events).toHaveLength(0);
   });
 });

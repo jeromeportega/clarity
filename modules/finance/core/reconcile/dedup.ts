@@ -22,14 +22,13 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
     transactionId?: string;
     transactionIds?: string[]; // split-shipment constituent lines
     storeCreditBalanceId?: string;
-    orderId?: string;
     receiptIds: Set<string>;
     orderIds: Set<string>;
   };
 
   // Groups keyed by anchor. Separate maps enforce anchor precedence at build time.
   const bankGroups = new Map<string, Group>(); // key = single transactionId
-  const splitGroups = new Map<string, Group>(); // key = sorted transactionIds joined by ','
+  const splitGroups = new Map<string, Group>(); // key = sorted transactionIds joined by '\0'
   const scGroups = new Map<string, Group>(); // key = storeCreditBalanceId
 
   // Track which orderIds are already claimed by a bank anchor so that a
@@ -37,12 +36,14 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
   // (bank line > store-credit precedence).
   const orderIdsClaimedByBank = new Set<string>();
 
+  // 'dedup_merge' is excluded: it has no explicit anchor semantics here and must
+  // be resolved by the caller into one of the standard anchor types before being
+  // passed to mergeCounted. TODO: add explicit handling when semantics are defined.
   const purchaseTypes = new Set<MatchRecord['type']>([
     'receipt_bank',
     'order_bank',
     'order_bank_split',
     'store_credit_drawdown',
-    'dedup_merge',
   ]);
 
   for (const match of matches) {
@@ -50,10 +51,15 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
 
     if (match.type === 'order_bank_split') {
       // Split shipment: multiple bank lines for one order.
-      const ids = match.transactionIds?.length ? match.transactionIds : (match.transactionId ? [match.transactionId] : []);
+      const ids = match.transactionIds?.length
+        ? match.transactionIds
+        : match.transactionId
+          ? [match.transactionId]
+          : [];
       if (!ids.length) continue;
       const sortedIds = [...ids].sort();
-      const key = sortedIds.join(',');
+      // Use null byte as delimiter — cannot appear in IDs, avoids collisions on IDs containing commas.
+      const key = sortedIds.join('\0');
       let group = splitGroups.get(key);
       if (!group) {
         group = { transactionIds: sortedIds, receiptIds: new Set(), orderIds: new Set() };
@@ -62,7 +68,6 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
       if (match.receiptId) group.receiptIds.add(match.receiptId);
       if (match.orderId) {
         group.orderIds.add(match.orderId);
-        group.orderId ??= match.orderId;
         orderIdsClaimedByBank.add(match.orderId);
       }
     } else if (match.transactionId) {
@@ -76,7 +81,6 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
       if (match.receiptId) group.receiptIds.add(match.receiptId);
       if (match.orderId) {
         group.orderIds.add(match.orderId);
-        group.orderId ??= match.orderId;
         orderIdsClaimedByBank.add(match.orderId);
       }
     } else if (match.storeCreditBalanceId) {
@@ -88,10 +92,7 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
         scGroups.set(key, group);
       }
       if (match.receiptId) group.receiptIds.add(match.receiptId);
-      if (match.orderId) {
-        group.orderIds.add(match.orderId);
-        group.orderId ??= match.orderId;
-      }
+      if (match.orderId) group.orderIds.add(match.orderId);
     }
   }
 
@@ -128,6 +129,12 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
     return items;
   }
 
+  // Deterministic primary orderId: lexicographic minimum of all collected orderIds.
+  // Avoids non-determinism from match iteration order.
+  function primaryOrderId(group: Group): string | undefined {
+    return group.orderIds.size > 0 ? [...group.orderIds].sort()[0] : undefined;
+  }
+
   const events: LedgerEvent[] = [];
 
   // ── Bank-anchored events (single line) ───────────────────────────────────────
@@ -144,7 +151,7 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
       fundedBy: 'bank',
       sources: {
         transactionId: bankLine.id,
-        orderId: group.orderId,
+        orderId: primaryOrderId(group),
         receiptId: firstReceiptId,
       },
       mergedItems: buildItems(group),
@@ -156,7 +163,8 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
     const bankLines = (group.transactionIds ?? [])
       .map((id) => bankLineMap.get(id))
       .filter((b): b is BankLine => b != null);
-    if (!bankLines.length) continue;
+    // Skip if any constituent bank line is missing — a partial set would silently under-count.
+    if (bankLines.length !== (group.transactionIds ?? []).length) continue;
 
     const totalAmountCents = bankLines.reduce((sum, b) => sum + b.amountCents, 0);
     const earliest = bankLines.reduce((a, b) => (a.postedDate <= b.postedDate ? a : b));
@@ -169,7 +177,7 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
       fundedBy: 'bank',
       sources: {
         transactionId: earliest.id,
-        orderId: group.orderId,
+        orderId: primaryOrderId(group),
         receiptId: firstReceiptId,
       },
       mergedItems: buildItems(group),
@@ -178,17 +186,21 @@ export function mergeCounted(matches: MatchRecord[], inputs: ReconcileInputs): L
 
   // ── Store-credit-anchored events (no bank line, fully SC-funded) ──────────────
   for (const group of scGroups.values()) {
-    // Skip if the order was already claimed by a bank-line anchor (bank > SC precedence).
-    if (group.orderId && orderIdsClaimedByBank.has(group.orderId)) continue;
+    // Bank line > store-credit precedence: suppress SC event if ANY linked order was
+    // claimed by a bank anchor. Check all orderIds, not just the first, to avoid
+    // false positives when multiple orders are linked to the same SC balance.
+    if ([...group.orderIds].some((id) => orderIdsClaimedByBank.has(id))) continue;
 
     const accrual = storeCreditMap.get(group.storeCreditBalanceId!);
     if (!accrual) continue;
 
-    const orderId = group.orderId ?? accrual.orderId;
+    const orderId = primaryOrderId(group) ?? accrual.orderId;
     if (!orderId) continue; // store_credit LedgerEvent requires orderId in sources
 
     const firstReceiptId = group.receiptIds.size > 0 ? [...group.receiptIds][0] : undefined;
 
+    // StoreCreditAccrual.amountCents is positive (value accrued, not a drawdown).
+    // signedSpendCents > 0 means money was consumed from the SC balance.
     events.push({
       id: `led-sc-${group.storeCreditBalanceId}`,
       signedSpendCents: accrual.amountCents,
