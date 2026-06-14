@@ -39,7 +39,9 @@ export function findAccrualForReturn(
   }
 
   if (opts.orderId) {
-    const byOrder = accruals.find((a) => a.orderId === opts.orderId);
+    const byOrder = accruals.find(
+      (a) => a.orderId === opts.orderId && (!opts.kind || a.kind === opts.kind),
+    );
     if (byOrder) return byOrder;
   }
 

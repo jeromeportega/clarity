@@ -107,4 +107,31 @@ describe('findAccrualForReturn', () => {
     });
     expect(result).toBeUndefined();
   });
+
+  it('orderId-only fallback filters by kind — does not cross-link a wrong-kind accrual', () => {
+    // Order has two accruals of different kinds; opts.kind must be respected.
+    const mixedKindAccruals: StoreCreditAccrual[] = [
+      makeAccrual({ id: 'sc-wrong', kind: 'store_credit', amountCents: 1500, orderId: 'order-mix' }),
+      makeAccrual({ id: 'sc-right', kind: 'gift_card', amountCents: 1500, orderId: 'order-mix' }),
+    ];
+    const result = findAccrualForReturn(mixedKindAccruals, {
+      orderId: 'order-mix',
+      orderItemId: 'item-not-exist', // exact match will miss → falls to step 2
+      kind: 'gift_card',
+      amountCents: -1500,
+    });
+    expect(result?.id).toBe('sc-right');
+  });
+
+  it('orderId-only fallback returns undefined when no accrual matches the required kind', () => {
+    const onlyWrongKind: StoreCreditAccrual[] = [
+      makeAccrual({ id: 'sc-wrong', kind: 'store_credit', amountCents: 1500, orderId: 'order-mix' }),
+    ];
+    const result = findAccrualForReturn(onlyWrongKind, {
+      orderId: 'order-mix',
+      kind: 'gift_card',
+      amountCents: -1500,
+    });
+    expect(result).toBeUndefined();
+  });
 });

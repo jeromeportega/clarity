@@ -249,12 +249,44 @@ describe('partial store-credit payment (bank charge < receipt total)', () => {
     expect(drawdowns[0].amountCents).toBe(-gap);
   });
 
-  it('LedgerEvent records full goods value (ADR-005)', () => {
+  it('LedgerEvent records full goods value (ADR-005) and fundedBy bank (model constraint)', () => {
     const { events } = reconcileRefunds(partialPaymentInputs(), []);
 
     const event = events.find((e) => e.id.startsWith('sc-partial-'));
     expect(event).toBeDefined();
     expect(event?.signedSpendCents).toBe(10000); // full receipt total
+    // 'bank' is the only valid discriminated-union variant when no orderId is present;
+    // 'store_credit' and 'split' both require sources.orderId (see model.ts).
+    expect(event?.fundedBy).toBe('bank');
+  });
+
+  it('storeCreditBalanceId is set even when gap is covered by multiple smaller accruals', () => {
+    // Two 2500¢ accruals — neither individually covers the 4000¢ gap, but together they do.
+    const inputs: ReconcileInputs = {
+      ...emptyInputs(),
+      bankLines: [
+        makeDebit({ id: 'bl-multi', amountCents: -6000, normalizedMerchant: 'TARGET', postedDate: '2024-03-01' }),
+      ],
+      receipts: [
+        makeReceipt({ id: 'receipt-multi', totalCents: 10000, merchant: 'TARGET', capturedAt: '2024-03-01' }),
+      ],
+      storeCreditAccruals: [
+        makeAccrual({ id: 'sc-a', kind: 'gift_card', amountCents: 2500 }),
+        makeAccrual({ id: 'sc-b', kind: 'gift_card', amountCents: 2500 }),
+      ],
+    };
+
+    const { drawdowns, matches } = reconcileRefunds(inputs, []);
+
+    // Availability guard: net sum = 5000 >= gap 4000 → proceeds.
+    expect(drawdowns).toHaveLength(1);
+    expect(drawdowns[0].amountCents).toBe(-4000);
+
+    // storeCreditBalanceId must be set to the largest positive accrual (not undefined).
+    const scMatch = matches.find((m) => m.type === 'store_credit_drawdown');
+    expect(scMatch).toBeDefined();
+    // Either sc-a or sc-b (both are 2500¢ — first in sort order wins, either is valid).
+    expect(scMatch?.storeCreditBalanceId).toMatch(/^sc-[ab]$/);
   });
 
   it('match is auto_linked and receipt not in unmatched', () => {
@@ -364,6 +396,7 @@ describe('FR-9: net spend = purchases − refunds', () => {
           id: 'order-sc',
           externalOrderId: 'AMZN-SC',
           orderDate: '2024-02-10',
+          orderTotalCents: 2000,
           items: [
             {
               id: 'item-sc',

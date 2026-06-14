@@ -204,9 +204,13 @@ export function reconcileRefunds(
     for (const kind of SC_KIND_PRIORITY) {
       if ((remainingByKind.get(kind) ?? 0) >= gap) {
         chosenKind = kind;
-        chosenAccrual = inputs.storeCreditAccruals.find(
-          (a) => a.kind === kind && a.amountCents >= gap,
-        );
+        // Decouple from single-record sufficiency: the net-sum guard above already
+        // validated that enough accrual exists across all records for this kind.
+        // Pick the largest positive accrual as the audit-trail pointer — it may be
+        // a partial pointer when the gap is covered by several smaller accruals.
+        chosenAccrual = [...inputs.storeCreditAccruals]
+          .filter((a) => a.kind === kind && a.amountCents > 0)
+          .sort((a, b) => b.amountCents - a.amountCents)[0];
         break;
       }
     }
@@ -256,9 +260,12 @@ export function reconcileRefunds(
     });
 
     // Full goods value in the event per ADR-005 (funding-source-agnostic spend).
+    // fundedBy: 'bank' is the only valid discriminated-union variant available
+    // here — 'store_credit' requires sources.orderId which partial payments lack,
+    // and 'split' likewise requires orderId. The bank line is the primary anchor.
     events.push({
       id: `sc-partial-${bank.id}-${receipt.id}`,
-      signedSpendCents: receipt.totalCents!, // full receipt value
+      signedSpendCents: receipt.totalCents ?? 0, // full receipt value
       occurredOn: bank.postedDate,
       fundedBy: 'bank',
       sources: {
