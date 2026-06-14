@@ -228,6 +228,30 @@ export const categories = sqliteTable(
 );
 
 /**
+ * review_decisions — one row per (householdId, itemType, itemId) decision.
+ * Created in story-004-002 so the queue anti-join predicate has a live table.
+ * story-004-003 writes to this table; story-004-002 reads it for the anti-join.
+ */
+export const reviewDecisions = sqliteTable(
+  'review_decisions',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id').notNull(),
+    itemType: text('item_type').notNull(),
+    itemId: text('item_id').notNull(),
+    decision: text('decision', { enum: ['confirm', 'correct', 'dismiss'] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxReviewDecisionsItem: uniqueIndex('ux_review_decisions_item').on(
+      table.householdId,
+      table.itemType,
+      table.itemId,
+    ),
+  }),
+);
+
+/**
  * store_credit_balances — append-only ledger of non-card refunds (FR-14). One
  * positive accrual row per return whose refund_destination is store_credit /
  * gift_card / account_balance; a `card` refund writes no row.
