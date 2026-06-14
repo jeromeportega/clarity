@@ -8,8 +8,9 @@ export interface InsightFlag {
   basis: string;
   /**
    * True when there is insufficient history to make a confident comparison
-   * (history window < insightComparisonMonths). The flag is still surfaced but
-   * callers should display it with reduced prominence (NFR-6).
+   * (prior months for this merchant/category < insightComparisonMonths). The
+   * flag is still surfaced so callers can show "not enough data yet" rather
+   * than a misleading comparison (NFR-6, ADR-010).
    */
   inconclusive?: boolean;
 }
