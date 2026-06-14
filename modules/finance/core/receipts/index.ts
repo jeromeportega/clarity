@@ -15,6 +15,11 @@ export type { ReceiptConfig } from './config';
 export { imageHash } from './image-hash';
 export type { Cents } from './money';
 
+// Sørensen–Dice bigram similarity coefficient — the single canonical
+// implementation, shared by H2's eval harness and H3's matching engine
+// (receipt↔bank and Amazon↔bank matchers import it from here, FR-1).
+export { similarityRatio } from './resolver/similarity';
+
 export type {
   NewReceipt,
   NewReceiptItem,
