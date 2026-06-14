@@ -12,7 +12,8 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest",
     "vision:eval": "vitest run --project eval",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "engines": {
     "node": ">=20"
