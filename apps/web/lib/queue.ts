@@ -1,14 +1,12 @@
 import { createDb } from '../../../modules/finance/db/client';
 import { gatewayFor } from '../../../modules/finance/core/reconciliation/gateway';
 import { assembleQueue } from '../../../modules/finance/core/queue/assemble';
-import { DEMO_HOUSEHOLD_ID } from '../../../modules/finance/core/scope';
 import type { HouseholdScope } from '../../../modules/finance/core/reconciliation/types';
 import type { FinanceDb } from '../../../modules/finance/db/client';
 import type { QueueItem } from '../../../modules/finance/core/queue/types';
+import { resolveHouseholdScope } from '../app/lib/public-mode';
 
-export function resolveHouseholdScope(): HouseholdScope {
-  return { householdId: DEMO_HOUSEHOLD_ID };
-}
+export { resolveHouseholdScope };
 
 // Module-level singleton — avoids opening a new file handle per request.
 let _db: FinanceDb | undefined;
