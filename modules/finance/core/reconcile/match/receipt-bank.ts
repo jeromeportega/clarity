@@ -1,10 +1,7 @@
 import { similarityRatio } from '../../receipts';
 import type { BankLine, MatchRecord, ReceiptView } from '../model';
 import type { ReconcileConfig } from '../thresholds';
-
-function daysBetween(a: string, b: string): number {
-  return Math.abs(Date.parse(b) - Date.parse(a)) / 86_400_000;
-}
+import { daysBetween } from './utils';
 
 /**
  * Attempt to match `receipt` to one bank debit line.
@@ -40,8 +37,8 @@ function scoreReceiptBank(
   const merchantSim = similarityRatio(receipt.merchant ?? '', bank.normalizedMerchant);
   if (merchantSim < cfg.merchantSimilarityCutoff) return null;
 
-  const amountScore = 1 - amountDiff / cfg.tipAdjustmentToleranceCents;
-  const dateScore = 1 - dateDiff / cfg.receiptDateWindowDays;
+  const amountScore = cfg.tipAdjustmentToleranceCents === 0 ? 1 : 1 - amountDiff / cfg.tipAdjustmentToleranceCents;
+  const dateScore = cfg.receiptDateWindowDays === 0 ? 1 : 1 - dateDiff / cfg.receiptDateWindowDays;
 
   let lastFourScore = 0.5;
   if (receipt.lastFour && bank.lastFour) {

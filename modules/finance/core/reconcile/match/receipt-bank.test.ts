@@ -181,37 +181,32 @@ describe('matchReceipts — last-4 boost', () => {
 
 describe('matchReceipts — review-queue routing (FR-4)', () => {
   it('routes a weak match to status:review and never auto_links it', () => {
-    // Construct a deliberately weak match:
-    // - Merchant barely at the similarity cutoff (not an exact name match)
-    // - Amount near tip tolerance
-    // - Date near window boundary
-    // - No lastFour
-    const weakMerchant = 'FOOD CO'; // low Dice vs "WHOLE FOODS MARKET" — but let's use a pair that passes cutoff
-    const ratio = similarityRatio(weakMerchant, 'WHOLESOME FOODS');
-    // Use a pair where we control the outcome by adjusting date + amount to drag confidence below 0.70
+    // Guaranteed-match pair: "SHOP" vs "SHOP" (sim=1.0, passes all hard gates),
+    // but confidence is dragged below 0.70 by:
+    //   - amount at tolerance boundary (amountScore ≈ 0)
+    //   - date 2 days apart in a 3-day window (dateScore ≈ 0.33)
+    //   - last-4 mismatch (lastFourScore = 0)
+    // Expected confidence ≈ 1.0*0.4 + ~0*0.3 + 0.33*0.2 + 0*0.1 = ~0.47 < 0.70
     const r = receipt({
       id: 'r-weak',
       merchant: 'SHOP',
       totalCents: 5000,
       capturedAt: '2024-01-15',
+      lastFour: '1234',
     });
     const b = bankLine({
       id: 'b-weak',
       normalizedMerchant: 'SHOP',
-      amountCents: -5000 - (DEFAULT_CONFIG.tipAdjustmentToleranceCents - 1), // near tolerance
-      postedDate: `2024-01-${15 + DEFAULT_CONFIG.receiptDateWindowDays - 1}`, // near window edge
+      amountCents: -(5000 + DEFAULT_CONFIG.tipAdjustmentToleranceCents - 1), // near tolerance boundary
+      postedDate: '2024-01-17', // 2 days apart (within receiptDateWindowDays=3)
+      lastFour: '9999', // mismatch → lastFourScore = 0
     });
-    // Use custom config with lower thresholds so match qualifies but confidence < 0.70
-    const customCfg = { ...DEFAULT_CONFIG, tipAdjustmentToleranceCents: 2000, receiptDateWindowDays: 5 };
-    const weakMatches = matchReceipts([b], [r], customCfg);
-    // At minimum there is a match (not rejected); verify it routes to review
-    if (weakMatches.length > 0) {
-      const m = weakMatches[0];
-      if (m.confidence < customCfg.confidenceThreshold) {
-        expect(m.status).toBe('review');
-        expect(m.status).not.toBe('auto_linked');
-      }
-    }
+    const weakMatches = matchReceipts([b], [r], DEFAULT_CONFIG);
+    expect(weakMatches).toHaveLength(1);
+    const m = weakMatches[0];
+    expect(m.confidence).toBeLessThan(DEFAULT_CONFIG.confidenceThreshold);
+    expect(m.status).toBe('review');
+    expect(m.status).not.toBe('auto_linked');
   });
 
   it('auto_links a strong match (confidence ≥ confidenceThreshold)', () => {

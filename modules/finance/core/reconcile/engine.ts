@@ -33,11 +33,15 @@ export function reconcile(inputs: ReconcileInputs, config?: Partial<ReconcileCon
   const reviewQueue = allMatches.filter((m) => m.status === 'review');
 
   // Unmatched bookkeeping (dedup / refund modules may move items when integrated).
-  const matchedBankIds = new Set(autoLinked.map((m) => m.transactionId).filter((id): id is string => id != null));
-  const matchedReceiptIds = new Set(autoLinked.map((m) => m.receiptId).filter((id): id is string => id != null));
-  const matchedOrderItemIds = new Set(
-    autoLinked.map((m) => m.orderItemId).filter((id): id is string => id != null),
+  // For split matches all constituent bank-line IDs live in transactionIds; fall back
+  // to the singular transactionId for single-line matches.
+  const matchedBankIds = new Set(
+    autoLinked.flatMap((m) => m.transactionIds ?? (m.transactionId ? [m.transactionId] : [])),
   );
+  const matchedReceiptIds = new Set(autoLinked.map((m) => m.receiptId).filter((id): id is string => id != null));
+  // Amazon matchers set orderId, not orderItemId; filter at the order level so all
+  // items belonging to a matched order are correctly removed from unmatched.
+  const matchedOrderIds = new Set(autoLinked.map((m) => m.orderId).filter((id): id is string => id != null));
 
   const events: LedgerEvent[] = []; // populated by story-003-003 mergeCounted
   const storeCreditDrawdowns: StoreCreditDrawdown[] = []; // populated by story-003-004
@@ -51,8 +55,7 @@ export function reconcile(inputs: ReconcileInputs, config?: Partial<ReconcileCon
       bankLines: inputs.bankLines.filter((b) => b.direction === 'debit' && !matchedBankIds.has(b.id)).map((b) => b.id),
       receipts: inputs.receipts.filter((r) => !matchedReceiptIds.has(r.id)).map((r) => r.id),
       orderItems: inputs.orders
-        .flatMap((o) => o.items)
-        .filter((item) => !item.isReturn && !matchedOrderItemIds.has(item.id))
+        .flatMap((o) => o.items.filter((item) => !item.isReturn && !matchedOrderIds.has(o.id)))
         .map((item) => item.id),
     },
     netSpendCents: 0, // computed by story-003-003 mergeCounted

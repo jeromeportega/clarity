@@ -1,10 +1,7 @@
 import type { BankLine, MatchRecord, OrderView } from '../model';
 import type { ReconcileConfig } from '../thresholds';
 import { findChargeSubset } from './subset-sum';
-
-function daysBetween(a: string, b: string): number {
-  return Math.abs(Date.parse(b) - Date.parse(a)) / 86_400_000;
-}
+import { daysBetween } from './utils';
 
 function isAmazonLine(b: BankLine): boolean {
   return b.direction === 'debit' && b.normalizedMerchant.toUpperCase().includes('AMAZON');
@@ -57,8 +54,8 @@ export function matchAmazonOrders(
 
       const amountDiff = Math.abs(Math.abs(best.amountCents) - total);
       const dateDiff = daysBetween(best.postedDate, o.orderDate);
-      const amountScore = 1 - amountDiff / cfg.tipAdjustmentToleranceCents;
-      const dateScore = 1 - dateDiff / cfg.orderDateWindowDays;
+      const amountScore = cfg.tipAdjustmentToleranceCents === 0 ? 1 : 1 - amountDiff / cfg.tipAdjustmentToleranceCents;
+      const dateScore = cfg.orderDateWindowDays === 0 ? 1 : 1 - dateDiff / cfg.orderDateWindowDays;
       const confidence = amountScore * 0.6 + dateScore * 0.4;
 
       candidates.push({
@@ -114,10 +111,12 @@ export function matchAmazonOrders(
 
     const status: MatchRecord['status'] = c.confidence >= cfg.confidenceThreshold ? 'auto_linked' : 'review';
 
+    const allLineIds = c.lines.map((l) => l.id);
     records.push({
-      id: `${c.type}-${c.order.id}-${c.lines.map((l) => l.id).join('+')}`,
+      id: `${c.type}-${c.order.id}-${allLineIds.join('+')}`,
       type: c.type,
       transactionId: c.lines[0].id,
+      transactionIds: allLineIds,
       orderId: c.order.id,
       confidence: c.confidence,
       rationale: c.rationale,

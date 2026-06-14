@@ -54,8 +54,7 @@ describe('findChargeSubset', () => {
 
   it('returns null (not a partial match) when no exact sum exists', () => {
     const lines = [line('l1', -300), line('l2', -400), line('l3', -600)];
-    // No subset sums to 1000 (300+400=700, 300+600=900, 400+600=1000 → actually yes!)
-    // Let me use a target with no solution: 1001
+    // 300+400=700, 300+600=900, 400+600=1000 — but target is 1001, so no exact solution exists.
     expect(findChargeSubset(lines, 1001, DEFAULT_CONFIG)).toBeNull();
   });
 
