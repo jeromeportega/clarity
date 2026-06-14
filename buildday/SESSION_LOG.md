@@ -5,18 +5,34 @@ Durable supervisor state. Append continuously. On restart: re-read this +
 
 - **Product repo:** https://github.com/jeromeportega/clarity (public)
 - **Loom harness repo:** (separate; link at submission)
-- **Live URL:** _pending H4 + deploy_
-- **Driver model:** Opus 4.8 · **Worker model:** claude-sonnet-4-6 · **Planning:** opus-4-8
-- **Day start (this session):** 2026-06-13 12:51 PDT · **Feature freeze:** 16:15 PDT
+- **Live URL:** https://clarity-zeta-self.vercel.app · **Release:** v1.0.0
+- **Driver model:** Opus 4.8 · **Worker model:** opus-4-8 (wave 1) → sonnet-4.6 (wave 2, after binary update) · **Planning:** opus-4-8
+- **Start:** 2026-06-13 12:51 PDT · **Shipped:** 2026-06-14 ~07:35 PDT (operator
+  extended cutoff → "push to full completion"; build ran overnight after a
+  mid-run loom binary update + MCP restart)
 
 ---
 
-## Totals (running)
+## Totals (FINAL)
 
-- Epics planned: 0 · merged: 0
-- Stories: 0 · PRs: 0 · Agents: 0
-- Spend: TBD (worker/planning backends are session-based per policy; track loom cost roll-ups)
-- Longest unattended stretch: TBD (compute at end of day)
+- **Epics: 5** — 4 built + merged + done (H1–H4); 1 scoped at the approval gate,
+  NOT built (epic-005 "Module 2 — Chore Generation").
+- **Stories: 28 merged** (H1 7 · H2 6 · H3 7 · H4 8; H4's 9th story — Playwright
+  E2E — failed in-worker, so the supervisor added the e2e directly).
+- **PRs merged: 6** — #1 H2, #2 H1, #3 H3, #4 H4, #5 apps/web build fix,
+  #6 deploy-config + e2e + session log.
+- **Agents: ~46** — ~28 loom story workers + 5×(Analyst/PM/Architect) planning
+  personas (15) + ~13 supervisor subagents (4 plan reviews, 4 verifiers incl.
+  final, 3 epic-integration merges, 1 e2e; 1 build-fix stalled and was finished
+  by hand).
+- **Spend (API): ≈ $0** — worker + planning backends are session-based via the
+  Claude Code login (no API billing, per policy `llm_backend/worker_backend`);
+  well under the $400 cap. Supervisor ran on Opus via the session.
+- **Longest unattended stretch: ≈ 2 h** — wave-2 (H3 ∥ H4) autonomous build; the
+  supervisor only watched via background monitors and intervened on none of it
+  until the epics finalized.
+- **Final verification:** global gates 30/30 (e2e gap closed), milestones
+  99/100. Live URL 200 + demo path verified. Zero real data/secrets in git.
 
 ---
 
