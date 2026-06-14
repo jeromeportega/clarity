@@ -1,11 +1,5 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, count, eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-
-process.env.TMPDIR = mkdtempSync(join(tmpdir(), 'clarity-seed-demo-test-'));
 
 import { createTestDb, type FinanceDb } from '../../db/client';
 import {
@@ -50,9 +44,10 @@ beforeEach(async () => {
 
 afterEach(() => cleanup());
 
-async function rowCount(table: string): Promise<number> {
-  const r = await db.run(sql.raw(`SELECT count(*) AS c FROM ${table}`));
-  return Number(r.rows[0]?.c);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function rowCount(table: any): Promise<number> {
+  const [r] = await db.select({ c: count() }).from(table);
+  return r?.c ?? 0;
 }
 
 describe('seedDemoHousehold', () => {
@@ -82,12 +77,12 @@ describe('seedDemoHousehold', () => {
     it('seeds the expected row counts', async () => {
       await seedDemoHousehold(db);
 
-      expect(await rowCount('transactions')).toBe(3);
-      expect(await rowCount('receipts')).toBe(2);
-      expect(await rowCount('receipt_items')).toBe(1);
-      expect(await rowCount('orders')).toBe(2);
-      expect(await rowCount('order_items')).toBe(2);
-      expect(await rowCount('matches')).toBe(3);
+      expect(await rowCount(transactions)).toBe(3);
+      expect(await rowCount(receipts)).toBe(2);
+      expect(await rowCount(receiptItems)).toBe(1);
+      expect(await rowCount(orders)).toBe(2);
+      expect(await rowCount(orderItems)).toBe(2);
+      expect(await rowCount(matches)).toBe(3);
     });
 
     it('returns the DemoSeedResult with accurate counts', async () => {
@@ -188,14 +183,14 @@ describe('seedDemoHousehold', () => {
       await seedDemoHousehold(db);
       await seedDemoHousehold(db);
 
-      expect(await rowCount('households')).toBe(1);
-      expect(await rowCount('accounts')).toBe(1);
-      expect(await rowCount('transactions')).toBe(3);
-      expect(await rowCount('receipts')).toBe(2);
-      expect(await rowCount('receipt_items')).toBe(1);
-      expect(await rowCount('orders')).toBe(2);
-      expect(await rowCount('order_items')).toBe(2);
-      expect(await rowCount('matches')).toBe(3);
+      expect(await rowCount(households)).toBe(1);
+      expect(await rowCount(accounts)).toBe(1);
+      expect(await rowCount(transactions)).toBe(3);
+      expect(await rowCount(receipts)).toBe(2);
+      expect(await rowCount(receiptItems)).toBe(1);
+      expect(await rowCount(orders)).toBe(2);
+      expect(await rowCount(orderItems)).toBe(2);
+      expect(await rowCount(matches)).toBe(3);
     });
 
     it('two fresh DBs produce identical row sets (hard-coded IDs, dates, amounts)', async () => {
@@ -345,8 +340,8 @@ describe('seedDemoHousehold', () => {
         .from(transactions);
       for (const t of txnRows) {
         expect(t.id).toMatch(/^txn-demo-/);
-        // merchant names are generic: WHOLE FOODS or BEST BUY
-        expect(['WHOLE FOODS', 'BEST BUY']).toContain(t.merchant);
+        // merchant names are generic, public-safe values
+        expect(['AMAZON', 'BEST BUY', 'WHOLE FOODS']).toContain(t.merchant);
       }
 
       const rcptRows = await db

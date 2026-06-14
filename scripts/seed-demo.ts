@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {
+if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
   main().catch((err) => {
     process.stderr.write(`${err instanceof Error ? err.stack : String(err)}\n`);
     process.exitCode = 1;

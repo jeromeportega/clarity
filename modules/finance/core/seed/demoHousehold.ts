@@ -1,3 +1,5 @@
+import { count, inArray } from 'drizzle-orm';
+
 import { DEMO_HOUSEHOLD_ID } from '../scope';
 import { sha256Hex, transactionDedupKey } from '../idempotency/keys';
 import type { FinanceDb } from '../../db/client';
@@ -168,8 +170,9 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
         purchasedAt: '2025-01-14',
         subtotalCents: 1800,
         taxCents: 220,
+        // 1800 + 220 = 2020 ≠ 2000 — arithmetic mismatch drives uncertainty type 4
         totalCents: 2000,
-        needsReview: true,
+        needsReview: false,
       },
     ])
     .onConflictDoNothing();
@@ -205,13 +208,13 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
         postedDate: '2025-01-15',
         amountCents: -1200,
         direction: 'debit',
-        normalizedMerchant: 'WHOLE FOODS',
+        normalizedMerchant: 'AMAZON',
         sourceRowHash: txn1SourceHash,
         dedupKey: transactionDedupKey({
           accountId: DEMO_ACCOUNT_ID,
           postedDate: '2025-01-15',
           amountCents: -1200,
-          normalizedMerchant: 'WHOLE FOODS',
+          normalizedMerchant: 'AMAZON',
           sourceRowHash: txn1SourceHash,
         }),
       },
@@ -288,14 +291,43 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
     ])
     .onConflictDoNothing();
 
+  // Derive actual counts by querying the specific IDs we attempted to insert.
+  // onConflictDoNothing preserves pre-existing rows, so these counts reflect
+  // actual DB state — they equal the expected values on a first run and the
+  // same values on re-runs (idempotent inserts, same rows present).
+  const [txnR] = await db
+    .select({ c: count() })
+    .from(transactions)
+    .where(inArray(transactions.id, [DEMO_TXN_1_ID, DEMO_TXN_2_ID, DEMO_TXN_3_ID]));
+  const [rcptR] = await db
+    .select({ c: count() })
+    .from(receipts)
+    .where(inArray(receipts.id, [DEMO_RECEIPT_1_ID, DEMO_RECEIPT_2_ID]));
+  const [riR] = await db
+    .select({ c: count() })
+    .from(receiptItems)
+    .where(inArray(receiptItems.id, [DEMO_RI_1_ID]));
+  const [orderR] = await db
+    .select({ c: count() })
+    .from(orders)
+    .where(inArray(orders.id, [DEMO_ORDER_1_ID, DEMO_ORDER_2_ID]));
+  const [oiR] = await db
+    .select({ c: count() })
+    .from(orderItems)
+    .where(inArray(orderItems.id, [DEMO_OI_1_ID, DEMO_OI_2_ID]));
+  const [matchR] = await db
+    .select({ c: count() })
+    .from(matches)
+    .where(inArray(matches.id, [DEMO_MATCH_1_ID, DEMO_MATCH_2_ID, DEMO_MATCH_3_ID]));
+
   return {
     householdId: DEMO_HOUSEHOLD_ID,
     accountId: DEMO_ACCOUNT_ID,
-    transactionCount: 3,
-    receiptCount: 2,
-    receiptItemCount: 1,
-    orderCount: 2,
-    orderItemCount: 2,
-    matchCount: 3,
+    transactionCount: txnR?.c ?? 0,
+    receiptCount: rcptR?.c ?? 0,
+    receiptItemCount: riR?.c ?? 0,
+    orderCount: orderR?.c ?? 0,
+    orderItemCount: oiR?.c ?? 0,
+    matchCount: matchR?.c ?? 0,
   };
 }
