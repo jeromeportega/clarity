@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gatewayFor, type ReconciliationGateway } from './gateway';
+import { LiveReconciliationGateway } from './live';
+import { StubReconciliationGateway } from './stub';
 import type { HouseholdScope } from './types';
 import { DEMO_HOUSEHOLD_ID } from '../scope';
 
@@ -40,18 +42,21 @@ describe('gatewayFor — factory branch', () => {
     expect(matches.length).toBeGreaterThan(0);
   });
 
-  it('returns live when RECON_BACKEND=live (and PUBLIC_DEMO_MODE unset)', async () => {
+  it('returns live when RECON_BACKEND=live (and PUBLIC_DEMO_MODE unset)', () => {
     const gw = liveGateway();
-    const matches = await gw.listMatches(DEMO_SCOPE);
-    // TODO(H3): remove this assertion when LiveReconciliationGateway is wired;
-    // replace with shape conformance checks against real data.
-    expect(matches).toEqual([]);
+    expect(gw).toBeInstanceOf(LiveReconciliationGateway);
   });
 
-  it('PUBLIC_DEMO_MODE=1 overrides RECON_BACKEND=live into stub', async () => {
+  it('RECON_BACKEND=live selects the live backend even when PUBLIC_DEMO_MODE=1', () => {
+    // PUBLIC_DEMO_MODE controls SCOPE only, not stub-vs-live: a public demo can
+    // be live-backed. This is the corrected gatewayFor contract.
     const gw = gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'live' });
-    const matches = await gw.listMatches(DEMO_SCOPE);
-    expect(matches.length).toBeGreaterThan(0);
+    expect(gw).toBeInstanceOf(LiveReconciliationGateway);
+  });
+
+  it('PUBLIC_DEMO_MODE=1 with RECON_BACKEND absent still uses the stub', () => {
+    const gw = gatewayFor({ PUBLIC_DEMO_MODE: '1' });
+    expect(gw).toBeInstanceOf(StubReconciliationGateway);
   });
 });
 
