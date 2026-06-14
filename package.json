@@ -9,16 +9,23 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --project unit",
     "test:watch": "vitest",
+    "vision:eval": "vitest run --project eval",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "@libsql/client": "^0.14.0",
+    "drizzle-orm": "^0.36.4"
+  },
   "devDependencies": {
-    "@types/node": "^20.14.10",
-    "typescript": "^5.5.4",
-    "vitest": "^2.1.8"
+    "@types/node": "^25.9.3",
+    "drizzle-kit": "^0.28.1",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.6"
   }
 }

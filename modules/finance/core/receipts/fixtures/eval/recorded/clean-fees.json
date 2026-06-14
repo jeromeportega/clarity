@@ -1,0 +1,30 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE",
+  "purchasedAt": "2026-05-15",
+  "total": 1745,
+  "tax": 117,
+  "fees": [
+    { "kind": "crv", "label": "CA REDEMPTION VALUE", "amount": 120 },
+    { "kind": "bag", "label": "REUSABLE BAG", "amount": 10 }
+  ],
+  "paymentHint": null,
+  "lineItems": [
+    {
+      "sku": "880011",
+      "rawDescription": "KS PURIFIED WATER 40PK",
+      "quantity": 1,
+      "unitPrice": 599,
+      "linePrice": 599,
+      "discount": 0
+    },
+    {
+      "sku": "880022",
+      "rawDescription": "SPARKLING SODA 24PK",
+      "quantity": 1,
+      "unitPrice": 899,
+      "linePrice": 899,
+      "discount": 0
+    }
+  ]
+}

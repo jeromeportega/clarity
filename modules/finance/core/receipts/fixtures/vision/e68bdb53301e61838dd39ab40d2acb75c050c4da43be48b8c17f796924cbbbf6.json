@@ -1,0 +1,19 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE #0633",
+  "purchasedAt": "2026-02-18",
+  "total": 1741,
+  "tax": 132,
+  "fees": [{ "kind": "bag", "label": "BAG FEE", "amount": 10 }],
+  "paymentHint": { "method": "VISA", "last4": "1111" },
+  "lineItems": [
+    {
+      "sku": "33321",
+      "rawDescription": "PAPER PLATE 215",
+      "quantity": 1,
+      "unitPrice": 1599,
+      "linePrice": 1599,
+      "discount": 0
+    }
+  ]
+}

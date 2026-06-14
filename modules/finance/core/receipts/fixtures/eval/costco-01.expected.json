@@ -1,0 +1,21 @@
+{
+  "store": "COSTCO WHOLESALE",
+  "items": [
+    {
+      "sku": "100487",
+      "name": "Kirkland Signature Paper Towels",
+      "category": "household"
+    },
+    {
+      "sku": "200912",
+      "name": "Organic Quinoa",
+      "category": "groceries"
+    },
+    {
+      "sku": "300145",
+      "name": "Kirkland Signature Extra Virgin Olive Oil",
+      "category": "groceries"
+    }
+  ],
+  "totalCents": 5197
+}

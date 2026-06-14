@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE #1399",
+  "purchasedAt": "2026-03-05",
+  "total": 4010,
+  "tax": 312,
+  "fees": [],
+  "paymentHint": { "method": "DEBIT", "last4": null },
+  "lineItems": [
+    {
+      "sku": "4456",
+      "rawDescription": "OLIVE OIL SPR",
+      "quantity": 1,
+      "unitPrice": 899,
+      "linePrice": 899,
+      "discount": 0
+    },
+    {
+      "sku": "9921",
+      "rawDescription": "GRND BEEF 88/12",
+      "quantity": 1,
+      "unitPrice": 2999,
+      "linePrice": 2999,
+      "discount": 200
+    }
+  ]
+}

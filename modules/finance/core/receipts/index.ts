@@ -1,43 +1,38 @@
-/**
- * Sørensen–Dice bigram similarity coefficient.
- *
- * Compares two strings by the fraction of shared character bigrams.
- * Returns a value in [0, 1] — 1 means identical after normalisation.
- *
- * Used by the H3 matching engine for merchant-name comparison (FR-1).
- * Single canonical implementation shared across all callers (two callers:
- * receipt↔bank and Amazon↔bank matchers).
- */
+// Public surface of the receipts core (epic contract §0). The single entry
+// point plus the types and pure helpers a caller needs to wire dependencies and
+// read results. Concrete providers/stores are imported directly from their own
+// files by whoever constructs the dependency bundle.
 
-function bigrams(s: string): string[] {
-  const result: string[] = [];
-  for (let i = 0; i < s.length - 1; i++) {
-    result.push(s.slice(i, i + 2));
-  }
-  return result;
-}
+export { processReceipt } from './process-receipt';
+export type { ReceiptPipelineDeps, ProcessReceiptResult } from './process-receipt';
 
-export function similarityRatio(a: string, b: string): number {
-  const s1 = a.toUpperCase().trim();
-  const s2 = b.toUpperCase().trim();
-  if (s1 === s2) return 1;
-  if (s1.length < 2 || s2.length < 2) return 0;
+export { reconcile } from './reconcile';
+export type { ReconcileResult } from './reconcile';
 
-  const bg1 = bigrams(s1);
-  const bg2 = bigrams(s2);
+export { DEFAULT_RECEIPT_CONFIG } from './config';
+export type { ReceiptConfig } from './config';
 
-  // Count bigram frequencies in s1, then intersect with s2 (with multiplicity).
-  const freq = new Map<string, number>();
-  for (const bg of bg1) freq.set(bg, (freq.get(bg) ?? 0) + 1);
+export { imageHash } from './image-hash';
+export type { Cents } from './money';
 
-  let intersection = 0;
-  for (const bg of bg2) {
-    const count = freq.get(bg) ?? 0;
-    if (count > 0) {
-      intersection++;
-      freq.set(bg, count - 1);
-    }
-  }
+// Sørensen–Dice bigram similarity coefficient — the single canonical
+// implementation, shared by H2's eval harness and H3's matching engine
+// (receipt↔bank and Amazon↔bank matchers import it from here, FR-1).
+export { similarityRatio } from './resolver/similarity';
 
-  return (2 * intersection) / (bg1.length + bg2.length);
-}
+export type {
+  NewReceipt,
+  NewReceiptItem,
+  ReceiptItemRecord,
+  ReceiptRecord,
+  ReceiptStore,
+} from './store/receipt-store';
+
+export type { SkuDictionary, DictionaryEntry } from './dictionary/sku-dictionary';
+export type { Resolution, ResolutionQuery, SkuResolver } from './resolver/sku-resolver';
+export type {
+  ExtractedLineItem,
+  ExtractedReceipt,
+  ReceiptImageInput,
+  VisionProvider,
+} from './vision/vision-provider';

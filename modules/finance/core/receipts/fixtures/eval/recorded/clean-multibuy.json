@@ -1,0 +1,27 @@
+{
+  "readable": true,
+  "store": "COSTCO WHOLESALE",
+  "purchasedAt": "2026-05-19",
+  "total": 2198,
+  "tax": 0,
+  "fees": [],
+  "paymentHint": null,
+  "lineItems": [
+    {
+      "sku": "770033",
+      "rawDescription": "ORG WHOLE MILK 2GAL",
+      "quantity": 2,
+      "unitPrice": 349,
+      "linePrice": 698,
+      "discount": 0
+    },
+    {
+      "sku": "770044",
+      "rawDescription": "KS LAUNDRY DETERGENT",
+      "quantity": 1,
+      "unitPrice": 1799,
+      "linePrice": 1799,
+      "discount": 300
+    }
+  ]
+}
