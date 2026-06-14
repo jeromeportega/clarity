@@ -11,6 +11,7 @@
   "scripts": {
     "test": "vitest run --project unit",
     "test:watch": "vitest",
+    "e2e": "playwright test",
     "vision:eval": "vitest run --project eval",
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo.ts"
@@ -24,6 +25,7 @@
     "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.3",
     "drizzle-kit": "^0.28.1",
     "typescript": "^6.0.3",
