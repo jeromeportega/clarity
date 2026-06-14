@@ -12,15 +12,9 @@ import { QueueItemRow } from './QueueItemRow';
 
 interface QueueViewProps {
   items: QueueItem[];
-  /**
-   * Optional action renderer injected by story-004-003.
-   * story-004-002 renders the queue read-only when absent.
-   */
+  /** Optional action renderer; omit for a read-only queue. */
   renderActions?: (item: QueueItem) => ReactNode;
-  /**
-   * Optional header slot injected by story-004-005 (receipt upload).
-   * story-004-002 renders without it.
-   */
+  /** Optional slot rendered above the table; used for upload controls etc. */
   headerSlot?: ReactNode;
 }
 

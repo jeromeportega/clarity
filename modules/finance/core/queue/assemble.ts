@@ -18,6 +18,14 @@ import type { QueueItem, QueueItemType } from './types';
  *
  * Anti-join key: (type, id) must NOT appear in review_decisions
  * for this household. Same item_id under a different item_type is NOT filtered.
+ *
+ * Scope note: DB sources are filtered by householdId in the WHERE clause.
+ * Gateway sources receive the HouseholdScope and are contractually required to
+ * return only matching-household data. unmatched_txn adds a defense-in-depth
+ * post-filter (Transaction carries householdId); AmbiguousMatchGroup does not
+ * expose householdId on its type, so the gateway contract is the sole guard for
+ * that source — both the stub and live implementations enforce it at the scope
+ * check inside their method bodies.
  */
 export async function assembleQueue(
   scope: HouseholdScope,
