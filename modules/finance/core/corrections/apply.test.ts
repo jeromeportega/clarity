@@ -302,7 +302,7 @@ describe('applyCorrection', () => {
       expect(skuRows[0]!.source).toBe('human');
     });
 
-    it('overwrites existing sku_dictionary entry on conflict', async () => {
+    it('overwrites existing auto sku_dictionary entry on conflict', async () => {
       const { itemId } = await seedReceiptItem(db, { needsReview: true });
       const item = makeSkuResolutionItem(itemId);
       const action = {
@@ -334,6 +334,43 @@ describe('applyCorrection', () => {
       expect(skuRows).toHaveLength(1);
       expect(skuRows[0]!.canonicalName).toBe('Updated Name');
       expect(skuRows[0]!.category).toBe('household');
+      expect(skuRows[0]!.source).toBe('human');
+    });
+
+    it('overwrites existing human sku_dictionary entry on conflict (human-over-human always wins)', async () => {
+      const { itemId } = await seedReceiptItem(db, { needsReview: true });
+      const item = makeSkuResolutionItem(itemId);
+
+      // Pre-seed an earlier human entry
+      await db.insert(skuDictionary).values({
+        store: 'WALMART',
+        skuOrAbbrev: 'GV-BREAD',
+        canonicalName: 'Great Value White Bread',
+        category: 'groceries',
+        nameConfidence: 1.0,
+        categoryConfidence: 1.0,
+        source: 'human',
+        updatedAt: 1000,
+      });
+
+      const action = {
+        type: 'correct' as const,
+        correction: {
+          variant: 'editResolution' as const,
+          store: 'WALMART',
+          skuOrAbbrev: 'GV-BREAD',
+          canonicalName: 'Great Value Wheat Bread',
+          category: 'groceries',
+        },
+      };
+
+      await applyCorrection(SCOPE, item, action, gw, db);
+
+      const skuRows = await db.select().from(skuDictionary).where(
+        eq(skuDictionary.skuOrAbbrev, 'GV-BREAD'),
+      );
+      expect(skuRows).toHaveLength(1);
+      expect(skuRows[0]!.canonicalName).toBe('Great Value Wheat Bread');
       expect(skuRows[0]!.source).toBe('human');
     });
   });

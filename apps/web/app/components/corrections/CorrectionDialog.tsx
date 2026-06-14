@@ -12,17 +12,14 @@ import { Button } from '@/components/ui/button';
 import type { QueueItem } from '../../../../../modules/finance/core/queue/types';
 import type { CorrectionVariant } from '../../../../../modules/finance/core/corrections/apply';
 
-// ---------------------------------------------------------------------------
-// Three correction modes the user can choose
-// ---------------------------------------------------------------------------
-
 type CorrectionMode = 'pickCategoryId' | 'pickMatchCandidateId' | 'editResolution';
 
 interface CorrectionDialogProps {
   item: QueueItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (correction: CorrectionVariant) => void;
+  /** Returns a promise; resolves on success, rejects on failure. Dialog stays open on failure. */
+  onSubmit: (correction: CorrectionVariant) => Promise<void>;
 }
 
 const CATEGORY_OPTIONS = [
@@ -40,6 +37,8 @@ const CATEGORY_OPTIONS = [
 
 export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: CorrectionDialogProps) {
   const [mode, setMode] = React.useState<CorrectionMode>('editResolution');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
 
   // Pick-category state
   const [categoryId, setCategoryId] = React.useState('');
@@ -53,11 +52,13 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
   const [canonicalName, setCanonicalName] = React.useState('');
   const [category, setCategory] = React.useState('groceries');
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
 
     let correction: CorrectionVariant;
-
     if (mode === 'pickCategoryId') {
       correction = { variant: 'pickCategoryId', categoryId };
     } else if (mode === 'pickMatchCandidateId') {
@@ -66,8 +67,14 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
       correction = { variant: 'editResolution', store, skuOrAbbrev, canonicalName, category };
     }
 
-    onSubmit(correction);
-    onOpenChange(false);
+    try {
+      await onSubmit(correction);
+      onOpenChange(false);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to apply correction. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -77,13 +84,12 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
           <DialogTitle>Correct item</DialogTitle>
         </DialogHeader>
 
-        {/* Mode selector */}
-        <div role="group" aria-label="Correction mode" className="flex gap-2 flex-wrap">
+        {/* Mode selector — radiogroup for correct ARIA ownership */}
+        <div role="radiogroup" aria-label="Correction mode" className="flex gap-2 flex-wrap">
           <button
             type="button"
             role="radio"
             aria-checked={mode === 'editResolution'}
-            aria-label="Edit resolution"
             onClick={() => setMode('editResolution')}
             className={`rounded px-3 py-1 text-sm border ${mode === 'editResolution' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
           >
@@ -93,7 +99,6 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
             type="button"
             role="radio"
             aria-checked={mode === 'pickCategoryId'}
-            aria-label="Pick category"
             onClick={() => setMode('pickCategoryId')}
             className={`rounded px-3 py-1 text-sm border ${mode === 'pickCategoryId' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
           >
@@ -103,7 +108,6 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
             type="button"
             role="radio"
             aria-checked={mode === 'pickMatchCandidateId'}
-            aria-label="Pick match candidate"
             onClick={() => setMode('pickMatchCandidateId')}
             className={`rounded px-3 py-1 text-sm border ${mode === 'pickMatchCandidateId' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
           >
@@ -111,10 +115,9 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
           </button>
         </div>
 
-        {/* Context */}
         <p className="text-sm text-muted-foreground">{item.reason}</p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-3">
           {mode === 'pickCategoryId' && (
             <div className="flex flex-col gap-1">
               <label htmlFor="categoryId" className="text-sm font-medium">Category</label>
@@ -203,11 +206,17 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
             </>
           )}
 
+          {submitError && (
+            <p className="text-xs text-destructive" role="alert">{submitError}</p>
+          )}
+
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">Apply correction</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Applying…' : 'Apply correction'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

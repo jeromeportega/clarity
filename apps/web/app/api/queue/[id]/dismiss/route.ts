@@ -1,8 +1,9 @@
+import { LibsqlError } from '@libsql/client';
 import { createDb } from '../../../../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
 import { applyCorrection } from '../../../../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
-import type { QueueItemType } from '../../../../../../../modules/finance/core/queue/types';
+import { VALID_ITEM_TYPES } from '../_lib/validation';
 
 export async function POST(
   request: Request,
@@ -19,18 +20,18 @@ export async function POST(
     : context.params;
   const itemId = params.id;
 
-  let body: { itemType: QueueItemType };
+  let body: { itemType: string };
   try {
-    body = await request.json() as { itemType: QueueItemType };
+    body = await request.json() as { itemType: string };
   } catch {
     return new Response('Bad Request', { status: 400 });
   }
-  if (!body.itemType) {
-    return new Response('Bad Request: itemType required', { status: 400 });
+  if (!body.itemType || !VALID_ITEM_TYPES.includes(body.itemType as never)) {
+    return new Response('Bad Request: invalid itemType', { status: 400 });
   }
 
   const scope = { householdId: DEMO_HOUSEHOLD_ID };
-  const item = { id: itemId, type: body.itemType, reason: '' };
+  const item = { id: itemId, type: body.itemType as (typeof VALID_ITEM_TYPES)[number], reason: '' };
   const db = createDb();
   const gw = gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
@@ -41,8 +42,7 @@ export async function POST(
     const result = await applyCorrection(scope, item, { type: 'dismiss' }, gw, db);
     return Response.json({ removedItemId: result.removedItemId });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    if (message.includes('UNIQUE') || message.includes('constraint')) {
+    if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return new Response('Conflict: item already decided', { status: 409 });
     }
     return new Response('Internal Server Error', { status: 500 });

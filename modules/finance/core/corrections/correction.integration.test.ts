@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FinanceDb } from '../../db/client';
 import { households, receiptItems, receipts, reviewDecisions } from '../../db/schema';
@@ -80,6 +80,8 @@ async function applyMigrations(client: ReturnType<typeof createClient>): Promise
   }
 }
 
+const TEST_TOKEN = 'integration-test-token-secret';
+
 // ---------------------------------------------------------------------------
 // State shared across tests within this suite
 // ---------------------------------------------------------------------------
@@ -88,22 +90,16 @@ let testDbFile: string;
 let testDbSubdir: string;
 let db: FinanceDb;
 let cleanupDb: () => void;
-const TEST_TOKEN = 'integration-test-token-secret';
-
-// Item IDs seeded before tests run
-let skuItemId: string;
-let confirmItemId: string;
-let dismissItemId: string;
+let sharedReceiptId: string;
 
 beforeAll(async () => {
-  // Set env so route handlers use this test DB and our token.
   testDbSubdir = mkdtempSync(join(tmpdir(), 'clarity-integration-test-'));
   testDbFile = join(testDbSubdir, 'integration.db');
 
-  process.env.TURSO_DATABASE_URL = `file:${testDbFile}`;
-  process.env.RECONCILE_MUTATION_TOKEN = TEST_TOKEN;
-  // Use stub gateway — no live H3 in unit test environment.
-  process.env.RECON_BACKEND = 'stub';
+  // Use vi.stubEnv so Vitest restores original values after the suite
+  vi.stubEnv('TURSO_DATABASE_URL', `file:${testDbFile}`);
+  vi.stubEnv('RECONCILE_MUTATION_TOKEN', TEST_TOKEN);
+  vi.stubEnv('RECON_BACKEND', 'stub');
 
   const client = createClient({ url: `file:${testDbFile}` });
   db = drizzle(client);
@@ -123,10 +119,10 @@ beforeAll(async () => {
     name: 'Integration Test Household',
   });
 
-  // Seed a receipt for SKU-resolution items
-  const receiptId = `receipt-integration-${randomUUID()}`;
+  // Shared receipt used by per-describe seed helpers
+  sharedReceiptId = `receipt-integration-${randomUUID()}`;
   await db.insert(receipts).values({
-    id: receiptId,
+    id: sharedReceiptId,
     householdId: DEMO_HOUSEHOLD_ID,
     source: 'manual',
     store: 'COSTCO',
@@ -134,35 +130,35 @@ beforeAll(async () => {
     totalCents: 2499,
     needsReview: false,
   });
-
-  // Three distinct items: one for editResolution, one for confirm, one for dismiss.
-  skuItemId = `ri-integration-${randomUUID()}`;
-  confirmItemId = `ri-integration-${randomUUID()}`;
-  dismissItemId = `ri-integration-${randomUUID()}`;
-
-  for (const id of [skuItemId, confirmItemId, dismissItemId]) {
-    await db.insert(receiptItems).values({
-      id,
-      receiptId,
-      lineNo: [skuItemId, confirmItemId, dismissItemId].indexOf(id) + 1,
-      rawDescription: id === skuItemId ? 'KS EVOO' : id === confirmItemId ? 'BANANAS' : 'MILK',
-      quantity: 1,
-      linePriceCents: 1000,
-      needsReview: true,
-    });
-  }
 });
 
 afterAll(() => {
+  vi.unstubAllEnvs();
   cleanupDb();
-  delete process.env.TURSO_DATABASE_URL;
-  delete process.env.RECONCILE_MUTATION_TOKEN;
-  delete process.env.RECON_BACKEND;
 });
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function seedReceiptItem(lineNo: number): Promise<string> {
+  const id = `ri-integration-${randomUUID()}`;
+  await db.insert(receiptItems).values({
+    id,
+    receiptId: sharedReceiptId,
+    lineNo,
+    rawDescription: 'KS EVOO',
+    quantity: 1,
+    linePriceCents: 1000,
+    needsReview: true,
+  });
+  return id;
+}
+
+let lineNoCounter = 1;
+function nextLineNo(): number {
+  return lineNoCounter++;
+}
 
 function makeRequest(body: unknown): Request {
   return new Request('http://localhost/api/queue/test/correct', {
@@ -180,11 +176,17 @@ function makeContext(itemId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Integration tests
+// Integration tests — each describe seeds its own fresh item
 // ---------------------------------------------------------------------------
 
-describe('anti-stub integration: POST /api/queue/[id]/correct', () => {
-  it('editResolution: persists decision, upserts sku_dictionary at confidence=1.0, removes item from queue', async () => {
+describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)', () => {
+  let skuItemId: string;
+
+  beforeAll(async () => {
+    skuItemId = await seedReceiptItem(nextLineNo());
+  });
+
+  it('persists decision, upserts sku_dictionary at confidence=1.0, removes item from queue', async () => {
     const nullGw = new NullGateway();
     const body = {
       itemType: 'sku_resolution',
@@ -204,14 +206,8 @@ describe('anti-stub integration: POST /api/queue/[id]/correct', () => {
     expect(json.removedItemId).toBe(skuItemId);
 
     // (a) Item no longer appears in assembleQueue
-    // Use NullGateway so only DB-sourced items show up.
-    const queueItems = await assembleQueue(
-      { householdId: DEMO_HOUSEHOLD_ID },
-      nullGw,
-      db,
-    );
-    const ids = queueItems.map((i) => i.id);
-    expect(ids).not.toContain(skuItemId);
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
+    expect(queueItems.map((i) => i.id)).not.toContain(skuItemId);
 
     // (b) sku_dictionary has the new canonical entry at confidence 1.0
     const skuRows = await db.select().from(skuDictionary).where(
@@ -234,7 +230,13 @@ describe('anti-stub integration: POST /api/queue/[id]/correct', () => {
 });
 
 describe('anti-stub integration: POST /api/queue/[id]/confirm', () => {
-  it('confirm: item leaves the queue, no sku_dictionary write', async () => {
+  let confirmItemId: string;
+
+  beforeAll(async () => {
+    confirmItemId = await seedReceiptItem(nextLineNo());
+  });
+
+  it('item leaves the queue; decision row written, no sku_dictionary write', async () => {
     const nullGw = new NullGateway();
     const body = { itemType: 'sku_resolution' };
 
@@ -245,14 +247,10 @@ describe('anti-stub integration: POST /api/queue/[id]/confirm', () => {
     expect(json.removedItemId).toBe(confirmItemId);
 
     // Item no longer in queue
-    const queueItems = await assembleQueue(
-      { householdId: DEMO_HOUSEHOLD_ID },
-      nullGw,
-      db,
-    );
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
     expect(queueItems.map((i) => i.id)).not.toContain(confirmItemId);
 
-    // No new sku_dictionary entry (beyond what the correct test added)
+    // Decision row
     const decRows = await db.select().from(reviewDecisions).where(
       eq(reviewDecisions.itemId, confirmItemId),
     );
@@ -262,7 +260,13 @@ describe('anti-stub integration: POST /api/queue/[id]/confirm', () => {
 });
 
 describe('anti-stub integration: POST /api/queue/[id]/dismiss', () => {
-  it('dismiss: item leaves the queue', async () => {
+  let dismissItemId: string;
+
+  beforeAll(async () => {
+    dismissItemId = await seedReceiptItem(nextLineNo());
+  });
+
+  it('item leaves the queue', async () => {
     const nullGw = new NullGateway();
     const body = { itemType: 'sku_resolution' };
 
@@ -272,12 +276,7 @@ describe('anti-stub integration: POST /api/queue/[id]/dismiss', () => {
     const json = await res.json() as { removedItemId: string };
     expect(json.removedItemId).toBe(dismissItemId);
 
-    // Item no longer in queue
-    const queueItems = await assembleQueue(
-      { householdId: DEMO_HOUSEHOLD_ID },
-      nullGw,
-      db,
-    );
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, nullGw, db);
     expect(queueItems.map((i) => i.id)).not.toContain(dismissItemId);
   });
 });
@@ -291,5 +290,31 @@ describe('anti-stub integration: auth guard', () => {
     });
     const res = await postCorrect(req, makeContext('some-id'));
     expect(res.status).toBe(401);
+  });
+});
+
+describe('anti-stub integration: input validation', () => {
+  it('returns 400 for invalid itemType', async () => {
+    const res = await postConfirm(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ itemType: 'not_a_real_type' }),
+      }),
+      makeContext('some-id'),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for invalid correction variant', async () => {
+    const res = await postCorrect(
+      new Request('http://localhost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ itemType: 'sku_resolution', correction: { variant: 'notAVariant' } }),
+      }),
+      makeContext('some-id'),
+    );
+    expect(res.status).toBe(400);
   });
 });

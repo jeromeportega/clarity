@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
 import type { FinanceDb } from '../../db/client';
 import { reviewDecisions } from '../../db/schema';
 import { skuDictionary } from '../receipts/dictionary/schema';
@@ -104,8 +103,7 @@ export async function applyCorrection(
             source: 'human' as const,
             updatedAt: now,
           },
-          // human-wins: always overwrite (this correction IS human-sourced)
-          setWhere: sql`excluded.source = 'human'`,
+          // human-wins: always overwrite any existing entry (auto or human)
         });
     }
 
