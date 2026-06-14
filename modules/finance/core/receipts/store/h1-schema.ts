@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,22 +47,24 @@ const MIGRATIONS_DIR = join(
   'migrations',
 );
 
-function h1MigrationSql(): string {
-  // 0000 ships every H1 table (ADR-004). Applying it verbatim keeps the test
-  // schema identical to production — no hand-maintained DDL to drift.
-  return readFileSync(join(MIGRATIONS_DIR, '0000_gorgeous_psylocke.sql'), 'utf8');
-}
-
 // The household every offline receipt-store test row references. H1's
 // `receipts.household_id` is a FK to `households.id`, and libSQL enforces FKs by
 // default, so a fresh test DB must carry this row before a receipt inserts.
 export const TEST_HOUSEHOLD_ID = 'household-1';
 
-// Materialize H1's real schema and seed the category taxonomy + a test
-// household. Hermetic: the caller passes a fresh libSQL client (e.g.
+// Materialize H1's real schema (all migrations) and seed the category taxonomy
+// + a test household. Applies every migration file so the in-memory test DB
+// stays in sync when later stories add columns to existing tables.
+// Hermetic: the caller passes a fresh libSQL client (e.g.
 // `createClient({ url: ':memory:' })`).
 export async function applyStubH1Schema(client: Client): Promise<void> {
-  await client.executeMultiple(h1MigrationSql());
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    if (sqlText.trim()) await client.executeMultiple(sqlText);
+  }
   await client.execute({
     sql: 'INSERT OR IGNORE INTO households (id, name) VALUES (?, ?)',
     args: [TEST_HOUSEHOLD_ID, 'Test Household'],
