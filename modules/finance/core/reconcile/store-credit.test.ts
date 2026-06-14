@@ -108,6 +108,22 @@ describe('findAccrualForReturn', () => {
     expect(result).toBeUndefined();
   });
 
+  it('exact orderId+orderItemId match filters by kind — does not cross-link a wrong-kind accrual', () => {
+    // Two accruals share the same orderId+orderItemId but have different kinds;
+    // only the one matching opts.kind should be returned.
+    const sameItemAccruals: StoreCreditAccrual[] = [
+      makeAccrual({ id: 'sc-wrong-kind', kind: 'store_credit', amountCents: 1500, orderId: 'order-x', orderItemId: 'item-x' }),
+      makeAccrual({ id: 'sc-right-kind', kind: 'gift_card', amountCents: 1500, orderId: 'order-x', orderItemId: 'item-x' }),
+    ];
+    const result = findAccrualForReturn(sameItemAccruals, {
+      orderId: 'order-x',
+      orderItemId: 'item-x',
+      kind: 'gift_card',
+      amountCents: -1500,
+    });
+    expect(result?.id).toBe('sc-right-kind');
+  });
+
   it('orderId-only fallback filters by kind — does not cross-link a wrong-kind accrual', () => {
     // Order has two accruals of different kinds; opts.kind must be respected.
     const mixedKindAccruals: StoreCreditAccrual[] = [

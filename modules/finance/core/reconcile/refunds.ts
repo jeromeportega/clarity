@@ -1,9 +1,11 @@
 import { similarityRatio } from '../receipts';
 import {
   bankSignToSignedSpend,
+  type BankLine,
   type LedgerEvent,
   type MatchRecord,
   type ReconcileInputs,
+  type ReceiptView,
   type StoreCreditAccrual,
   type StoreCreditDrawdown,
 } from './model';
@@ -142,8 +144,8 @@ export function reconcileRefunds(
   );
 
   type PartialCandidate = {
-    bank: (typeof unmatchedDebits)[0];
-    receipt: (typeof unmatchedReceipts)[0];
+    bank: BankLine;
+    receipt: ReceiptView;
     gap: number;
     confidence: number;
     rationale: string;
@@ -181,7 +183,13 @@ export function reconcileRefunds(
   }
 
   // Highest confidence first; greedy claim — each bank line and receipt claimed once.
-  partialCandidates.sort((a, b) => b.confidence - a.confidence);
+  // Tiebreaker by IDs ensures deterministic ordering on equal-confidence candidates.
+  partialCandidates.sort(
+    (a, b) =>
+      b.confidence - a.confidence ||
+      a.bank.id.localeCompare(b.bank.id) ||
+      a.receipt.id.localeCompare(b.receipt.id),
+  );
 
   // Track remaining accrual within this reconcile run.
   const remainingByKind = new Map<StoreCreditAccrual['kind'], number>(
@@ -219,6 +227,9 @@ export function reconcileRefunds(
 
     if (chosenKind === null) {
       // Over-drawdown guard: route to review, write NO negative balance (Security Model).
+      // Claim the pair so no later (lower-confidence) candidate can double-count them.
+      claimedBankIds.add(bank.id);
+      claimedReceiptIds.add(receipt.id);
       newMatches.push({
         id: matchId,
         type: 'store_credit_drawdown',

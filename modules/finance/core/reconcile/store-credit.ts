@@ -33,7 +33,10 @@ export function findAccrualForReturn(
 ): StoreCreditAccrual | undefined {
   if (opts.orderId && opts.orderItemId) {
     const exact = accruals.find(
-      (a) => a.orderId === opts.orderId && a.orderItemId === opts.orderItemId,
+      (a) =>
+        a.orderId === opts.orderId &&
+        a.orderItemId === opts.orderItemId &&
+        (!opts.kind || a.kind === opts.kind),
     );
     if (exact) return exact;
   }

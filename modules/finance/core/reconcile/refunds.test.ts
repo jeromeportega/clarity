@@ -463,6 +463,7 @@ describe('ADR-005: refund → store credit → respend nets to zero new outflow'
           id: 'order-return',
           externalOrderId: 'AMZN-RET',
           orderDate: '2024-02-10',
+          orderTotalCents: 2400,
           items: [
             {
               id: 'item-return',
