@@ -63,7 +63,8 @@ function deriveMerchantAboveAvg(
 
   for (const event of events) {
     if (event.signedSpendCents <= 0) continue;
-    const rationale = event.mergedItems[0]?.rationale ?? '';
+    const rationale =
+      event.mergedItems.find((i) => i.rationale.startsWith(MERCHANT_PREFIX))?.rationale ?? '';
     const merchant = merchantFromRationale(rationale);
     if (!merchant) continue;
 
@@ -142,10 +143,10 @@ function deriveCategoryTrackingOver(
 
     const priorSpend = byMonth.get(priorMonth);
 
-    if (priorSpend === undefined) {
+    if (priorSpend === undefined || priorSpend <= 0) {
       flags.push({
         code: 'category_tracking_over',
-        message: `No prior-month data to compare ${category} spend`,
+        message: `No meaningful prior-month baseline to compare ${category} spend`,
         number: { observedCents: currentSpend },
         basis: 'insufficient_history',
         inconclusive: true,

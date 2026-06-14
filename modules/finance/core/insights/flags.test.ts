@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ClassifiedItem, LedgerEvent, MatchRecord, ReconciledLedger } from '../reconcile/model';
 import type { ReconcileConfig } from '../reconcile/thresholds';
 import { DEFAULT_CONFIG } from '../reconcile/thresholds';
-import type { Rollup } from '../rollups/model';
+import { rollupNetSpend } from '../rollups/rollup';
 import { deriveInsights } from './flags';
 import type { InsightFlag } from './model';
 
@@ -50,28 +50,6 @@ function makeLedger(
     unmatched: { bankLines: [], orderItems: [], receipts: [] },
     netSpendCents: events.reduce((s, e) => s + e.signedSpendCents, 0),
   };
-}
-
-/** Build a rollup from events (mirrors rollupNetSpend logic). */
-function makeRollup(events: LedgerEvent[]): Rollup {
-  type Cell = { category: string; month: string; netSpendCents: number; eventIds: string[] };
-  const map = new Map<string, Cell>();
-  for (const event of events) {
-    const month = event.occurredOn.slice(0, 7);
-    const category =
-      event.mergedItems.length > 0
-        ? event.mergedItems[0].category
-        : event.categoryFallback ?? 'uncategorized';
-    const key = `${category}\0${month}`;
-    const cell = map.get(key);
-    if (cell) {
-      cell.netSpendCents += event.signedSpendCents;
-      cell.eventIds.push(event.id);
-    } else {
-      map.set(key, { category, month, netSpendCents: event.signedSpendCents, eventIds: [event.id] });
-    }
-  }
-  return Array.from(map.values());
 }
 
 const CFG: ReconcileConfig = { ...DEFAULT_CONFIG, insightComparisonMonths: 3 };
@@ -163,7 +141,7 @@ describe('deriveInsights — ≥2 flags with number + basis (FR-13)', () => {
     ...groceryTrackingEvents(),
   ];
   const ledger = makeLedger(events);
-  const rollup = makeRollup(events);
+  const rollup = rollupNetSpend(ledger);
 
   it('returns ≥2 InsightFlags on the 3-month fixture', () => {
     const flags = deriveInsights(rollup, ledger, CFG);
@@ -193,7 +171,7 @@ describe('deriveInsights — merchant_above_avg', () => {
     // COSTCO Apr (20 000) > avg(Jan 10 000, Feb 12 000, Mar 8 000) = 10 000
     const events = costcoAboveAvgEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -211,7 +189,7 @@ describe('deriveInsights — merchant_above_avg', () => {
     // NETFLIX $15/month every month — flat spend, no flag
     const events = netflixInlineEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const netflixFlag = flags.find(
@@ -224,7 +202,7 @@ describe('deriveInsights — merchant_above_avg', () => {
     // COSTCO: avg = 10 000, observed = 20 000 → deltaPct = 100
     const events = costcoAboveAvgEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -243,7 +221,7 @@ describe('deriveInsights — category_tracking_over', () => {
     // Groceries: Mar 20 000 → Apr 30 000 (+50 %)
     const events = groceryTrackingEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -267,7 +245,7 @@ describe('deriveInsights — category_tracking_over', () => {
         items: [makeItem('Groceries', { rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -279,12 +257,37 @@ describe('deriveInsights — category_tracking_over', () => {
   it('includes basis citing the comparison month', () => {
     const events = groceryTrackingEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find((f) => f.code === 'category_tracking_over' && !f.inconclusive)!;
     expect(flag.basis).toContain('2024-03');
     expect(flag.basis).toContain('Groceries');
+  });
+
+  it('sparse branch: prior month is net-refund (negative) emits inconclusive, no inverted deltaPct', () => {
+    // Dining: Mar net-refund = -5 000¢, Apr spend = 8 000¢
+    // Without the guard, currentSpend > priorSpend fires and deltaPct divides by -5000,
+    // yielding an inverted percentage. Guard must emit inconclusive instead.
+    const rationale = 'merchant: LOCAL BISTRO; keyword match → Dining';
+    const events = [
+      makeBankEvent({ id: 'd1', signedSpendCents: -5_000, occurredOn: '2024-03-15',
+        items: [makeItem('Dining', { rationale })] }),
+      makeBankEvent({ id: 'd2', signedSpendCents: 8_000, occurredOn: '2024-04-15',
+        items: [makeItem('Dining', { rationale })] }),
+    ];
+    const ledger = makeLedger(events);
+    const rollup = rollupNetSpend(ledger);
+
+    const flags = deriveInsights(rollup, ledger, CFG);
+    const flag = flags.find(
+      (f) => f.code === 'category_tracking_over' && f.inconclusive === true,
+    );
+    expect(flag).toBeDefined();
+    expect(flag!.basis).toBe('insufficient_history');
+    expect(flag!.number.observedCents).toBe(8_000);
+    expect(flag!.number.comparisonCents).toBeUndefined();
+    expect(flag!.number.deltaPct).toBeUndefined();
   });
 });
 
@@ -295,7 +298,7 @@ describe('deriveInsights — new_recurring_charge', () => {
     // SPOTIFY first seen Feb 2024; window for Apr 2024 with 3-month cfg = Feb-Apr
     const events = spotifyNewRecurringEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find((f) => f.code === 'new_recurring_charge');
@@ -318,7 +321,7 @@ describe('deriveInsights — new_recurring_charge', () => {
         items: [makeItem('Subscriptions', { source: 'recurring', rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find((f) => f.code === 'new_recurring_charge');
@@ -335,7 +338,7 @@ describe('deriveInsights — in-app only (AC2)', () => {
     // shape of its return value and that it does not throw.
     const events = [...costcoAboveAvgEvents(), ...groceryTrackingEvents()];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     let result: InsightFlag[] | undefined;
     expect(() => {
@@ -365,7 +368,7 @@ describe('deriveInsights — sparse-history policy', () => {
     // COSTCO has Jan/Feb/Mar as prior months → populated, not inconclusive
     const events = costcoAboveAvgEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -387,7 +390,7 @@ describe('deriveInsights — sparse-history policy', () => {
         items: [makeItem('Groceries', { rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -404,7 +407,7 @@ describe('deriveInsights — sparse-history policy', () => {
   it('populated branch: category with prior-month data emits real comparison (not inconclusive)', () => {
     const events = groceryTrackingEvents();
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -424,7 +427,7 @@ describe('deriveInsights — sparse-history policy', () => {
         items: [makeItem('Electronics', { rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -447,7 +450,7 @@ describe('deriveInsights — sparse-history policy', () => {
         items: [makeItem('Clothing', { rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, CFG);
     const flag = flags.find(
@@ -475,7 +478,7 @@ describe('deriveInsights — insightComparisonMonths configuration', () => {
         items: [makeItem('Clothing', { rationale })] }),
     ];
     const ledger = makeLedger(events);
-    const rollup = makeRollup(events);
+    const rollup = rollupNetSpend(ledger);
 
     const flags = deriveInsights(rollup, ledger, cfg1);
     const flag = flags.find(
