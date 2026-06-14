@@ -4,7 +4,7 @@ import { assembleQueue } from '../../../modules/finance/core/queue/assemble';
 import type { HouseholdScope } from '../../../modules/finance/core/reconciliation/types';
 import type { FinanceDb } from '../../../modules/finance/db/client';
 import type { QueueItem } from '../../../modules/finance/core/queue/types';
-import { resolveHouseholdScope } from '../app/lib/public-mode';
+import { resolveHouseholdScope } from './public-mode';
 
 export { resolveHouseholdScope };
 

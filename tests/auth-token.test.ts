@@ -60,12 +60,7 @@ describe('requireMutationToken', () => {
   });
 
   it('throws 401 when RECONCILE_MUTATION_TOKEN env var is not set', () => {
-    const saved = process.env.RECONCILE_MUTATION_TOKEN;
-    delete process.env.RECONCILE_MUTATION_TOKEN;
-    try {
-      assertIs401(catchThrown(() => requireMutationToken(makeReq('any-token'))));
-    } finally {
-      if (saved !== undefined) process.env.RECONCILE_MUTATION_TOKEN = saved;
-    }
+    vi.stubEnv('RECONCILE_MUTATION_TOKEN', undefined as unknown as string);
+    assertIs401(catchThrown(() => requireMutationToken(makeReq('any-token'))));
   });
 });

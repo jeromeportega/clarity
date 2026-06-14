@@ -41,13 +41,8 @@ describe('resolveHouseholdScope', () => {
     });
 
     it('does not set readonly when PUBLIC_DEMO_MODE is absent', () => {
-      const saved = process.env.PUBLIC_DEMO_MODE;
-      delete process.env.PUBLIC_DEMO_MODE;
-      try {
-        expect(resolveHouseholdScope().readonly).toBeUndefined();
-      } finally {
-        if (saved !== undefined) process.env.PUBLIC_DEMO_MODE = saved;
-      }
+      vi.stubEnv('PUBLIC_DEMO_MODE', undefined as unknown as string);
+      expect(resolveHouseholdScope().readonly).toBeUndefined();
     });
 
     it('still scopes to DEMO_HOUSEHOLD_ID (no unscoped read path)', () => {
