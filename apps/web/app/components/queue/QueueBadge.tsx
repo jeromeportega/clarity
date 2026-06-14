@@ -18,7 +18,7 @@ interface QueueBadgeProps {
 export function QueueBadge({ type }: QueueBadgeProps) {
   const { label, variant } = BADGE_CONFIG[type];
   return (
-    <Badge variant={variant} role="status" aria-label={label}>
+    <Badge variant={variant}>
       {label}
     </Badge>
   );

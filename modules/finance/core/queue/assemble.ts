@@ -77,6 +77,8 @@ export async function assembleQueue(
   // 3. unmatched_txn — gateway surfaces transactions with no match at all
   const unmatched = await gw.listUnmatchedTransactions(scope);
   for (const txn of unmatched) {
+    // Defense-in-depth: drop any txn the gateway returned for the wrong household.
+    if (txn.householdId !== householdId) continue;
     if (keep('unmatched_txn', txn.id)) {
       items.push({
         id: txn.id,

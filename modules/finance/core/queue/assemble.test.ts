@@ -34,7 +34,7 @@ const MIGRATIONS_DIR = join(
   '../../db/migrations',
 );
 
-function applyMigrations(client: ReturnType<typeof createClient>): void {
+async function applyMigrations(client: ReturnType<typeof createClient>): Promise<void> {
   if (!existsSync(MIGRATIONS_DIR)) return;
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith('.sql'))
@@ -42,17 +42,17 @@ function applyMigrations(client: ReturnType<typeof createClient>): void {
   for (const file of files) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
     if (sql.trim().length > 0) {
-      void client.executeMultiple(sql).catch(() => {});
+      await client.executeMultiple(sql);
     }
   }
 }
 
-function createQueueTestDb(): { db: FinanceDb; cleanup: () => void } {
+async function createQueueTestDb(): Promise<{ db: FinanceDb; cleanup: () => void }> {
   const subdir = mkdtempSync(join(tmpdir(), 'clarity-queue-test-'));
   const file = join(subdir, 'test.db');
   const client = createClient({ url: `file:${file}` });
   const db = drizzle(client);
-  applyMigrations(client);
+  await applyMigrations(client);
 
   const cleanup = (): void => {
     try { client.close(); } catch { /* already closed */ }
@@ -198,8 +198,8 @@ describe('assembleQueue', () => {
   let db: FinanceDb;
   let cleanup: () => void;
 
-  beforeEach(() => {
-    const handle = createQueueTestDb();
+  beforeEach(async () => {
+    const handle = await createQueueTestDb();
     db = handle.db;
     cleanup = handle.cleanup;
   });
@@ -481,6 +481,18 @@ describe('assembleQueue', () => {
     expect(skuItems.map((i) => i.id)).toContain(itemIdA);
     expect(skuItems).toHaveLength(1);
     expect(flaggedItems).toHaveLength(1);
+  });
+
+  it('drops unmatched_txn items the gateway returned for the wrong household (defense-in-depth)', async () => {
+    await seedHousehold(db, HOUSEHOLD_A);
+    await seedHousehold(db, HOUSEHOLD_B);
+
+    // Gateway returns txns attributed to HOUSEHOLD_B; we query HOUSEHOLD_A
+    const txnB = makeTxn(randomUUID(), HOUSEHOLD_B);
+    const gw = new ControlledGateway([], [txnB]);
+
+    const items = await assembleQueue({ householdId: HOUSEHOLD_A }, gw, db);
+    expect(items.filter((i) => i.type === 'unmatched_txn')).toHaveLength(0);
   });
 
   it('returns an empty array for an unknown householdId (no data, no crash)', async () => {
