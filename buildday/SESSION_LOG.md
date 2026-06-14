@@ -89,6 +89,17 @@ Durable supervisor state. Append continuously. On restart: re-read this +
   `qa_planning: "on"`, but the schema accepts only `off`|`advisory` (its own
   comment says "advisory"). First two `loom_start_epic` calls errored. Fixed to
   `advisory`, retried, planning started. No human prompt needed.
+- **2026-06-14 ~13:25 PDT — GitHub CI red on every push (operator-flagged).
+  Mechanism: GitHub Actions CI (`npm run typecheck` step).** The CI workflow
+  runs an EXTRA `npm run typecheck` (root `tsc --noEmit`) that loom's
+  integration gate never ran (gate = `npm ci && npm test`, Vitest-only). Root
+  `tsconfig.json` includes `tests/**`, and `tests/receipts-component.test.ts`
+  imports a `.tsx` client component → `TS6142: '--jsx' is not set`, exit 2
+  (so `npm test` never even ran in CI). Gate-vs-CI divergence: Vitest transforms
+  JSX itself, so the gate stayed green while CI failed since the H4 component
+  test landed. Fix (PR #10): add `jsx: react-jsx` + DOM lib to the root
+  typecheck tsconfig. Verified GREEN on the PR branch AND on main via
+  `gh run watch`. npm test still 830.
 
 ## Epic state changes
 
