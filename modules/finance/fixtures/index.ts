@@ -25,8 +25,18 @@ export const BANK_STATEMENT_CSV = join(FIXTURES_DIR, 'bank', 'sample-bank-statem
  *  header, a split order, and a gift-card return (the store-credit ledger case). */
 export const AMAZON_ORDER_HISTORY_CSV = join(FIXTURES_DIR, 'amazon', 'Retail.OrderHistory.1.csv');
 
+/** Sanitized Costco digital-receipt export (`WarehouseReceiptDetail` records):
+ *  a warehouse sale with an instant-savings line, a CRV line and an unnamed
+ *  item; a Shop-Card refund; a gas-station receipt. Fake membership, fake
+ *  masked tender, fake warehouse. */
+export const COSTCO_WAREHOUSE_RECEIPTS_JSON = join(FIXTURES_DIR, 'costco', 'warehouse-receipts.json');
+
 /** The committed text fixtures, for the PII-scan test to assert sanitization. */
-export const TEXT_FIXTURE_FILES = [BANK_STATEMENT_CSV, AMAZON_ORDER_HISTORY_CSV] as const;
+export const TEXT_FIXTURE_FILES = [
+  BANK_STATEMENT_CSV,
+  AMAZON_ORDER_HISTORY_CSV,
+  COSTCO_WAREHOUSE_RECEIPTS_JSON,
+] as const;
 
 export function readFixtureText(path: string): string {
   return readFileSync(path, 'utf8');

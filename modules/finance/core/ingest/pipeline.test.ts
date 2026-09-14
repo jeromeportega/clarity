@@ -64,6 +64,8 @@ describe('importSource — adapter selection', () => {
       orders: 0,
       orderItems: 0,
       storeCreditRows: 0,
+      receipts: 0,
+      receiptItems: 0,
     });
   });
 

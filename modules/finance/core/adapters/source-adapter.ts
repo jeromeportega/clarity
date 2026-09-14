@@ -10,7 +10,7 @@ import type {
  * one interface, so the ingest pipeline never learns about source formats.
  */
 
-export type SourceKind = 'bank' | 'amazon' | 'receipt' | 'retailer-api' | 'eml';
+export type SourceKind = 'bank' | 'amazon' | 'costco' | 'receipt' | 'retailer-api' | 'eml';
 
 export interface RawInput {
   kind: SourceKind;
@@ -30,8 +30,8 @@ export interface ImportError {
 /**
  * The uniform output of every adapter. A given adapter fills only the array(s)
  * relevant to its source (a bank adapter fills `transactions`, an order adapter
- * fills `orders`); the others stay empty. The looser type buys one uniform seam
- * across all sources (ADR-007). `receipts` is empty throughout H1.
+ * fills `orders`, a digital-receipt adapter fills `receipts`); the others stay
+ * empty. The looser type buys one uniform seam across all sources.
  */
 export interface NormalizedBatch {
   transactions: NormalizedTransaction[];

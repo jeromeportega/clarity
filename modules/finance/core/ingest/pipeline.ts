@@ -13,16 +13,18 @@ export interface ImportResult {
     orders: number;
     orderItems: number;
     storeCreditRows: number;
+    receipts: number;
+    receiptItems: number;
   };
-  /** Rows that matched an existing unique key and were skipped — idempotency in action (FR-19). */
+  /** Rows that matched an existing unique key and were skipped — idempotency in action. */
   skippedDuplicates: number;
-  /** Normalization + persistence errors, never silently dropped (FR-20). */
+  /** Normalization + persistence errors, never silently dropped. */
   errors: ImportError[];
 }
 
 function emptyResult(errors: ImportError[]): ImportResult {
   return {
-    inserted: { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0 },
+    inserted: { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0, receipts: 0, receiptItems: 0 },
     skippedDuplicates: 0,
     errors,
   };
@@ -33,9 +35,9 @@ function emptyResult(errors: ImportError[]): ImportResult {
  * is true, normalizes the bytes into a {@link NormalizedBatch}, then hands the
  * batch to `persist.ts` for all DB writes, dedup, and ledger accrual.
  *
- * The adapter list is INJECTED by the caller (entry points compose all four; unit
- * tests pass just the adapter under test) so core never imports the concrete
- * source implementations and the dependency direction stays one-way (ADR-008).
+ * The adapter list is INJECTED by the caller (entry points compose all of them;
+ * unit tests pass just the adapter under test) so core never imports the
+ * concrete source implementations and the dependency direction stays one-way.
  *
  * If no adapter matches, returns an {@link ImportResult} carrying a single
  * {@link ImportError} — it does not throw.
