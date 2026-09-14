@@ -1,5 +1,7 @@
 'use server';
 
+import { timingSafeEqual } from 'node:crypto';
+
 import { headers } from 'next/headers';
 import { createDb } from '../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../modules/finance/core/reconciliation/gateway';
@@ -12,14 +14,19 @@ import type { QueueItemType } from '../../../../modules/finance/core/queue/types
 
 const SCOPE = { householdId: DEMO_HOUSEHOLD_ID };
 
-// When RECONCILE_MUTATION_TOKEN is configured (production), Server Actions require
-// the same Bearer token. Without the token set (dev / demo), they are open — Next.js
-// CSRF protection applies in all cases.
+// Server Actions are mutations and use the same shared-secret gate as the API
+// routes. Fail closed: with no RECONCILE_MUTATION_TOKEN configured, no mutation
+// is possible from any caller. (Real sign-in replaces this gate.)
 async function requireMutationToken(): Promise<void> {
   const token = process.env.RECONCILE_MUTATION_TOKEN;
-  if (!token) return;
+  if (!token) {
+    throw new Error('Unauthorized');
+  }
   const h = await headers();
-  if (h.get('authorization') !== `Bearer ${token}`) {
+  const provided = h.get('x-reconcile-token') ?? h.get('authorization')?.replace(/^Bearer /, '') ?? '';
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(token, 'utf8');
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
     throw new Error('Unauthorized');
   }
 }

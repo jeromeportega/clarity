@@ -1,9 +1,10 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import Anthropic from '@anthropic-ai/sdk';
 
+import { requireMutationToken } from '../../../lib/auth/token';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
 import { StubSkuDictionary } from '../../../../../../modules/finance/core/receipts/dictionary/stub-sku-dictionary';
 import {
@@ -43,15 +44,6 @@ function buildDeps(): ReceiptPipelineDeps {
   };
 }
 
-// Timing-safe token comparison — prevents response-time attacks on the shared
-// secret (Buffer lengths must match first; timingSafeEqual requires equal lengths).
-function isTokenValid(token: string | null, expected: string): boolean {
-  if (!token) return false;
-  const a = Buffer.from(token);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 const MIME_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -61,17 +53,15 @@ const MIME_EXT: Record<string, string> = {
 /**
  * POST /api/receipts/upload — multipart/form-data { file: File }.
  *
- * Mutation route: guarded by x-reconcile-token (FR-13). Validates MIME and
- * size cap BEFORE reading bytes into memory or invoking H2. Asset stored with
- * a UUID filename — the client filename is never used as a path (Security T4).
+ * Mutation route: guarded by x-reconcile-token via the shared
+ * `requireMutationToken` gate. Validates MIME and size cap BEFORE reading bytes
+ * into memory or invoking the pipeline. Asset stored with a UUID filename — the
+ * client filename is never used as a path.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Mutation token gate — must reject before any upload or H2 work.
-  const token = request.headers.get('x-reconcile-token');
-  const expected = process.env.RECONCILE_MUTATION_TOKEN;
-  if (!expected || !isTokenValid(token, expected)) {
-    return new Response('Unauthorized', { status: 401 });
-  }
+  // Mutation token gate — must reject before any upload or pipeline work.
+  const denied = requireMutationToken(request);
+  if (denied) return denied;
 
   let form: FormData;
   try {

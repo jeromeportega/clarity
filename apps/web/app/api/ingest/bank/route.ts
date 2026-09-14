@@ -8,9 +8,12 @@ import type { RawInput, SourceAdapter } from '../../../../../../modules/finance/
 import { importSource } from '../../../../../../modules/finance/core/ingest/pipeline';
 import { createDb } from '../../../../../../modules/finance/db/client';
 import { accounts } from '../../../../../../modules/finance/db/schema';
+import { requireMutationToken } from '../../../lib/auth/token';
 
 /**
  * POST /api/ingest/bank — multipart/form-data { file: File, accountId: string }.
+ *
+ * Mutation route: guarded by x-reconcile-token like every other write.
  *
  * Thin by design (the entry-point seam): this handler only parses the request,
  * resolves the household from the account, and shapes the response. ALL ingest
@@ -21,7 +24,15 @@ import { accounts } from '../../../../../../modules/finance/db/schema';
 const adapters: SourceAdapter[] = [bankAdapter, amazonAdapter, retailerApiAdapter, emlAdapter];
 
 export async function POST(request: Request): Promise<Response> {
-  const form = await request.formData();
+  const denied = requireMutationToken(request);
+  if (denied) return denied;
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return Response.json({ error: 'Invalid multipart request' }, { status: 400 });
+  }
   const file = form.get('file');
   const accountId = form.get('accountId');
 

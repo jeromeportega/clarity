@@ -1,21 +1,23 @@
 /**
- * Enumerated mutation-route token gate (FR-13, NFR-7).
+ * Enumerated mutation-route token gate.
  *
  * Iterates the complete mutation-route table and asserts:
  *   - Every route returns 401 with no token present.
  *   - Every route returns non-401 with a valid token present.
  *
  * Adding a new mutation route to the table without gating it will cause
- * the second assertion to fail, making the gate self-enforcing.
- *
- * Note: story-004-005 will add POST /api/receipts/upload; wire it into
- * MUTATION_ROUTES below once that story is implemented.
+ * the second assertion to fail, making the gate self-enforcing. Every route
+ * that writes — queue decisions, receipt upload, bank/orders ingest — belongs
+ * in this table.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { POST as postIngestBank } from '../apps/web/app/api/ingest/bank/route';
+import { POST as postIngestOrders } from '../apps/web/app/api/ingest/orders/route';
 import { POST as postConfirm } from '../apps/web/app/api/queue/[id]/confirm/route';
 import { POST as postCorrect } from '../apps/web/app/api/queue/[id]/correct/route';
 import { POST as postDismiss } from '../apps/web/app/api/queue/[id]/dismiss/route';
+import { POST as postUpload } from '../apps/web/app/api/receipts/upload/route';
 
 type RouteHandler = (
   req: Request,
@@ -26,8 +28,9 @@ const MUTATION_ROUTES: Array<{ name: string; handler: RouteHandler }> = [
   { name: 'POST /api/queue/[id]/confirm', handler: postConfirm },
   { name: 'POST /api/queue/[id]/correct', handler: postCorrect },
   { name: 'POST /api/queue/[id]/dismiss', handler: postDismiss },
-  // TODO(story-004-005): add { name: 'POST /api/receipts/upload', handler: postUpload }
-  // once story-004-005 ships; importing its route handler here enforces the gate.
+  { name: 'POST /api/receipts/upload', handler: postUpload },
+  { name: 'POST /api/ingest/bank', handler: postIngestBank },
+  { name: 'POST /api/ingest/orders', handler: postIngestOrders },
 ];
 
 const TEST_TOKEN = 'mutation-gate-test-secret-123';
@@ -41,7 +44,8 @@ function makeReq(withToken: boolean): Request {
   return new Request('http://test/api/queue/test-item-id/action', {
     method: 'POST',
     headers,
-    // No body — routes return 400 (bad request) after auth passes, which is non-401.
+    // No body — routes return 400 (bad request: unparseable JSON / multipart)
+    // after auth passes, which is non-401.
   });
 }
 
