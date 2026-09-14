@@ -1,5 +1,5 @@
 /**
- * No API route may be statically prerendered.
+ * No GET API route may be statically prerendered.
  *
  * Next 14 prerenders a route handler at build time when it reads no request
  * data (no `request`, `headers()`, `searchParams`, …). `GET /api/queue` reads
@@ -28,25 +28,37 @@ function routeFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const files = routeFiles(API_DIR).sort();
+interface DiscoveredRoute {
+  name: string;
+  dynamic: unknown;
+}
 
-describe('every GET API route opts out of static prerendering', () => {
-  it('finds the API routes (sanity)', () => {
-    expect(files.length).toBeGreaterThanOrEqual(9);
-  });
-
-  let getRoutes = 0;
-  for (const file of files) {
-    const name = `/api/${relative(API_DIR, dirname(file)).split('\\').join('/')}`;
-    it(`${name}: if it exports GET, it exports dynamic = 'force-dynamic'`, async () => {
-      const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
-      if (typeof mod.GET !== 'function') return;
-      getRoutes += 1;
-      expect(mod.dynamic, `${name} would be prerendered at build time`).toBe('force-dynamic');
+async function discoverGetRoutes(): Promise<DiscoveredRoute[]> {
+  const routes: DiscoveredRoute[] = [];
+  for (const file of routeFiles(API_DIR).sort()) {
+    const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+    if (typeof mod.GET !== 'function') continue;
+    routes.push({
+      name: `/api/${relative(API_DIR, dirname(file)).split('\\').join('/')}`,
+      dynamic: mod.dynamic,
     });
   }
+  return routes;
+}
 
-  it('checked at least the three known GET routes', () => {
-    expect(getRoutes).toBeGreaterThanOrEqual(3);
+const GET_ROUTES = await discoverGetRoutes();
+
+describe('every GET API route opts out of static prerendering', () => {
+  it('discovers at least the three known GET routes (guards against a broken walk)', () => {
+    expect(GET_ROUTES.length).toBeGreaterThanOrEqual(3);
+    expect(GET_ROUTES.map((r) => r.name)).toEqual(
+      expect.arrayContaining(['/api/queue', '/api/true-spend', '/api/true-spend/evidence/[itemId]']),
+    );
   });
+
+  for (const route of GET_ROUTES) {
+    it(`${route.name} exports dynamic = 'force-dynamic'`, () => {
+      expect(route.dynamic, `${route.name} would be prerendered at build time`).toBe('force-dynamic');
+    });
+  }
 });
