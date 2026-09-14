@@ -1,5 +1,8 @@
 import { fetchBreakdown, resolveHouseholdScope } from '../../../lib/truespend';
 
+// Every API route serves live household data; never prerender.
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request): Promise<Response> {
   if (!process.env.PUBLIC_DEMO_MODE) {
     return new Response('Forbidden', { status: 403 });

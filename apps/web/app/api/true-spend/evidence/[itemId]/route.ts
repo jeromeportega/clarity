@@ -1,5 +1,8 @@
 import { fetchEvidence } from '../../../../../lib/truespend';
 
+// Every API route serves live household data; never prerender.
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   _request: Request,
   context: { params: { itemId: string } | Promise<{ itemId: string }> },

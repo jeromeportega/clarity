@@ -59,7 +59,8 @@ echo ""
 echo "--- Check 1: GET /api/queue (read path) ---"
 QUEUE_RESPONSE=$(curl -sS --max-time 15 -w "\n%{http_code}" "$DEPLOY_URL/api/queue")
 QUEUE_STATUS=$(echo "$QUEUE_RESPONSE" | tail -1)
-QUEUE_BODY=$(echo "$QUEUE_RESPONSE" | head -n -1)
+# Everything but the last line (portable: BSD/macOS head has no `-n -1`).
+QUEUE_BODY=$(echo "$QUEUE_RESPONSE" | sed '$d')
 
 assert_eq "GET /api/queue HTTP status" "200" "$QUEUE_STATUS"
 assert_contains "GET /api/queue response is JSON array" "[" "$QUEUE_BODY"
