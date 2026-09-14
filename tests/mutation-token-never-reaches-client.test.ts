@@ -3,14 +3,20 @@
 // The original defect: a Server Component read RECONCILE_MUTATION_TOKEN and
 // passed it as a prop to a 'use client' component, so Next serialized it into
 // the page payload. Static HTML never showed it — only the flight data did —
-// so a render-based check alone cannot catch that pattern. Hence two layers:
+// so a render-based check alone cannot catch that pattern. Hence:
 //
-//   1. Allowlist: the ONLY modules under apps/web permitted to read
-//      process.env.RECONCILE_MUTATION_TOKEN are the server-side auth gate and
-//      the server actions. Any other reader (a page, a layout, a component)
-//      fails this suite — that is exactly what the old receipts/page.tsx was.
+//   1. Allowlist: the ONLY files under apps/web permitted to mention the
+//      identifier RECONCILE_MUTATION_TOKEN at all — in code, comments, or
+//      strings — are the server-side auth gate and the startup check. Any
+//      other occurrence (a page, layout, component, helper; direct read,
+//      destructuring, aliasing) fails this suite. This is deliberately blunt:
+//      there is no legitimate reason for the name to appear anywhere else.
 //   2. Render: the receipts page rendered with a canary token in the
 //      environment contains neither the canary nor a `mutationToken` prop.
+//
+// Note the gate exposes only boolean checks (`isValidMutationToken`,
+// `requireMutationToken`) — nothing returns the secret, so an allowlisted
+// module cannot hand it to a page either.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -26,14 +32,11 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIR = join(repoRoot, 'apps/web');
 const CANARY = 'canary-mutation-token-9f8e7d6c5b4a';
 
-// An actual read of the secret (not a mention in a comment).
-const ENV_READ = /process\.env(\.RECONCILE_MUTATION_TOKEN|\[['"]RECONCILE_MUTATION_TOKEN['"]\])/;
+const IDENTIFIER = /\bRECONCILE_MUTATION_TOKEN\b/;
 
-// Server-only modules that legitimately read the secret. Extending this list
-// is a deliberate security decision — do it in a reviewed change.
-const ALLOWED_READERS = new Set([
-  'app/lib/auth/token.ts', // the gate
-  'app/actions/queue.ts', // server actions (same gate)
+// Extending this list is a deliberate security decision — do it in a reviewed change.
+const ALLOWED = new Set([
+  'app/lib/auth/token.ts', // the gate (boolean checks only; never returns the secret)
   'instrumentation.ts', // server startup: warns when the token is unset
 ]);
 
@@ -42,25 +45,26 @@ function walk(dir: string, out: string[] = []): string[] {
     if (entry === 'node_modules' || entry === '.next') continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) walk(full, out);
-    else if (/\.(ts|tsx|js|jsx|mjs)$/.test(entry)) out.push(full);
+    else if (/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(entry)) out.push(full);
   }
   return out;
 }
 
-describe('only server-side auth modules read RECONCILE_MUTATION_TOKEN', () => {
-  const readers = walk(WEB_DIR)
-    .filter((f) => ENV_READ.test(readFileSync(f, 'utf8')))
-    .map((f) => relative(WEB_DIR, f));
+describe('only the server-side auth gate mentions RECONCILE_MUTATION_TOKEN', () => {
+  const mentions = walk(WEB_DIR)
+    .filter((f) => IDENTIFIER.test(readFileSync(f, 'utf8')))
+    .map((f) => relative(WEB_DIR, f))
+    .sort();
 
-  it('finds the allowed readers (sanity: the gate still reads the env)', () => {
-    for (const allowed of ALLOWED_READERS) {
-      expect(readers, `${allowed} should read the token`).toContain(allowed);
+  it('the allowed files still mention it (sanity: the gate reads the env)', () => {
+    for (const allowed of ALLOWED) {
+      expect(mentions, `${allowed} should mention the token`).toContain(allowed);
     }
   });
 
-  it('no other file under apps/web reads the token', () => {
-    const unexpected = readers.filter((r) => !ALLOWED_READERS.has(r));
-    expect(unexpected, 'unexpected readers of RECONCILE_MUTATION_TOKEN').toEqual([]);
+  it('no other file under apps/web mentions it', () => {
+    const unexpected = mentions.filter((m) => !ALLOWED.has(m));
+    expect(unexpected, 'unexpected mentions of RECONCILE_MUTATION_TOKEN').toEqual([]);
   });
 });
 
