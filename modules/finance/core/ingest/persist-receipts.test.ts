@@ -15,6 +15,7 @@ import { DEMO_HOUSEHOLD_ID, seed } from '../../scripts/seed';
 import { costcoAdapter } from '../adapters/costco/costco.adapter';
 import { COSTCO_DIGITAL_SOURCE } from '../adapters/costco/parse';
 import type { RawInput } from '../adapters/source-adapter';
+import { persistBatch } from './persist';
 import { importSource } from './pipeline';
 
 /**
@@ -73,15 +74,16 @@ describe('persistBatch — receipts', () => {
     const rows = await db.select().from(receipts).where(eq(receipts.householdId, DEMO_HOUSEHOLD_ID));
     const sale = rows.find((r) => r.totalCents === 10900)!;
     expect(sale.source).toBe(COSTCO_DIGITAL_SOURCE);
-    expect(sale.store).toBe('COSTCO WHSE #0021');
+    expect(sale.store).toBe('COSTCO WHSE');
     expect(sale.purchasedAt).toBe('2026-09-08');
     expect(sale.paymentLast4).toBe('1234');
     expect(sale.imageHash).toMatch(/^[0-9a-f]{64}$/);
     expect(sale.needsReview).toBe(false);
 
     const refund = rows.find((r) => r.totalCents === -1099)!;
-    expect(refund.store).toBe('COSTCO WHSE #0021');
-    const gas = rows.find((r) => r.store === 'COSTCO GAS #0021')!;
+    expect(refund.store).toBe('COSTCO WHSE');
+    expect(refund.paymentLast4).toBeNull(); // Shop Card tender, not a card
+    const gas = rows.find((r) => r.store === 'COSTCO GAS')!;
     expect(gas.totalCents).toBe(5677);
   });
 
@@ -109,6 +111,37 @@ describe('persistBatch — receipts', () => {
     const refundItems = await db.select().from(receiptItems).where(eq(receiptItems.receiptId, refund.id));
     expect(refundItems[0]!.linePriceCents).toBe(-1099);
     expect(refundItems[0]!.refundDestination).toBe('gift_card');
+  });
+
+  it('writes a receipt and its lines atomically: a failing line insert rolls the header back', async () => {
+    const batch = costcoAdapter.normalize(input());
+    const receipt = batch.receipts[0]!;
+    // Corrupt one line so the receipt_items insert violates NOT NULL.
+    const broken = {
+      ...receipt,
+      items: [{ ...receipt.items[0]!, rawDescription: null as unknown as string }],
+    };
+    await expect(
+      persistBatch(db, { ...batch, receipts: [broken] }, { householdId: DEMO_HOUSEHOLD_ID }),
+    ).rejects.toThrow();
+    expect(await count('receipts')).toBe(0);
+    expect(await count('receipt_items')).toBe(0);
+
+    // The retry with a correct batch is not blocked by an orphaned header.
+    const retry = await persistBatch(db, { ...batch, receipts: [receipt] }, { householdId: DEMO_HOUSEHOLD_ID });
+    expect(retry.inserted.receipts).toBe(1);
+    expect(retry.inserted.receiptItems).toBe(receipt.items.length);
+  });
+
+  it('the unique index rejects a second header with the same hash even without the pre-check', async () => {
+    await importSource(db, input(), { householdId: DEMO_HOUSEHOLD_ID }, [costcoAdapter]);
+    const hash = (await db.select({ h: receipts.imageHash }).from(receipts))[0]!.h!;
+    await expect(
+      db.run(
+        sql`INSERT INTO receipts (id, household_id, source, store, purchased_at, total_cents, image_hash)
+            VALUES ('dup', ${DEMO_HOUSEHOLD_ID}, 'x', 'x', '2026-01-01', 1, ${hash})`,
+      ),
+    ).rejects.toThrow(/UNIQUE/i);
   });
 
   it('keeps idempotency scoped to the household', async () => {

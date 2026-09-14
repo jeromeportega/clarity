@@ -176,36 +176,32 @@ export async function persistBatch(
   }
 
   for (const receipt of batch.receipts) {
-    // Idempotency on the source's own transaction id (hashed), scoped to the
-    // household. `receipts.image_hash` has no unique index, so check first.
-    const existing = await db
-      .select({ id: receipts.id })
-      .from(receipts)
-      .where(and(eq(receipts.householdId, ctx.householdId), eq(receipts.imageHash, receipt.sourceHash)))
-      .limit(1);
-    if (existing[0]) {
-      out.skippedDuplicates += 1;
-      continue;
-    }
+    // One transaction per receipt: the header and its lines land together or
+    // not at all (an orphaned header would block the retry forever).
+    // Idempotency is enforced by ux_receipts_household_hash on
+    // (household_id, image_hash) — insert-or-ignore, no read-then-write race.
+    const outcome = await db.transaction(async (tx) => {
+      const receiptId = randomUUID();
+      const res = await tx
+        .insert(receipts)
+        .values({
+          id: receiptId,
+          householdId: ctx.householdId,
+          source: receipt.source,
+          store: receipt.store,
+          purchasedAt: receipt.purchasedAt,
+          subtotalCents: receipt.subtotalCents,
+          taxCents: receipt.taxCents,
+          totalCents: receipt.totalCents,
+          paymentLast4: receipt.paymentLast4,
+          imageHash: receipt.sourceHash,
+          needsReview: receipt.needsReview,
+        })
+        .onConflictDoNothing();
+      if (!inserted(res)) return { receipts: 0, items: 0 };
 
-    const receiptId = randomUUID();
-    await db.insert(receipts).values({
-      id: receiptId,
-      householdId: ctx.householdId,
-      source: receipt.source,
-      store: receipt.store,
-      purchasedAt: receipt.purchasedAt,
-      subtotalCents: receipt.subtotalCents,
-      taxCents: receipt.taxCents,
-      totalCents: receipt.totalCents,
-      paymentLast4: receipt.paymentLast4,
-      imageHash: receipt.sourceHash,
-      needsReview: receipt.needsReview,
-    });
-    out.inserted.receipts += 1;
-
-    if (receipt.items.length > 0) {
-      await db.insert(receiptItems).values(
+      if (receipt.items.length === 0) return { receipts: 1, items: 0 };
+      const itemRes = await tx.insert(receiptItems).values(
         receipt.items.map((item) => ({
           id: randomUUID(),
           receiptId,
@@ -227,7 +223,14 @@ export async function persistBatch(
           needsReview: item.needsReview,
         })),
       );
-      out.inserted.receiptItems += receipt.items.length;
+      return { receipts: 1, items: itemRes.rowsAffected ?? receipt.items.length };
+    });
+
+    if (outcome.receipts === 0) {
+      out.skippedDuplicates += 1;
+    } else {
+      out.inserted.receipts += 1;
+      out.inserted.receiptItems += outcome.items;
     }
   }
 
