@@ -67,3 +67,6 @@ playwright-report/
 # OS / editor noise
 .DS_Store
 .vercel
+
+# Agent worktrees (per-session, never committed)
+.claude/worktrees/
