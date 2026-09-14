@@ -1,25 +1,67 @@
-# Loom
+# Clarity — working notes for agents
 
-This repo uses **loom** — an autonomous agentic engineering system. You can drive it
-through its MCP tools or its CLI.
+Clarity is a household-finance product: bank exports + Amazon order history +
+big-box receipts → Claude vision → SKU disambiguation → reconciliation (every
+dollar counted once) → item-level classification → a human review queue.
+Read `README.md` first, then `docs/ARCHITECTURE.md` (module map, data model,
+and the honest list of what is not yet wired) and `docs/ROADMAP.md`.
+
+## Layout
+
+- `apps/web` — Next.js App Router. Pages, API routes, UI. Reaches into the
+  domain module via relative imports (`../../../../modules/finance/...`).
+- `modules/finance/core` — pure domain logic behind DI seams (adapters, vision
+  provider, SKU resolver/dictionary, reconcile engine, classifier, queue,
+  corrections, rollups, evidence). **Never constructs an Anthropic client, DB
+  client, or framework object** — `core/__tests__/core-boundary.test.ts` and
+  `receipts/framework-isolation.test.ts` enforce this.
+- `modules/finance/db` — Drizzle schema + migrations + `createDb()`
+  (Turso when `TURSO_*` is set, otherwise a local file under `data/`).
+- `tests/` — cross-cutting: real route handlers against fresh libSQL, toolchain
+  pins, deploy-artifact hygiene.
+
+## Commands
+
+```bash
+npm ci
+npm test                 # Vitest, offline + deterministic — the CI gate
+npm run typecheck        # tsc --noEmit (CI runs this too; Vitest alone won't catch JSX/import-path errors in apps/web)
+npm run build --workspace=@clarity/web   # run before deploying; catches apps/web import errors tests miss
+npm run vision:eval      # key-gated live vision accuracy harness — NEVER in npm test
+npm run e2e              # Playwright golden path — NEVER in npm test
+```
+
+## Conventions that matter
+
+- **Integer cents everywhere.** No floats for money.
+- **Real financial data never enters git.** Fixtures are synthetic/sanitized.
+  `data/`, `uploads/`, `*.db`, `.env*` are gitignored. Local real data lives
+  outside the repo or under `data/`.
+- **Vision output is untrusted data.** The extraction prompt's injection guard
+  and the `readable: false` path are load-bearing — don't weaken them.
+- **Low confidence → review queue, never a silent guess.** Preserve confidence
+  fields and `needs_review` flags through any refactor.
+- **Every dollar counted once.** `reconcile/dedup.ts` (`mergeCounted`) is the
+  invariant; its tests are bank-anchored and must stay green.
+- **Tests first from acceptance criteria**, kept fast and offline. Anything
+  that needs a network or an API key goes behind its own script, never `npm test`.
+- Two taxonomies currently coexist (`db/schema.ts` `DEFAULT_CATEGORIES` vs
+  `classify/taxonomy.ts` `H1_TAXONOMY`). Unifying them is on the roadmap; don't
+  add a third.
 
 ## Workflow
 
-1. `loom epic "<brief>"` — plan an epic (Analyst → PM → Architect personas).
-2. Review the plan under `.loom/planning/<run-id>/`.
-3. `loom approve <epic-id>` — release it for execution.
-4. `loom run` — dispatch story agents, each in an isolated git worktree.
-5. `loom status` — track progress and PR links.
+- Work on a feature branch; open a PR to `main`. `main` is protected — no
+  direct pushes, no force flags, no history rewrites. CI runs typecheck + the
+  offline Vitest suite on every PR.
+- Deploys are an operator step from an authenticated Vercel session
+  (`deploy/deploy.sh` prints the command; `deploy/smoke.sh` verifies). Secrets
+  live only in Vercel env / local `.env` — see `deploy/ENV.md` (names only).
 
-## MCP tools
+## Loom
 
-When the loom MCP server is connected (`.mcp.json`), these tools are available:
-`loom_start_epic`, `loom_approve_plan`, `loom_reject_plan`, `loom_get_status`,
-`loom_get_audit_log`, `loom_policy_check`, `loom_get_planning_artifacts`,
-`loom_get_diff`, `loom_get_review`.
-
-## Guardrails
-
-A PreToolUse hook checks every Bash command against `.loom/policy.yaml`. Destructive
-commands (force push, `git reset --hard`, deleting protected paths, command chaining)
-are blocked at the OS level. Work with the guardrails — never try to bypass them.
+This repo also carries a `loom` policy (`.loom/policy.yaml`) for optional
+autonomous epic execution (`loom epic` → plan → `loom approve` → `loom run`).
+When the loom PreToolUse hook is installed it checks every Bash command against
+that policy (protected paths, forbidden git flags, command chaining). Work with
+the guardrails; never try to bypass them.

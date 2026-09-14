@@ -1,11 +1,11 @@
 import { defineConfig } from 'vitest/config';
 
-// Two projects spanning the merged H1 (Foundation) + H2 (Receipt Vision) tree:
-//   unit — the offline gate. Every co-located *.test.ts across H1's foundation
-//          (modules/**, tests/**) AND H2's receipts module, plus the H2
-//          type-level contract (*.test-d.ts). No API key, no network. Runs
-//          under `npm test` (`vitest run --project unit`).
-//   eval — H2's key-gated vision accuracy harness (story-002-006). Runs under
+// Two projects:
+//   unit — the offline gate. Every co-located *.test.ts under modules/** and
+//          tests/**, plus the type-level contract tests (*.test-d.ts) in the
+//          receipts module. No API key, no network. Runs under `npm test`
+//          (`vitest run --project unit`).
+//   eval — the key-gated vision accuracy harness. Runs under
 //          `npm run vision:eval` (`vitest run --project eval`); each eval test
 //          self-skips without ANTHROPIC_API_KEY and is EXCLUDED from `npm test`.
 export default defineConfig({
@@ -28,13 +28,12 @@ export default defineConfig({
             // (`npm run e2e`). Keep it out of the offline Vitest unit gate.
             'e2e/**',
           ],
-          // H1's harness runs fully offline against file:/temp libSQL DBs.
+          // Runs fully offline against file:/temp libSQL DBs.
           testTimeout: 20_000,
           typecheck: {
             enabled: true,
-            // Scoped to the H2 receipts module so H1's (intentionally
-            // un-type-checked) foundation tests are not dragged into the
-            // type-level run.
+            // Scoped to the receipts module; the foundation tests are
+            // intentionally not part of the type-level run.
             tsconfig: './modules/finance/core/receipts/tsconfig.typecheck.json',
             include: ['modules/finance/core/receipts/**/*.test-d.ts'],
           },

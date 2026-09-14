@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# deploy/smoke.sh — Post-deploy smoke test for Clarity (epic-004)
+# deploy/smoke.sh — Post-deploy smoke test for Clarity
 #
 # Verifies two contracts without a token:
 #   1. GET /api/queue  → HTTP 200 and demo-household data present (PUBLIC_DEMO_MODE=1 must be set on server)
-#   2. POST /api/queue/<id>/confirm  → HTTP 401 (mutation gate enforced, ADR-006)
+#   2. POST /api/queue/<id>/confirm  → HTTP 401 (mutation gate enforced)
 #
 # Usage:
 #   DEPLOY_URL=https://your-app.vercel.app ./deploy/smoke.sh
@@ -86,7 +86,7 @@ if [[ "$FAIL" -gt 0 ]]; then
   echo ""
   echo "Smoke test FAILED. Check the deploy configuration and ensure:" >&2
   echo "  - PUBLIC_DEMO_MODE=1 is set in the Vercel project dashboard" >&2
-  echo "  - Demo data is seeded: pnpm seed:demo" >&2
+  echo "  - Demo data is seeded: npm run seed:demo" >&2
   echo "  - RECONCILE_MUTATION_TOKEN is set (mutation gate active)" >&2
   exit 1
 fi

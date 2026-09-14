@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# deploy/deploy.sh — Operator deploy checklist for Clarity (epic-004)
+# deploy/deploy.sh — Deploy checklist for Clarity
 #
-# OPERATOR STEP — run this script from an authenticated Vercel session.
-# This script NEVER executes "vercel" automatically; it performs pre-flight
-# checks and then prints the exact command you must run manually.
+# Run this script from an authenticated Vercel session. It NEVER executes
+# "vercel" automatically; it performs pre-flight checks and then prints the
+# exact command to run manually.
 #
-# Prerequisites (ADR-006 — no secret enters the worktree):
+# Prerequisites (no secret is ever read from the repo):
 #   1. Vercel CLI installed:  npm install -g vercel
 #   2. Authenticated:          vercel login
 #   3. All env vars configured in the Vercel project dashboard — see deploy/ENV.md
-#   4. Demo data seeded:       pnpm seed:demo (from an authenticated DB session)
+#   4. Demo data seeded:       npm run seed:demo (with DB env vars set)
 #
 # Usage:
 #   ./deploy/deploy.sh [--preview]
@@ -67,7 +67,7 @@ echo ""
 echo "=== Pre-flight complete ==="
 echo ""
 
-# ── Print the command — DO NOT execute automatically (ADR-006) ────────────────
+# ── Print the command — DO NOT execute automatically ──────────────────────────
 if [[ "$PREVIEW" -eq 1 ]]; then
   echo "Run the following command to create a PREVIEW deployment:"
   echo ""
