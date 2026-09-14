@@ -14,7 +14,8 @@
     "e2e": "playwright test",
     "vision:eval": "vitest run --project eval",
     "typecheck": "tsc --noEmit",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "costco:capture": "tsx scripts/costco/capture-receipts.ts"
   },
   "engines": {
     "node": ">=20"
@@ -28,6 +29,7 @@
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.3",
     "drizzle-kit": "^0.28.1",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vitest": "^3.2.6"
   }
