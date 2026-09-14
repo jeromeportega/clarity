@@ -28,17 +28,20 @@
  *     button opens the receipt dialog and screenshots the receipt paper.
  *   - Files are named <YYYY-MM-DD>_<transactionBarcode>.png so they pair with
  *     the `transactionBarcode` field of Costco's WarehouseReceiptDetail JSON.
- *     A manifest.json in the output dir records what was captured.
- *   - Re-runs skip receipts whose file already exists.
+ *     A manifest.json in the output dir records what was captured (paths are
+ *     relative to the manifest so the set can move as a unit).
+ *   - Re-runs skip receipts whose file already exists. Two receipts that
+ *     would produce the same filename in ONE run are both kept (suffix _2,
+ *     _3, …) and a warning is logged — a receipt is never silently dropped.
  *
  * Why PNG and not PDF: Chrome only exposes print-to-PDF in headless mode, and
  * Costco's sign-in does not survive headless well. The vision pipeline accepts
- * PNG directly. Pass --headless to attempt PDF capture as well (best effort).
+ * PNG directly. Pass --headless (without --cdp) to attempt PDF capture as well.
  *
  * Output lives under data/ — real financial data, never committed.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright';
 
@@ -55,16 +58,29 @@ interface ManifestEntry {
   kind: 'receipt' | 'return';
   date: string; // YYYY-MM-DD
   time?: string;
+  /** Signed: negative for a return receipt. As printed, e.g. "-42.39". */
   total?: string;
   range: string;
+  /** Relative to the manifest's directory. */
   file: string;
   pdf?: string;
   capturedAt: string;
 }
 
+/** Per-run state threaded through the capture functions. */
+interface Run {
+  outDir: string;
+  manifest: ManifestEntry[];
+  /** Filenames written during THIS run, to disambiguate same-run collisions. */
+  written: Set<string>;
+  /** Attempt page.pdf() — only meaningful for a headless, self-launched browser. */
+  pdf: boolean;
+}
+
 const ORDERS_URL = 'https://www.costco.com/OrderStatusCmd';
 const LOGIN_WAIT_MS = 10 * 60 * 1000;
 const STEP_DELAY_MS = 400;
+const LIST_SETTLE_MS = 15_000;
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -83,8 +99,11 @@ function parseArgs(argv: string[]): Args {
     if (a === '--out') args.out = next();
     else if (a === '--profile') args.profile = next();
     else if (a === '--cdp') args.cdp = next();
-    else if (a === '--ranges') args.ranges = Number(next());
-    else if (a === '--headless') args.headless = true;
+    else if (a === '--ranges') {
+      const n = Number(next());
+      if (!Number.isInteger(n) || n <= 0) throw new Error('--ranges must be a positive integer');
+      args.ranges = n;
+    } else if (a === '--headless') args.headless = true;
     else if (a === '--headed') args.headless = false;
     else if (a === '-h' || a === '--help') {
       console.log(readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0]);
@@ -96,6 +115,7 @@ function parseArgs(argv: string[]): Args {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[costco] ${msg}`);
+const warn = (msg: string) => console.warn(`[costco] WARN ${msg}`);
 
 function loadManifest(path: string): ManifestEntry[] {
   return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ManifestEntry[]) : [];
@@ -141,26 +161,57 @@ async function waitForSignedIn(page: Page): Promise<void> {
   throw new Error(`Timed out after ${LOGIN_WAIT_MS / 60000} minutes waiting for sign-in.`);
 }
 
-// The period dropdown lives inside the Warehouse tab panel; the site header's
-// search box can also expose role=combobox, so always scope to the panel.
-function rangeCombo(page: Page): Locator {
-  return page.getByRole('tabpanel').getByRole('combobox').first();
+// Everything we touch lives inside the Warehouse tab panel; the site header
+// (search box = role combobox, promo/chat widgets with "show more" buttons)
+// must never be matched.
+function panel(page: Page): Locator {
+  return page.getByRole('tabpanel').first();
 }
 
-async function selectRange(page: Page, label: string): Promise<void> {
-  const combo = rangeCombo(page);
-  await combo.click();
-  const option = page.getByRole('option', { name: label, exact: true });
-  await option.waitFor({ state: 'visible', timeout: 10_000 });
-  await option.click();
-  // The list re-renders; wait for the "Showing x - y of z" caption to settle.
-  await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+function rangeCombo(page: Page): Locator {
+  return panel(page).getByRole('combobox').first();
+}
+
+function receiptButtons(page: Page): Locator {
+  return panel(page).getByRole('button', { name: /view (return )?receipt/i });
+}
+
+// The receipt dialog is the MUI dialog that actually contains a receipt paper;
+// a hidden Bootstrap modal with dialog semantics also exists on the page.
+function receiptDialog(page: Page): Locator {
+  return page.getByRole('dialog').filter({ has: page.locator('.MuiDialog-paper') }).last();
+}
+
+async function showingCaption(page: Page): Promise<string> {
+  const caption = panel(page).getByText(/showing\s+\d+\s*-\s*\d+\s+of\s+\d+/i).first();
+  return ((await caption.textContent().catch(() => '')) ?? '').trim();
+}
+
+// Wait for the list to re-render after a period change: the "Showing x - y
+// of z" caption changes, or receipt buttons (re)appear. Bounded; no reliance
+// on network idle, which a chatty SPA never reaches.
+async function waitForListSettled(page: Page, previousCaption: string): Promise<void> {
+  const deadline = Date.now() + LIST_SETTLE_MS;
+  while (Date.now() < deadline) {
+    const caption = await showingCaption(page);
+    const count = await receiptButtons(page).count();
+    if ((caption && caption !== previousCaption) || (previousCaption === '' && count > 0)) break;
+    await sleep(250);
+  }
   await sleep(STEP_DELAY_MS);
 }
 
+async function selectRange(page: Page, label: string): Promise<void> {
+  const before = await showingCaption(page);
+  await rangeCombo(page).click();
+  const option = page.getByRole('option', { name: label, exact: true });
+  await option.waitFor({ state: 'visible', timeout: 10_000 });
+  await option.click();
+  await waitForListSettled(page, before);
+}
+
 async function listRangeLabels(page: Page): Promise<string[]> {
-  const combo = rangeCombo(page);
-  await combo.click();
+  await rangeCombo(page).click();
   const options = page.getByRole('option');
   await options.first().waitFor({ state: 'visible', timeout: 10_000 });
   const labels = (await options.allTextContents()).map((t) => t.trim()).filter(Boolean);
@@ -169,20 +220,15 @@ async function listRangeLabels(page: Page): Promise<string[]> {
   return labels;
 }
 
-// Expand any "load more"-style pagination until the caption says all are shown.
+// Expand any "load more"-style pagination until the caption stops changing.
 async function expandAll(page: Page): Promise<void> {
   for (let i = 0; i < 20; i++) {
-    const more = page.getByRole('button', { name: /(load|show|view) more|next page/i }).first();
+    const more = panel(page).getByRole('button', { name: /(load|show) more|next page/i }).first();
     if (!(await more.isVisible().catch(() => false))) return;
+    const before = await showingCaption(page);
     await more.click();
-    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
-    await sleep(STEP_DELAY_MS);
+    await waitForListSettled(page, before);
   }
-}
-
-async function showingCaption(page: Page): Promise<string> {
-  const caption = page.getByText(/showing\s+\d+\s*-\s*\d+\s+of\s+\d+/i).first();
-  return (await caption.textContent().catch(() => '')) ?? '';
 }
 
 interface ReceiptMeta {
@@ -192,43 +238,65 @@ interface ReceiptMeta {
   total?: string;
 }
 
-async function readReceiptMeta(paper: Locator): Promise<ReceiptMeta> {
+async function readReceiptMeta(paper: Locator, kind: ManifestEntry['kind']): Promise<ReceiptMeta> {
   const text = (await paper.innerText()).replace(/ /g, ' ');
   const barcode = text.match(/\b(\d{20,})\b/)?.[1] ?? 'no-barcode';
-  // Footer line like "09/08/2026 16:53 489 121" or "P7 09/08/2026 04:53".
-  const dateMatch = text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{1,2}:\d{2})/);
-  const total = text.match(/\bTotal\s+\$?(-?[\d,]+\.\d{2})/i)?.[1];
-  return {
-    barcode,
-    date: toIsoDate(dateMatch?.[1]),
-    time: dateMatch?.[2],
-    total,
-  };
+
+  // The transaction footer reads "MM/DD/YYYY HH:MM <trn> <op>" (it appears in
+  // the tender block and again at the bottom). Take the LAST such match so an
+  // unrelated date-like string higher on the page cannot win.
+  const footer = [...text.matchAll(/(\d{2}\/\d{2}\/\d{4})\s+(\d{1,2}:\d{2})\s+\d+\s+\d+/g)].at(-1);
+  const anyDate = text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{1,2}:\d{2})/);
+  const dateMatch = footer ?? anyDate;
+
+  // "Total 118.87" — but not the "Refunded Total" summary line, whose sign is
+  // printed differently. Sign the value by receipt kind.
+  const rawTotal = text.match(/(?<!Refunded\s)\bTotal\s+\$?(-?[\d,]+\.\d{2})/i)?.[1];
+  const total = rawTotal === undefined
+    ? undefined
+    : kind === 'return' ? `-${rawTotal.replace(/^-/, '')}` : rawTotal;
+
+  return { barcode, date: toIsoDate(dateMatch?.[1]), time: dateMatch?.[2], total };
+}
+
+/** Pick a filename base that is unique within this run (never silently drop a receipt). */
+function uniqueBase(run: Run, base: string): string {
+  if (!run.written.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base}_${n}`;
+    if (!run.written.has(candidate) && !existsSync(join(run.outDir, `${candidate}.png`))) {
+      warn(`filename collision within this run for ${base}; saving as ${candidate}`);
+      return candidate;
+    }
+  }
+  throw new Error(`could not find a unique filename for ${base}`);
 }
 
 async function captureOpenDialog(
   page: Page,
-  outDir: string,
+  run: Run,
   kind: ManifestEntry['kind'],
   range: string,
-  manifest: ManifestEntry[],
-  headless: boolean,
 ): Promise<'captured' | 'skipped'> {
-  const dialog = page.getByRole('dialog').filter({ hasText: /receipt/i }).last();
+  const dialog = receiptDialog(page);
   await dialog.waitFor({ state: 'visible', timeout: 20_000 });
   const paper = dialog.locator('.MuiDialog-paper').first();
   await paper.waitFor({ state: 'visible', timeout: 10_000 });
   // Give the barcode image and fonts a moment.
   await sleep(600);
 
-  const meta = await readReceiptMeta(paper);
-  const base = `${meta.date}_${meta.barcode}${kind === 'return' ? '_return' : ''}`;
-  const file = join(outDir, `${base}.png`);
+  const meta = await readReceiptMeta(paper, kind);
+  if (meta.barcode === 'no-barcode') warn(`no barcode found in a ${kind} dated ${meta.date}; filename will not pair with the JSON export`);
+  const rawBase = `${meta.date}_${meta.barcode}${kind === 'return' ? '_return' : ''}`;
 
-  if (existsSync(file)) {
-    log(`skip (exists) ${base}`);
+  // A file from a PREVIOUS run with this exact name means "already captured".
+  // A collision within THIS run means two different receipts — keep both.
+  if (!run.written.has(rawBase) && existsSync(join(run.outDir, `${rawBase}.png`))) {
+    log(`skip (exists) ${rawBase}`);
     return 'skipped';
   }
+  const base = uniqueBase(run, rawBase);
+  const file = join(run.outDir, `${base}.png`);
 
   // Make the whole paper fit the viewport so the element screenshot is complete.
   const paperHeight = await paper.evaluate((el) => (el as HTMLElement).scrollHeight);
@@ -239,26 +307,27 @@ async function captureOpenDialog(
   }
 
   await paper.screenshot({ path: file, type: 'png' });
+  run.written.add(base);
 
   let pdf: string | undefined;
-  if (headless) {
+  if (run.pdf) {
+    const pdfPath = join(run.outDir, `${base}.pdf`);
     try {
-      pdf = join(outDir, `${base}.pdf`);
-      await page.pdf({ path: pdf, printBackground: true, width: '4in', height: `${Math.ceil(paperHeight / 96) + 1}in` });
+      await page.pdf({ path: pdfPath, printBackground: true, width: '4in', height: `${Math.ceil(paperHeight / 96) + 1}in` });
+      pdf = relative(run.outDir, pdfPath);
     } catch (err) {
-      log(`pdf failed for ${base}: ${err instanceof Error ? err.message : String(err)}`);
-      pdf = undefined;
+      warn(`pdf failed for ${base}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  manifest.push({
+  run.manifest.push({
     barcode: meta.barcode,
     kind,
     date: meta.date,
     time: meta.time,
     total: meta.total,
     range,
-    file,
+    file: relative(run.outDir, file),
     pdf,
     capturedAt: new Date().toISOString(),
   });
@@ -267,7 +336,7 @@ async function captureOpenDialog(
 }
 
 async function closeDialog(page: Page): Promise<void> {
-  const dialog = page.getByRole('dialog').filter({ hasText: /receipt/i }).last();
+  const dialog = receiptDialog(page);
   const close = dialog.getByRole('button', { name: /^close$/i }).first();
   if (await close.isVisible().catch(() => false)) await close.click();
   else await page.keyboard.press('Escape');
@@ -277,27 +346,33 @@ async function closeDialog(page: Page): Promise<void> {
 
 async function processRange(
   page: Page,
+  run: Run,
   range: string,
-  outDir: string,
-  manifest: ManifestEntry[],
-  headless: boolean,
 ): Promise<{ captured: number; skipped: number; failed: number }> {
   const stats = { captured: 0, skipped: 0, failed: 0 };
   await selectRange(page, range);
   await expandAll(page);
   const caption = await showingCaption(page);
-  const buttons = page.getByRole('button', { name: /view (return )?receipt/i });
+  const buttons = receiptButtons(page);
   const count = await buttons.count();
-  log(`range "${range}": ${count} receipt button(s) ${caption ? `(${caption.trim()})` : ''}`);
+  log(`range "${range}": ${count} receipt button(s) ${caption ? `(${caption})` : ''}`);
 
   for (let i = 0; i < count; i++) {
+    // Locators re-query live. Guard against the list re-rendering with a
+    // different length mid-loop (a virtualized list would do this), which
+    // would make index i point at a different receipt.
+    const nowCount = await buttons.count();
+    if (nowCount !== count) {
+      warn(`receipt list changed length mid-range (${count} → ${nowCount}); stopping this range — re-run to pick up the rest`);
+      break;
+    }
     const button = buttons.nth(i);
     const name = (await button.textContent().catch(() => '')) ?? '';
     const kind: ManifestEntry['kind'] = /return/i.test(name) ? 'return' : 'receipt';
     try {
       await button.scrollIntoViewIfNeeded();
       await button.click();
-      const result = await captureOpenDialog(page, outDir, kind, range, manifest, headless);
+      const result = await captureOpenDialog(page, run, kind, range);
       stats[result === 'captured' ? 'captured' : 'skipped']++;
     } catch (err) {
       stats.failed++;
@@ -316,10 +391,17 @@ async function main(): Promise<void> {
   mkdirSync(outDir, { recursive: true });
   mkdirSync(profileDir, { recursive: true });
   const manifestPath = join(outDir, 'manifest.json');
-  const manifest = loadManifest(manifestPath);
+  const run: Run = {
+    outDir,
+    manifest: loadManifest(manifestPath),
+    written: new Set(),
+    // page.pdf() only works in a headless browser we launched ourselves.
+    pdf: args.headless && !args.cdp,
+  };
+  if (args.headless && args.cdp) warn('--headless is ignored with --cdp (the attached browser is whatever you launched); no PDFs will be attempted');
 
   log(`output: ${outDir}`);
-  log(`profile: ${profileDir} (${args.headless ? 'headless' : 'headed'})`);
+  log(args.cdp ? `attaching to ${args.cdp}` : `profile: ${profileDir} (${args.headless ? 'headless' : 'headed'})`);
 
   // Two ways to get a browser:
   //   --cdp <url>  attach to a Chrome YOU started (see --help). No automation
@@ -333,7 +415,6 @@ async function main(): Promise<void> {
     const browser = await chromium.connectOverCDP(args.cdp);
     context = browser.contexts()[0] ?? (await browser.newContext());
     disconnect = () => browser.close(); // disconnects only; your Chrome stays open
-    log(`attached to Chrome at ${args.cdp}`);
   } else {
     context = await chromium.launchPersistentContext(profileDir, {
       channel: 'chrome',
@@ -362,14 +443,14 @@ async function main(): Promise<void> {
     log(`periods available: ${ranges.join(' | ')}`);
 
     for (const range of ranges) {
-      const s = await processRange(page, range, outDir, manifest, args.headless);
+      const s = await processRange(page, run, range);
       totals.captured += s.captured;
       totals.skipped += s.skipped;
       totals.failed += s.failed;
-      saveManifest(manifestPath, manifest);
+      saveManifest(manifestPath, run.manifest);
     }
   } finally {
-    saveManifest(manifestPath, manifest);
+    saveManifest(manifestPath, run.manifest);
     if (args.cdp) await page.close().catch(() => undefined);
     await disconnect();
   }
