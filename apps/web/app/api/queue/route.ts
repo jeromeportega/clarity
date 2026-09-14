@@ -1,5 +1,9 @@
 import { fetchQueue, resolveHouseholdScope } from '@/lib/queue';
 
+// This handler reads no request data, so without this Next would prerender
+// it at build time and serve a frozen queue until the next deploy.
+export const dynamic = 'force-dynamic';
+
 export async function GET(): Promise<Response> {
   // Demo-mode gate: this route serves household financial data without a user
   // session. It must only be reachable when PUBLIC_DEMO_MODE is explicitly
