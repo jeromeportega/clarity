@@ -8,13 +8,15 @@ First real user: one household, on its own real data, in a private deployment.
 Multi-user is designed in (tenancy on every table) but not built until the
 single-household loop is excellent.
 
-## Phase 0 — Safety
+## Phase 0 — Safety (code done; rotation is the operator step)
 
-- Stop exposing the mutation token to the browser; uploads on the public demo
-  go dark until real auth exists.
-- Gate the ingest routes (`/api/ingest/bank`, `/api/ingest/orders`) the same
-  way as every other mutation.
-- Rotate the token; redeploy the public demo.
+- ~~Stop exposing the mutation token to the browser~~ — done; uploads on the
+  public demo stay disabled until real auth exists, and a test guards that no
+  file under `apps/web` outside the auth gate mentions the secret.
+- ~~Gate the ingest routes the same way as every other mutation~~ — done; the
+  route-gate test now discovers every write route automatically.
+- Rotate the token; redeploy the public demo (the old value was baked into
+  the statically prerendered `/receipts` of every earlier deployment).
 
 ## Phase 1 — Make it real for one household
 
@@ -35,7 +37,7 @@ single-household loop is excellent.
   but doesn't exist; store receipt images durably (not `/tmp`) and serve them.
 - **Real login.** Single-user auth for the household operator; derive
   `household_id` from the session in one place (`resolveHouseholdScope`) and
-  remove the twelve inline `DEMO_HOUSEHOLD_ID` call sites.
+  remove the inline `DEMO_HOUSEHOLD_ID` call sites.
 - **Tenancy columns now, while the schema is young.** `household_id` on
   `sku_dictionary`, `categories`, and `matches`; FK on `review_decisions`.
 - **Costco digital receipts as a first-class source.** Costco's own

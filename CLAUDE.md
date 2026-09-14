@@ -9,7 +9,8 @@ and the honest list of what is not yet wired) and `docs/ROADMAP.md`.
 ## Layout
 
 - `apps/web` — Next.js App Router. Pages, API routes, UI. Reaches into the
-  domain module via relative imports (`../../../../modules/finance/...`).
+  domain module via relative imports (`../../../../modules/finance/...` from
+  shallow files; deeper routes need more `../`). `@/` resolves to `apps/web/`.
 - `modules/finance/core` — pure domain logic behind DI seams (adapters, vision
   provider, SKU resolver/dictionary, reconcile engine, classifier, queue,
   corrections, rollups, evidence). **Never constructs an Anthropic client, DB
@@ -51,9 +52,10 @@ npm run e2e              # Playwright golden path — NEVER in npm test
 
 ## Workflow
 
-- Work on a feature branch; open a PR to `main`. `main` is protected — no
-  direct pushes, no force flags, no history rewrites. CI runs typecheck + the
-  offline Vitest suite on every PR.
+- Work on a feature branch; open a PR to `main`. Treat `main` as protected:
+  PRs only — no direct pushes, no force flags, no history rewrites. CI runs
+  typecheck + the offline Vitest suite on every PR. Every PR gets a review
+  pass from a fresh reviewer persona before merge.
 - Deploys are an operator step from an authenticated Vercel session
   (`deploy/deploy.sh` prints the command; `deploy/smoke.sh` verifies). Secrets
   live only in Vercel env / local `.env` — see `deploy/ENV.md` (names only).

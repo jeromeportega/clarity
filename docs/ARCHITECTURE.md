@@ -31,7 +31,7 @@ Dependency direction is one-way: `apps/web` → `core` → `db`. `db` imports no
 
 ### Stack
 
-Next.js 14 (App Router) + React 18 · Tailwind 3 + vendored shadcn/ui primitives (`apps/web/components/ui/{badge,button,dialog,table}.tsx`, Radix under the hood) + Geist font · libSQL / Turso via Drizzle ORM · `@anthropic-ai/sdk` for vision and SKU resolution · SheetJS (`xlsx`) and `csv-parse` for ingestion · Vitest + Playwright.
+Next.js 14 (App Router) + React 18 · Tailwind 3 + vendored shadcn/ui primitives (`apps/web/components/ui/{badge,button,dialog,table}.tsx`, Radix under the hood) + Geist font (the `geist` package is the font only; there is no official Geist component library and `@geist-ui/core` is archived — `tests/toolchain.test.ts` pins this) · libSQL / Turso via Drizzle ORM · `@anthropic-ai/sdk` for vision and SKU resolution · SheetJS (`xlsx`) and `csv-parse` for ingestion · Vitest + Playwright.
 
 ## The pipeline
 
@@ -108,7 +108,7 @@ Accepted upload types: `image/jpeg`, `image/png`, `application/pdf`; cap 20 MiB 
 Stages, each a separately tested function:
 
 1. **`matchReceipts`** (`match/receipt-bank.ts`): receipt ↔ bank debit within ±3 days, amount within a $15 tip/adjustment band, merchant Dice similarity ≥ 0.72; optional last-4 agreement.
-2. **`matchAmazonOrders`** (`match/amazon.ts`): order ↔ one or several bank charges within ±7 days. Split shipments are solved by `findChargeSubset` (`match/subset-sum.ts`) — a bounded DFS over at most 12 date-windowed candidates; no subset within bounds ⇒ route to review, never brute-force.
+2. **`matchAmazonOrders`** (`match/amazon.ts`): order ↔ one or several bank charges within ±7 days. Split shipments are solved by `findChargeSubset` (`match/subset-sum.ts`) — a bounded DFS over at most 12 date-windowed candidates; no subset within bounds ⇒ no match is emitted for that order (it surfaces later as unmatched), never brute-force.
 3. **`reconcileRefunds`** (`refunds.ts`, `store-credit.ts`): bank credit lines become negative spend events; returns refunded to store credit / gift card / account balance are linked to their accrual and **never** appear as unmatched; a bank charge smaller than the receipt total with available store credit emits a negative drawdown for the gap.
 4. **`mergeCounted`** (`dedup.ts`): the "every dollar once" invariant. One `LedgerEvent` per anchor, with anchor precedence bank line > store-credit ledger row > receipt total. A receipt and an order matched to the same bank line yield a single event whose `mergedItems` unions both — detail is added, dollars are not.
 5. **Classification** of every merged item via `HeuristicClassifier` (below).
@@ -124,7 +124,7 @@ I/O ports:
 
 ### 5. Classification — `modules/finance/core/classify/`
 
-- `HeuristicClassifier` (`classifier.ts`): concatenates merchant + description, runs `applyKeywordRules` (`rules.ts` — 16 ordered regex rules, first match wins, a general-retailer "Shopping" catch-all deliberately last), clamps to the taxonomy, and emits a one-line rationale (`merchant: …; keyword match: "…" → Category`). No match ⇒ `Other`, silently — the classifier produces no confidence signal.
+- `HeuristicClassifier` (`classifier.ts`): concatenates merchant + description, runs `applyKeywordRules` (`rules.ts` — 17 ordered regex rules, first match wins, a general-retailer "Shopping" catch-all deliberately last), clamps to the taxonomy, and emits a one-line rationale (`merchant: …; keyword match: "…" → Category`). No match ⇒ `Other`, silently — the classifier produces no confidence signal.
 - `taxonomy.ts` — `H1_TAXONOMY`, 20 Title-Case categories (Groceries, Dining, Entertainment, Subscriptions, Shopping, Health & Medical, Travel, Transportation, Utilities, Housing, Education, Personal Care, Electronics, Clothing, Books & Media, Pet Care, Home Improvement, Insurance, Transfers, Other).
 - `merchant-fallback.ts` — same rules applied to a bank line's merchant when no item data exists.
 - `recurring.ts` — `detectRecurring` clusters events by merchant + amount (±$2) + roughly monthly cadence (±3 days). Exists and is tested; not called by `reconcile()`.
@@ -174,7 +174,7 @@ Conventions: app-generated UUID text PKs; money as signed integer cents; dates a
 | `store_credit_balances` | Append-only ledger of non-card refunds (positive accruals, negative drawdowns); balance = `SUM(amount_cents)`. | `household_id` FK |
 | `sku_dictionary` (`core/receipts/dictionary/schema.ts`) | Learned `(store, sku_or_abbrev) → canonical_name, category, confidences, source (auto|human)`. | **none** |
 
-Note: `receipts.store`, `purchased_at`, and `total_cents` are `NOT NULL`, but `processReceipt` inserts nulls for all three on the unreadable path — the libSQL store cannot currently persist an unreadable receipt.
+Note: `receipts.store`, `purchased_at`, and `total_cents` are `NOT NULL`, but `processReceipt` produces nulls for all three on the unreadable path. `LibSqlReceiptStore.insertReceipt` coerces them to `''` / `''` / `0`, so an unreadable receipt is persisted as a zero-total placeholder distinguishable only by `needs_review` — a masking default, not a failure.
 
 ## Runtime and configuration
 
@@ -203,7 +203,7 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 | Route | Renders |
 |---|---|
 | `/` | Review Queue — a read-only table of `QueueItem`s (type badge, reason, amount). |
-| `/receipts` | Receipt upload dropzone (click / drag-drop / keyboard; accepts JPEG, PNG, PDF) → shows extracted line items. |
+| `/receipts` | Receipt upload page. The dropzone (`ReceiptDrop`: click / drag-drop / keyboard; JPEG, PNG, PDF → extracted line items) is rendered **disabled** (`UPLOADS_ENABLED = false`) until sign-in exists, because a browser has no legitimate credential to present to the upload route. |
 | `/true-spend?month=YYYY-MM` | Category breakdown with item drill-down; `notFound()` unless `PUBLIC_DEMO_MODE` is set. |
 | `/true-spend/evidence/[itemId]` | Source record for one item (receipt region / Amazon row / bank line). |
 
@@ -215,19 +215,21 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 | `GET /api/true-spend` | same | `assembleBreakdown`. |
 | `GET /api/true-spend/evidence/[itemId]` | same | `resolveEvidence`. |
 | `POST /api/queue/[id]/confirm` · `/correct` · `/dismiss` | `x-reconcile-token` | `applyCorrection`; body validated in `[id]/_lib/validation.ts`. |
-| `POST /api/receipts/upload` | `x-reconcile-token` | multipart `file`; MIME + 20 MiB checks before reading bytes; `processReceipt`; raw bytes written to `/tmp/receipts/<uuid>.<ext>`. |
-| `POST /api/ingest/bank` | none | multipart `file` + `accountId`; household derived from the account row. |
-| `POST /api/ingest/orders` | none | multipart `file`; imports into the demo household. |
+| `POST /api/receipts/upload` | `x-reconcile-token` | multipart `file`; Content-Length cap before buffering, then MIME + 20 MiB per-file checks before the bytes are copied; `processReceipt`; raw bytes written to `/tmp/receipts/<uuid>.<ext>`. |
+| `POST /api/ingest/bank` | `x-reconcile-token` | multipart `file` + `accountId` (25 MiB cap); household derived from the account row — see gaps. |
+| `POST /api/ingest/orders` | `x-reconcile-token` | multipart `file` (25 MiB cap); imports into the demo household (`core/scope`). |
 
-Server actions (`app/actions/queue.ts`: `confirmItem`, `dismissItem`, `correctItem`) call `applyCorrection` directly; their token check is skipped when `RECONCILE_MUTATION_TOKEN` is unset.
+Every write route calls `requireMutationToken` as its first statement; `tests/mutation-routes.test.ts` discovers every `route.ts` under `app/api` and asserts each exported write method returns 401 without the token, so an ungated write route fails CI.
 
-**Auth model today:** a single shared mutation token, compared timing-safely in `app/lib/auth/token.ts` (`x-reconcile-token`; `Authorization: Bearer` accepted but deprecated). There is no user login, session, or `users` table.
+Server actions (`app/actions/queue.ts`: `confirmItem`, `dismissItem`, `correctItem`) call `applyCorrection` through the same gate (`isValidMutationToken`, fail-closed). A browser cannot attach custom headers to a Server Action POST, so today they are reachable only by token-holding server-side callers; they are kept for session-based auth.
+
+**Auth model today:** a single shared mutation token (`x-reconcile-token`; `Authorization: Bearer` accepted but deprecated), checked in constant time by `app/lib/auth/token.ts`. That module is the only place under `apps/web` that reads the secret and it exposes boolean checks only — nothing returns the value — and `tests/mutation-token-never-reaches-client.test.ts` fails if any other file under `apps/web` so much as mentions the variable. There is no user login, session, or `users` table.
 
 **Components:** `components/queue/{QueueView,QueueItemRow,QueueBadge,EmptyState}`, `components/corrections/{QueueItemActions,CorrectionDialog}` (confirm / correct / dismiss with three correction modes), `components/receipts/ReceiptDrop`, `components/truespend/{TrueSpendView,CategoryRow}`.
 
 ## Testing strategy
 
-- **`npm test`** = `vitest run --project unit` (`vitest.config.ts`): every `*.test.ts` under `modules/**` and `tests/**`, excluding `*.eval.test.ts` and `e2e/**`. Offline and deterministic: no API key, no network, throwaway libSQL files via `createTestDb()`. Includes type-level tests (`*.test-d.ts`) for the receipts contracts. ~830 tests in under 2 s.
+- **`npm test`** = `vitest run --project unit` (`vitest.config.ts`): every `*.test.ts` under `modules/**` and `tests/**`, excluding `*.eval.test.ts` and `e2e/**`. Offline and deterministic: no API key, no network, throwaway libSQL files via `createTestDb()`. Includes type-level tests (`*.test-d.ts`) for the receipts contracts. ~840 tests in under 2 s.
 - **Guards that run inside `npm test`:** core boundary and framework isolation; fixture sanitization (`receipts/fixtures-sanitization.test.ts` fails on any 13–19-digit run or masked-PAN pattern in committed fixtures); gate-safety scan (`reconcile/__tests__/gate-safety.test.ts` fails on key- or PAN-shaped strings in the synthetic corpus); toolchain pins (`tests/toolchain.test.ts` — no `better-sqlite3`, no `@geist-ui/core`, `.gitignore` present in the root commit); deploy-artifact hygiene (`tests/deploy-artifacts.test.ts` — `ENV.md` lists names only, scripts never invoke `vercel`); route-level integration tests import the real `route.ts` handlers against a fresh DB.
 - **`npm run vision:eval`** = the `eval` Vitest project. Skips (never fails) without `ANTHROPIC_API_KEY`. Drives ≥ 5 receipts through the **live** vision + resolver and asserts one threshold over the whole sample: ≥ 80 % of expected line items resolved correctly, where "correct" = Dice similarity ≥ 0.85 on canonical name **and** exact category. Never a per-item exact-string match. Sample fixtures: `core/receipts/fixtures/eval/costco-0{1..5}.pdf` + `.expected.json`.
 - **`npm run e2e`** = Playwright against `E2E_BASE_URL`, read-only: the queue renders with an item, true spend renders a category. Deliberately outside `npm test`.
@@ -249,15 +251,17 @@ Seams that exist and are tested but are not connected on the live HTTP path, or 
 - **Receipt uploads don't persist.** `apps/web/app/api/receipts/upload/route.ts` builds its dependency bundle with `StubReceiptStore` and `StubSkuDictionary` (in-memory, per request). Real vision and resolver calls are made, the result is returned as JSON, and nothing is written to the DB. `LibSqlReceiptStore` and `LibSqlSkuDictionary` exist but are imported only by their tests. Consequences: idempotency never fires across requests; dictionary write-backs vanish; the only durable artifact is the raw file under `/tmp/receipts/`, which no DB row references.
 - **Reconciliation never runs at request time.** `reconcile()` has one non-test caller — the demo seed — over a hand-written literal. `DrizzleReconcileSource.load` throws. Uploads and ingests do not trigger matching.
 - **Default read backend is the stub.** `RECON_BACKEND` defaults to `stub`, which serves hard-coded demo matches/rollups from `reconciliation/stub.ts`.
-- **The review queue has no actions in the browser.** `app/page.tsx` renders `QueueView` without `renderActions`; `QueueItemActions` and `CorrectionDialog` are not mounted anywhere. Mutations are reachable only via the API routes / server actions.
+- **The review queue has no actions in the browser.** `app/page.tsx` renders `QueueView` without `renderActions`; `QueueItemActions` and `CorrectionDialog` are not mounted anywhere. Mutations are reachable only via the token-gated API routes (the server actions exist but cannot be invoked from a browser until session auth replaces the shared secret).
+- **Browser uploads are disabled.** `/receipts` renders `ReceiptDrop` with `enabled={false}` for the same reason; `POST /api/receipts/upload` remains available to token-holding scripts.
 - **Two of three correction variants are stored, not applied.** `pickCategoryId` and `pickMatchCandidateId` land in `review_decisions.payload_json` only; nothing updates `receipt_items.category_id` or `matches`, and `needs_review` is never cleared. Only `editResolution` produces a durable effect (the `sku_dictionary` upsert) — and the live upload path reads from the stub dictionary, so the next receipt does not benefit. The True Spend page's "totals reflect corrections" copy is not accurate for category corrections.
 - **`recomputeRollups` is a no-op** in both gateways.
 - **Evidence image link is dead.** `resolveEvidence` builds `/api/receipts/image/<receiptId>`; that route does not exist.
 - **Classifier has no confidence signal**, so a misclassified item never reaches the queue; only low-confidence SKU resolutions and arithmetic failures do.
 - **Taxonomy collision** between `DEFAULT_CATEGORIES` (10, lowercase) and `H1_TAXONOMY` (20, Title Case) — see §5.
-- **Tenancy is a constant.** `DEMO_HOUSEHOLD_ID` is referenced directly in every mutation route, the server actions, the upload route, and the orders ingest; `resolveHouseholdScope` ignores the request. `matches`, `categories`, and `sku_dictionary` carry no `household_id`; `review_decisions.household_id` has no FK. Adding real users means adding `users`/membership tables, a tenancy column on those three tables, and replacing the constant at each call site.
-- **Ingest routes have no auth check** and `/api/ingest/bank` trusts a client-supplied `accountId`.
-- **Unreadable receipts can't be persisted by the libSQL store** because `receipts.store / purchased_at / total_cents` are `NOT NULL` (see Data model).
+- **Tenancy is a constant.** `DEMO_HOUSEHOLD_ID` (`core/scope.ts`; `scripts/seed.ts` re-exports the same value) is referenced directly in every mutation route, the server actions, the upload route, and the orders ingest; `resolveHouseholdScope` ignores the request. `matches`, `categories`, and `sku_dictionary` carry no `household_id`; `review_decisions.household_id` has no FK. Adding real users means adding `users`/membership tables, a tenancy column on those three tables, and replacing the constant at each call site.
+- **`/api/ingest/bank` derives the household from a client-supplied `accountId`** (marked `TODO(auth)` in the route). Acceptable while one shared secret guards one seeded household; an IDOR the moment users exist.
+- **Unreadable receipts persist as masked placeholders** (`''` store, `''` date, `0` total) because `receipts.store / purchased_at / total_cents` are `NOT NULL` (see Data model).
+- **Live vision latency vs. function timeouts.** A live extraction call can take 20–30 s and the upload route sets no `maxDuration`; it relies on the platform default function timeout. Verify the project's limit before relying on live uploads in production.
 - **`insights/`, `rollups/rollup.ts`, `classify/recurring.ts`, `reconcile/gate-scanner.ts`** are tested but unused outside tests.
 - **No mobile capture** (`ReceiptDrop` has no `capture` attribute), no navigation between pages, no loading/error boundaries, no month picker on True Spend.
 - **Next.js 14 / React 18** — two majors behind current.
