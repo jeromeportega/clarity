@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
-import { orderItems, orders, storeCreditBalances, transactions } from '../../db/schema';
+import {
+  orderItems,
+  orders,
+  receiptItems,
+  receipts,
+  storeCreditBalances,
+  transactions,
+} from '../../db/schema';
 import type { ImportError, NormalizedBatch } from '../adapters/source-adapter';
 import { transactionDedupKey } from '../idempotency/keys';
 
@@ -13,6 +20,8 @@ export interface PersistOutcome {
     orders: number;
     orderItems: number;
     storeCreditRows: number;
+    receipts: number;
+    receiptItems: number;
   };
   skippedDuplicates: number;
   errors: ImportError[];
@@ -28,12 +37,15 @@ function inserted(result: InsertLike): boolean {
 
 /**
  * The single home for ALL writes. Importers never touch the DB; they return a
- * {@link NormalizedBatch} and this function owns two cross-story rules so they
+ * {@link NormalizedBatch} and this function owns the cross-source rules so they
  * live in exactly one place:
  *
- *   - Idempotency (FR-19): every row is inserted with insert-or-ignore semantics
- *     against the schema's load-bearing unique indexes; skipped rows are counted.
- *   - Store-credit ledger (FR-14): a return line whose `refundDestination` is a
+ *   - Idempotency: every transaction / order row is inserted with
+ *     insert-or-ignore semantics against the schema's load-bearing unique
+ *     indexes; a receipt is skipped when a row with its `sourceHash` already
+ *     exists in `receipts.image_hash` (the same key the vision pipeline uses
+ *     for photographed receipts). Skipped rows are counted.
+ *   - Store-credit ledger: a return line whose `refundDestination` is a
  *     non-card destination accrues ONE positive `store_credit_balances` row; a
  *     `card` refund writes none.
  */
@@ -43,7 +55,7 @@ export async function persistBatch(
   ctx: { householdId: string; accountId?: string },
 ): Promise<PersistOutcome> {
   const out: PersistOutcome = {
-    inserted: { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0 },
+    inserted: { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0, receipts: 0, receiptItems: 0 },
     skippedDuplicates: 0,
     errors: [],
   };
@@ -149,7 +161,7 @@ export async function persistBatch(
       }
       out.inserted.orderItems += 1;
 
-      // FR-14: a non-card refund destination accrues one positive ledger row.
+      // A non-card refund destination accrues one positive ledger row.
       if (item.isReturn && item.refundDestination && item.refundDestination !== 'card') {
         await db.insert(storeCreditBalances).values({
           id: randomUUID(),
@@ -160,6 +172,65 @@ export async function persistBatch(
         });
         out.inserted.storeCreditRows += 1;
       }
+    }
+  }
+
+  for (const receipt of batch.receipts) {
+    // One transaction per receipt: the header and its lines land together or
+    // not at all (an orphaned header would block the retry forever).
+    // Idempotency is enforced by ux_receipts_household_hash on
+    // (household_id, image_hash) — insert-or-ignore, no read-then-write race.
+    const outcome = await db.transaction(async (tx) => {
+      const receiptId = randomUUID();
+      const res = await tx
+        .insert(receipts)
+        .values({
+          id: receiptId,
+          householdId: ctx.householdId,
+          source: receipt.source,
+          store: receipt.store,
+          purchasedAt: receipt.purchasedAt,
+          subtotalCents: receipt.subtotalCents,
+          taxCents: receipt.taxCents,
+          totalCents: receipt.totalCents,
+          paymentLast4: receipt.paymentLast4,
+          imageHash: receipt.sourceHash,
+          needsReview: receipt.needsReview,
+        })
+        .onConflictDoNothing();
+      if (!inserted(res)) return { receipts: 0, items: 0 };
+
+      if (receipt.items.length === 0) return { receipts: 1, items: 0 };
+      const itemRes = await tx.insert(receiptItems).values(
+        receipt.items.map((item) => ({
+          id: randomUUID(),
+          receiptId,
+          lineNo: item.lineNo,
+          sku: item.sku,
+          rawDescription: item.rawDescription,
+          canonicalName: item.canonicalName,
+          categoryId: null,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents ?? null,
+          linePriceCents: item.linePriceCents,
+          discountCents: item.discountCents,
+          // A source-supplied canonical name is ground truth; the category is
+          // assigned downstream (classifier / dictionary / human), so it has no
+          // confidence yet.
+          nameConfidence: item.canonicalName === null ? null : 1,
+          categoryConfidence: null,
+          refundDestination: item.refundDestination ?? null,
+          needsReview: item.needsReview,
+        })),
+      );
+      return { receipts: 1, items: itemRes.rowsAffected ?? receipt.items.length };
+    });
+
+    if (outcome.receipts === 0) {
+      out.skippedDuplicates += 1;
+    } else {
+      out.inserted.receipts += 1;
+      out.inserted.receiptItems += outcome.items;
     }
   }
 

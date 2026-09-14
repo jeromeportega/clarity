@@ -1,0 +1,213 @@
+[
+  {
+    "channel": "warehouse",
+    "companyNumber": 1,
+    "couponArray": [],
+    "documentType": "WarehouseReceiptDetail",
+    "instantSavings": 5.6,
+    "invoiceNumber": null,
+    "itemArray": [
+      {
+        "amount": 28.49,
+        "catEntryId": "100000000001",
+        "entryMethod": null,
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "fullItemImage": "https://example.invalid/images/bounty.jpg",
+        "itemActualName": "Bounty Advanced Paper Towels, 12-count",
+        "itemDepartmentNumber": 14,
+        "itemDescription01": "***BOUNTY***",
+        "itemDescription02": "669SF TALL PACK SAS P20",
+        "itemIdentifier": null,
+        "itemNumber": "1919326",
+        "itemUnitPriceAmount": 28.49,
+        "taxFlag": "Y",
+        "transDepartmentNumber": 14,
+        "unit": 1
+      },
+      {
+        "amount": -5.6,
+        "catEntryId": null,
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "fullItemImage": null,
+        "itemActualName": "/BOUNTY",
+        "itemDepartmentNumber": 14,
+        "itemDescription01": "/BOUNTY",
+        "itemDescription02": null,
+        "itemNumber": "388550",
+        "itemUnitPriceAmount": -5.6,
+        "taxFlag": "Y",
+        "transDepartmentNumber": 14,
+        "unit": 1
+      },
+      {
+        "amount": 10.99,
+        "catEntryId": "100000000002",
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "fullItemImage": null,
+        "itemActualName": "Eggo Homestyle Waffles, 60-count",
+        "itemDepartmentNumber": 18,
+        "itemDescription01": "EGGOS 60CT",
+        "itemDescription02": null,
+        "itemNumber": "2038673",
+        "itemUnitPriceAmount": 10.99,
+        "taxFlag": "N",
+        "transDepartmentNumber": 18,
+        "unit": 1
+      },
+      {
+        "amount": 0.1,
+        "catEntryId": null,
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "fullItemImage": null,
+        "itemActualName": "SOME UNRELATED APPLIANCE",
+        "itemDepartmentNumber": 0,
+        "itemDescription01": "CA REDEMP VAL T EI/681700",
+        "itemDescription02": null,
+        "itemNumber": "1254",
+        "itemUnitPriceAmount": 0.1,
+        "taxFlag": "N",
+        "transDepartmentNumber": 0,
+        "unit": 1
+      },
+      {
+        "amount": 68.99,
+        "catEntryId": null,
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "fullItemImage": null,
+        "itemActualName": "BUSHWOOD SB BOURBON KENTUCKY 6/750ML",
+        "itemDepartmentNumber": 16,
+        "itemDescription01": "BUSHWOOD SB",
+        "itemDescription02": "KENTUCKY 6/750ML",
+        "itemNumber": "9999901",
+        "itemUnitPriceAmount": 68.99,
+        "taxFlag": "Y",
+        "transDepartmentNumber": 16,
+        "unit": 1
+      }
+    ],
+    "membershipNumber": "111111111111",
+    "operatorNumber": 121,
+    "receiptType": "In-Warehouse",
+    "registerNumber": 8,
+    "sequenceNumber": null,
+    "subTaxes": { "aTaxAmount": 6.03, "aTaxLegend": "A" },
+    "subTotal": 102.97,
+    "taxes": 6.03,
+    "tenderArray": [
+      {
+        "amountTender": 109.0,
+        "approvalNumber": null,
+        "displayAccountNumber": "XXXXXXXXXXXX1234",
+        "tenderDescription": "Visa",
+        "tenderTypeCode": "CC"
+      }
+    ],
+    "total": 109.0,
+    "totalItemCount": 4,
+    "transactionBarcode": "210021001234",
+    "transactionDate": "2026-09-08",
+    "transactionDateISO": "2026-09-08T23:53:00.000Z",
+    "transactionDateTime": "2026-09-08T16:53:00",
+    "transactionNumber": 489,
+    "transactionType": "Sales",
+    "warehouseAddress1": "1 Example Way",
+    "warehouseCity": "DEMOVILLE",
+    "warehouseCountry": "US",
+    "warehouseName": "Demoville",
+    "warehouseNumber": 21,
+    "warehousePostalCode": "00000",
+    "warehouseState": "CA"
+  },
+  {
+    "channel": "warehouse",
+    "documentType": "WarehouseReceiptDetail",
+    "instantSavings": 0,
+    "itemArray": [
+      {
+        "amount": -10.99,
+        "fuelGradeCode": null,
+        "fuelUnitQuantity": null,
+        "fuelUomCode": null,
+        "itemActualName": "Eggo Homestyle Waffles, 60-count",
+        "itemDepartmentNumber": 18,
+        "itemDescription01": "EGGOS 60CT",
+        "itemDescription02": null,
+        "itemNumber": "2038673",
+        "itemUnitPriceAmount": -10.99,
+        "taxFlag": "N",
+        "unit": 1
+      }
+    ],
+    "membershipNumber": "111111111111",
+    "receiptType": "In-Warehouse",
+    "subTotal": -10.99,
+    "taxes": 0,
+    "tenderArray": [
+      {
+        "amountTender": -10.99,
+        "displayAccountNumber": "XXXXXXXXXXXX5678",
+        "tenderDescription": "Costco Shop Card",
+        "tenderTypeCode": "SC"
+      }
+    ],
+    "total": -10.99,
+    "totalItemCount": 1,
+    "transactionBarcode": "210021001235",
+    "transactionDate": "2026-09-08",
+    "transactionDateISO": "2026-09-08T23:35:00.000Z",
+    "transactionType": "Refund",
+    "warehouseNumber": 21
+  },
+  {
+    "channel": "warehouse",
+    "documentType": "WarehouseReceiptDetail",
+    "instantSavings": 0,
+    "itemArray": [
+      {
+        "amount": 56.77,
+        "fuelGradeCode": "R",
+        "fuelGradeDescription": "REGULAR",
+        "fuelUnitQuantity": 12.345,
+        "fuelUomCode": "GAL",
+        "fuelUomDescription": "GALLONS",
+        "itemActualName": "Regular Unleaded Gasoline",
+        "itemDepartmentNumber": 75,
+        "itemDescription01": "REGULAR",
+        "itemDescription02": null,
+        "itemNumber": "1",
+        "itemUnitPriceAmount": 4.599,
+        "taxFlag": "N",
+        "unit": 1
+      }
+    ],
+    "membershipNumber": "111111111111",
+    "receiptType": "Gas Station",
+    "subTotal": 56.77,
+    "taxes": 0,
+    "tenderArray": [
+      {
+        "amountTender": 56.77,
+        "displayAccountNumber": "XXXXXXXXXXXX1234",
+        "tenderDescription": "Visa",
+        "tenderTypeCode": "CC"
+      }
+    ],
+    "total": 56.77,
+    "totalItemCount": 1,
+    "transactionBarcode": "210021001236",
+    "transactionDate": "2026-09-03",
+    "transactionDateISO": "2026-09-04T00:12:00.000Z",
+    "transactionType": "Sales",
+    "warehouseNumber": 21
+  }
+]

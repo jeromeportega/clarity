@@ -151,22 +151,33 @@ export const orderItems = sqliteTable(
  * drop them. `payment_last4` stores at most the last four digits, never a full
  * PAN.
  */
-export const receipts = sqliteTable('receipts', {
-  id: text('id').primaryKey(),
-  householdId: text('household_id')
-    .notNull()
-    .references(() => households.id),
-  source: text('source').notNull(),
-  store: text('store').notNull(),
-  purchasedAt: text('purchased_at').notNull(),
-  subtotalCents: integer('subtotal_cents'),
-  taxCents: integer('tax_cents'),
-  totalCents: integer('total_cents').notNull(),
-  paymentLast4: text('payment_last4'),
-  imageHash: text('image_hash'),
-  needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
-  createdAt: createdAt(),
-});
+export const receipts = sqliteTable(
+  'receipts',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    source: text('source').notNull(),
+    store: text('store').notNull(),
+    purchasedAt: text('purchased_at').notNull(),
+    subtotalCents: integer('subtotal_cents'),
+    taxCents: integer('tax_cents'),
+    totalCents: integer('total_cents').notNull(),
+    paymentLast4: text('payment_last4'),
+    // Idempotency key: SHA-256 of the image bytes for a photographed receipt,
+    // or of the source's own transaction id for a digital import.
+    imageHash: text('image_hash'),
+    needsReview: integer('needs_review', { mode: 'boolean' }).notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    // One receipt per (household, hash); rows without a hash are unconstrained.
+    uxReceiptsHouseholdHash: uniqueIndex('ux_receipts_household_hash')
+      .on(table.householdId, table.imageHash)
+      .where(sql`image_hash IS NOT NULL`),
+  }),
+);
 
 export const receiptItems = sqliteTable('receipt_items', {
   id: text('id').primaryKey(),

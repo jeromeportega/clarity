@@ -27,10 +27,16 @@ const PRIVATE_TMP = mkdtempSync(join(tmpdir(), 'clarity-ingest-itest-'));
 process.env.TMPDIR = PRIVATE_TMP;
 
 import { createTestDb, type FinanceDb } from '../db/client';
-import { AMAZON_ORDER_HISTORY_CSV, BANK_STATEMENT_CSV, readFixtureBytes } from '../fixtures';
+import {
+  AMAZON_ORDER_HISTORY_CSV,
+  BANK_STATEMENT_CSV,
+  COSTCO_WAREHOUSE_RECEIPTS_JSON,
+  readFixtureBytes,
+} from '../fixtures';
 import { DEMO_ACCOUNT_ID, seed } from '../scripts/seed';
 // The REAL route modules under test.
 import { POST as bankPost } from '../../../apps/web/app/api/ingest/bank/route';
+import { POST as costcoPost } from '../../../apps/web/app/api/ingest/costco/route';
 import { POST as ordersPost } from '../../../apps/web/app/api/ingest/orders/route';
 
 const ORIG_URL = process.env.TURSO_DATABASE_URL;
@@ -205,9 +211,52 @@ describe('POST /api/ingest/orders (real route)', () => {
   });
 });
 
+const costcoFile = (): FilePart => ({
+  bytes: readFixtureBytes(COSTCO_WAREHOUSE_RECEIPTS_JSON),
+  name: 'warehouse-receipts.json',
+  type: 'application/json',
+});
+
+describe('POST /api/ingest/costco (real route)', () => {
+  it('imports a Costco digital-receipt export, landing receipts and line items', async () => {
+    const res = await costcoPost(postRequest({ file: costcoFile() }));
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expectWellFormedImportResult(body);
+    expect(body.inserted.receipts).toBe(3);
+    expect(body.inserted.receiptItems).toBe(6);
+    expect(body.errors).toEqual([]);
+
+    expect(await count('receipts')).toBe(3);
+    expect(await count('receipt_items')).toBe(6);
+  });
+
+  it('is idempotent across requests', async () => {
+    await costcoPost(postRequest({ file: costcoFile() }));
+    const res = await costcoPost(postRequest({ file: costcoFile() }));
+    const body = await res.json();
+    expect(body.inserted.receipts).toBe(0);
+    expect(body.skippedDuplicates).toBe(3);
+    expect(await count('receipts')).toBe(3);
+  });
+
+  it('returns 400 when the file part is missing', async () => {
+    const res = await costcoPost(postRequest({}));
+    expect(res.status).toBe(400);
+    expect(await count('receipts')).toBe(0);
+  });
+
+  it('returns 401 without a mutation token and writes nothing', async () => {
+    const res = await costcoPost(postRequest({ file: costcoFile() }, { withToken: false }));
+    expect(res.status).toBe(401);
+    expect(await count('receipts')).toBe(0);
+  });
+});
+
 describe('the routes stay thin (logic lives in importSource)', () => {
-  it('both routes delegate to importSource and contain no persistence or parsing logic', () => {
-    for (const name of ['bank', 'orders']) {
+  it('all ingest routes delegate to importSource and contain no persistence or parsing logic', () => {
+    for (const name of ['bank', 'orders', 'costco']) {
       const src = readFileSync(join(ROUTE_DIR, name, 'route.ts'), 'utf8');
       expect(src).toMatch(/importSource\(/);
       expect(src).not.toMatch(/\.insert\(/);

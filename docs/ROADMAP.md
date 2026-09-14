@@ -40,12 +40,13 @@ single-household loop is excellent.
   remove the inline `DEMO_HOUSEHOLD_ID` call sites.
 - **Tenancy columns now, while the schema is young.** `household_id` on
   `sku_dictionary`, `categories`, and `matches`; FK on `review_decisions`.
-- **Costco digital receipts as a first-class source.** Costco's own
-  `WarehouseReceiptDetail` export carries item number, abbreviated description,
-  **canonical product name**, department, price, tax flag, instant savings, and
-  tender for every in-warehouse purchase. Add an adapter for it: it is both a
-  Tier-2 ingestion source (no photo needed) and labeled ground truth for the
-  SKU resolver and the vision eval.
+- ~~**Costco digital receipts as a first-class source.**~~ Done: the
+  `WarehouseReceiptDetail` export (item number, abbreviated description,
+  **canonical product name**, department, price, instant savings, tender)
+  imports into `receipts` / `receipt_items` via `POST /api/ingest/costco` or
+  the CLI. Follow-ups: bootstrap the SKU dictionary from these canonical
+  names (needs the category question settled — see Phase 2), and use the
+  same export as labeled ground truth for the vision eval.
 
 ## Phase 2 — Make the loop great
 

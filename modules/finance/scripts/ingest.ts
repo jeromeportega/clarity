@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 
 import { amazonAdapter } from '../core/adapters/amazon/amazon.adapter';
 import { bankAdapter } from '../core/adapters/bank/bank.adapter';
+import { costcoAdapter } from '../core/adapters/costco/costco.adapter';
 import { emlAdapter } from '../core/adapters/eml.adapter';
 import { retailerApiAdapter } from '../core/adapters/retailer-api.adapter';
 import type { RawInput, SourceAdapter, SourceKind } from '../core/adapters/source-adapter';
@@ -15,13 +16,14 @@ import { createDb, type FinanceDb } from '../db/client';
 import { accounts } from '../db/schema';
 
 /**
- * CLI entry point that ingests a bank export (Excel/CSV) or an Amazon order CSV
- * by reading the file BYTES and handing them to the same `importSource` the HTTP
- * routes use. This is one of the two composition roots that import all four
- * adapters (the contract's entry-point seam).
+ * CLI entry point that ingests a bank export (Excel/CSV), an Amazon order CSV,
+ * or a Costco digital-receipt JSON export by reading the file BYTES and handing
+ * them to the same `importSource` the HTTP routes use. This is one of the
+ * composition roots that import every adapter (the contract's entry-point seam).
  *
  *   tsx modules/finance/scripts/ingest.ts bank   <path.xlsx|.csv> --account <accountId>
  *   tsx modules/finance/scripts/ingest.ts orders <path.csv>
+ *   tsx modules/finance/scripts/ingest.ts costco <path.json>
  *
  * Security: the path is resolved and confined to a base directory (cwd by default,
  * overridable via CLARITY_INGEST_BASE_DIR) and must be a regular file. The file is
@@ -31,16 +33,18 @@ import { accounts } from '../db/schema';
 export const allAdapters: SourceAdapter[] = [
   bankAdapter,
   amazonAdapter,
+  costcoAdapter,
   retailerApiAdapter,
   emlAdapter,
 ];
 
-export type IngestCommand = 'bank' | 'orders';
+export type IngestCommand = 'bank' | 'orders' | 'costco';
 
 /** Maps a CLI command to the source kind the adapters dispatch on. */
 const COMMAND_KIND: Record<IngestCommand, SourceKind> = {
   bank: 'bank',
   orders: 'amazon',
+  costco: 'costco',
 };
 
 /**
@@ -74,6 +78,7 @@ export function resolveInputPath(rawPath: string, baseDir: string = cwd()): stri
 
 function mimeForPath(path: string): string | undefined {
   if (/\.csv$/i.test(path)) return 'text/csv';
+  if (/\.json$/i.test(path)) return 'application/json';
   if (/\.xlsx$/i.test(path)) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   if (/\.xls$/i.test(path)) return 'application/vnd.ms-excel';
   return undefined;
@@ -99,15 +104,15 @@ export interface RunIngestOptions {
 
 /**
  * Resolve the import context (the bank command derives `householdId` from the
- * account named by `accountId`; orders fall under the single demo household) and
- * drive `importSource`.
+ * account named by `accountId`; orders and Costco receipts fall under the single
+ * demo household) and drive `importSource`.
  */
 async function resolveContext(
   db: FinanceDb,
   command: IngestCommand,
   accountId: string | undefined,
 ): Promise<ImportContext> {
-  if (command === 'orders') {
+  if (command === 'orders' || command === 'costco') {
     // Lazy import so the CLI has no static dependency on a script's side effects.
     const { DEMO_HOUSEHOLD_ID } = await import('./seed');
     return { householdId: DEMO_HOUSEHOLD_ID };
@@ -144,8 +149,8 @@ export interface ParsedArgs {
 
 export function parseArgs(args: string[]): ParsedArgs {
   const [command, ...rest] = args;
-  if (command !== 'bank' && command !== 'orders') {
-    throw new Error("usage: ingest <bank|orders> <path> [--account <accountId>]");
+  if (command !== 'bank' && command !== 'orders' && command !== 'costco') {
+    throw new Error('usage: ingest <bank|orders|costco> <path> [--account <accountId>]');
   }
 
   let path: string | undefined;

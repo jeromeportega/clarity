@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `ux_receipts_household_hash` ON `receipts` (`household_id`,`image_hash`) WHERE image_hash IS NOT NULL;
