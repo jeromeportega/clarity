@@ -5,20 +5,40 @@ import { retailerApiAdapter } from '../../../../../../modules/finance/core/adapt
 import type { RawInput, SourceAdapter } from '../../../../../../modules/finance/core/adapters/source-adapter';
 import { importSource } from '../../../../../../modules/finance/core/ingest/pipeline';
 import { createDb } from '../../../../../../modules/finance/db/client';
-import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/scripts/seed';
+import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
+import { requireMutationToken } from '../../../lib/auth/token';
+import { rejectOversizedBody } from '../../../lib/http/body-limit';
 
 /**
  * POST /api/ingest/orders — multipart/form-data { file: File }.
  *
+ * Mutation route: guarded by x-reconcile-token like every other write, with a
+ * Content-Length cap before the body is buffered.
+ *
  * Thin by design: parse the upload, hand the bytes to `importSource`, shape the
- * response. Orders belong to the single seeded demo household (NFR-5); the bank
- * route resolves its household from an account instead. ALL ingest logic lives in
+ * response. Orders belong to the single demo household (the SAME constant the
+ * queue, true-spend and upload paths use — `core/scope`); the bank route
+ * resolves its household from an account instead. ALL ingest logic lives in
  * `importSource`.
  */
 const adapters: SourceAdapter[] = [bankAdapter, amazonAdapter, retailerApiAdapter, emlAdapter];
 
+// Amazon order-history exports are small; this only bounds memory before parsing.
+const MAX_BODY_BYTES = 25 * 1024 * 1024;
+
 export async function POST(request: Request): Promise<Response> {
-  const form = await request.formData();
+  const denied = requireMutationToken(request);
+  if (denied) return denied;
+
+  const tooBig = rejectOversizedBody(request, MAX_BODY_BYTES);
+  if (tooBig) return tooBig;
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return Response.json({ error: 'Invalid multipart request' }, { status: 400 });
+  }
   const file = form.get('file');
 
   if (!(file instanceof File)) {

@@ -55,6 +55,21 @@ describe('requireMutationToken', () => {
     assertIs401(requireMutationToken(makeReq('any-token')));
   });
 
+  it('returns 401 when the secret is whitespace-only (fails closed, not open)', () => {
+    vi.stubEnv('RECONCILE_MUTATION_TOKEN', '   \n');
+    assertIs401(requireMutationToken(makeReq('   \n')));
+  });
+
+  it('tolerates a trailing newline in the configured secret (env values pasted via stdin)', () => {
+    vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token\n');
+    expect(requireMutationToken(makeReq('super-secret-token'))).toBeNull();
+  });
+
+  it('returns 401 for a whitespace-only token', () => {
+    vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');
+    assertIs401(requireMutationToken(makeReq('   ')));
+  });
+
   describe('Authorization: Bearer fallback (deprecated)', () => {
     it('accepts a correct token via Authorization: Bearer and returns null', () => {
       vi.stubEnv('RECONCILE_MUTATION_TOKEN', 'super-secret-token');

@@ -39,31 +39,25 @@ function makeItem(overrides: Partial<ReceiptItemRecord> = {}): ReceiptItemRecord
 }
 
 // =============================================================================
-// ReceiptDrop — initial render and token-gate
+// ReceiptDrop — initial render, enabled vs disabled
 // =============================================================================
 
 describe('ReceiptDrop', () => {
-  it('renders the drop zone with browse prompt when a token is provided', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ReceiptDrop, { mutationToken: 'test-token' }),
-    );
+  it('renders the drop zone with browse prompt when enabled', () => {
+    const html = renderToStaticMarkup(React.createElement(ReceiptDrop, { enabled: true }));
     expect(html).toContain('Drop a receipt photo or PDF here');
     expect(html).toContain('or click to browse');
   });
 
-  it('renders the drop zone even when mutationToken is null (error shown on upload attempt only)', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ReceiptDrop, { mutationToken: null }),
-    );
-    // The idle state renders the drop zone — the null-token guard fires only on
-    // a user upload attempt (client-side), not at initial render.
-    expect(html).toContain('Drop a receipt photo or PDF here');
+  it('renders a disabled notice and no file input when disabled', () => {
+    const html = renderToStaticMarkup(React.createElement(ReceiptDrop, { enabled: false }));
+    expect(html).toContain('temporarily disabled');
+    expect(html).not.toContain('type="file"');
+    expect(html).not.toContain('Drop a receipt photo or PDF here');
   });
 
   it('exposes the file input with the correct accepted MIME types', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ReceiptDrop, { mutationToken: 'test-token' }),
-    );
+    const html = renderToStaticMarkup(React.createElement(ReceiptDrop, { enabled: true }));
     expect(html).toContain('accept="image/jpeg,image/png,application/pdf"');
   });
 });

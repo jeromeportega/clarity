@@ -9,17 +9,19 @@ import {
 } from '../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../modules/finance/core/scope';
 import type { QueueItemType } from '../../../../modules/finance/core/queue/types';
+import { isValidMutationToken, mutationTokenFromHeaders } from '../lib/auth/token';
 
 const SCOPE = { householdId: DEMO_HOUSEHOLD_ID };
 
-// When RECONCILE_MUTATION_TOKEN is configured (production), Server Actions require
-// the same Bearer token. Without the token set (dev / demo), they are open — Next.js
-// CSRF protection applies in all cases.
+// Server Actions are mutations and use the same shared-secret gate as the API
+// routes (lib/auth/token.ts) — one implementation, fail-closed. Note that a
+// browser cannot attach custom headers to a Server Action POST, so today these
+// are reachable only by token-holding server-side callers. They are kept for
+// the session-based auth that replaces the shared secret (roadmap Phase 1),
+// when the gate becomes the session and the queue buttons are mounted.
 async function requireMutationToken(): Promise<void> {
-  const token = process.env.RECONCILE_MUTATION_TOKEN;
-  if (!token) return;
   const h = await headers();
-  if (h.get('authorization') !== `Bearer ${token}`) {
+  if (!isValidMutationToken(mutationTokenFromHeaders((name) => h.get(name)))) {
     throw new Error('Unauthorized');
   }
 }

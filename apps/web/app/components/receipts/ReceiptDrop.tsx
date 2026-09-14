@@ -33,24 +33,36 @@ type UploadState =
   | { phase: 'done'; result: UploadedReceiptResult }
   | { phase: 'error'; message: string };
 
-export function ReceiptDrop({ mutationToken }: { mutationToken: string | null }) {
+export function ReceiptDrop({ enabled }: { enabled: boolean }) {
   const [state, setState] = useState<UploadState>({ phase: 'idle' });
   const inputRef = useRef<HTMLInputElement>(null);
 
+  if (!enabled) {
+    return (
+      <div
+        role="status"
+        aria-label="Receipt uploads disabled"
+        className="rounded-lg border border-dashed border-muted-foreground/40 p-8 text-center"
+      >
+        <p className="font-medium">Receipt uploads are temporarily disabled on this deployment.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          They will return once sign-in is available.
+        </p>
+      </div>
+    );
+  }
+
   async function upload(file: File) {
-    if (!mutationToken) {
-      setState({ phase: 'error', message: 'Uploads are disabled on this server.' });
-      return;
-    }
     setState({ phase: 'uploading' });
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
+      // Same-origin request; authentication is the server's concern (session
+      // cookie once sign-in exists). No credential is ever embedded client-side.
       const res = await fetch('/api/receipts/upload', {
         method: 'POST',
-        headers: { 'x-reconcile-token': mutationToken },
         body: formData,
       });
 
