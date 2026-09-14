@@ -1,8 +1,8 @@
 /**
  * Mutation-route token gate — discovered, not hand-maintained.
  *
- * Walks apps/web/app/api/** for every route.ts, imports it, and treats every
- * exported POST / PUT / PATCH / DELETE handler as a write route. For each:
+ * Walks apps/web/app/** for every route.(ts|tsx|js|jsx), imports it, and treats
+ * every exported POST / PUT / PATCH / DELETE handler as a write route. For each:
  *   - a request with no token must get 401, and
  *   - a request with a valid token must get past the gate (non-401; the
  *     bodiless probe then fails validation with 400, which is the point:
@@ -26,22 +26,25 @@ type RouteHandler = (
 
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_DIR = join(repoRoot, 'apps/web/app/api');
+// Walk the whole app dir, not just app/api — a route handler anywhere under
+// app/ is a live endpoint in Next. Match every page extension Next accepts.
+const APP_DIR = join(repoRoot, 'apps/web/app');
+const ROUTE_FILE = /^route\.(ts|tsx|js|jsx)$/;
 
 function routeFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) routeFiles(full, out);
-    else if (entry === 'route.ts') out.push(full);
+    else if (ROUTE_FILE.test(entry)) out.push(full);
   }
   return out;
 }
 
 async function discoverWriteRoutes(): Promise<Array<{ name: string; handler: RouteHandler }>> {
   const routes: Array<{ name: string; handler: RouteHandler }> = [];
-  for (const file of routeFiles(API_DIR).sort()) {
+  for (const file of routeFiles(APP_DIR).sort()) {
     const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
-    const path = `/api/${relative(API_DIR, dirname(file)).split('\\').join('/')}`;
+    const path = `/${relative(APP_DIR, dirname(file)).split('\\').join('/')}`;
     for (const method of WRITE_METHODS) {
       const handler = mod[method];
       if (typeof handler === 'function') routes.push({ name: `${method} ${path}`, handler: handler as RouteHandler });
