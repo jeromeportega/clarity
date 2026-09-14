@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { argv } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { DEMO_HOUSEHOLD_ID } from '../core/scope';
 import { createDb, type FinanceDb } from '../db/client';
 import { DEFAULT_CATEGORIES, accounts, categories, households } from '../db/schema';
 
 /**
- * Seed a single synthetic demo household (NFR-5). Real structure, fully fake data:
+ * Seed a single synthetic demo household. Real structure, fully fake data:
  * no real names, accounts, or balances. The demo identifiers are exported as stable
  * constants so the HTTP routes and the integration test agree on the household /
  * account without re-seeding.
@@ -15,8 +16,12 @@ import { DEFAULT_CATEGORIES, accounts, categories, households } from '../db/sche
  * still yields exactly one household, one account, and one row per category.
  */
 
-/** Stable, hard-coded demo IDs (valid UUIDv4 shape). */
-export const DEMO_HOUSEHOLD_ID = '00000000-0000-4000-8000-000000000001';
+// There is exactly ONE demo household id in the codebase — `core/scope.ts`. It
+// is re-exported here so callers of the seed and the ingest CLI share it with
+// the queue, true-spend and upload paths (a second constant once orphaned
+// every order imported via the API).
+export { DEMO_HOUSEHOLD_ID };
+/** Stable, hard-coded demo account id (valid UUIDv4 shape). */
 export const DEMO_ACCOUNT_ID = '00000000-0000-4000-8000-000000000002';
 
 export interface SeedResult {

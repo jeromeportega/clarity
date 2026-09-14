@@ -1,4 +1,10 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
+
+// apps/web uses the `@/` alias (→ apps/web/), so tests that import route
+// handlers or pages must resolve it the same way Next does.
+const WEB_ALIAS = { '@': fileURLToPath(new URL('./apps/web', import.meta.url)) };
 
 // Two projects:
 //   unit — the offline gate. Every co-located *.test.ts under modules/** and
@@ -12,6 +18,7 @@ export default defineConfig({
   test: {
     projects: [
       {
+        resolve: { alias: WEB_ALIAS },
         test: {
           name: 'unit',
           environment: 'node',

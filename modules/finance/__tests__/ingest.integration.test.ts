@@ -35,6 +35,10 @@ import { POST as ordersPost } from '../../../apps/web/app/api/ingest/orders/rout
 
 const ORIG_URL = process.env.TURSO_DATABASE_URL;
 const ORIG_TOKEN = process.env.TURSO_AUTH_TOKEN;
+const ORIG_MUTATION_TOKEN = process.env.RECONCILE_MUTATION_TOKEN;
+
+// Ingest routes are mutations and share the x-reconcile-token gate.
+const TEST_MUTATION_TOKEN = 'ingest-itest-mutation-token';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROUTE_DIR = join(HERE, '..', '..', '..', 'apps', 'web', 'app', 'api', 'ingest');
@@ -46,6 +50,7 @@ let cleanup: () => void;
 
 beforeEach(async () => {
   delete process.env.TURSO_AUTH_TOKEN;
+  process.env.RECONCILE_MUTATION_TOKEN = TEST_MUTATION_TOKEN;
 
   const before = new Set(listDbFiles());
   const handle = createTestDb();
@@ -71,6 +76,8 @@ afterAll(() => {
   else process.env.TURSO_DATABASE_URL = ORIG_URL;
   if (ORIG_TOKEN === undefined) delete process.env.TURSO_AUTH_TOKEN;
   else process.env.TURSO_AUTH_TOKEN = ORIG_TOKEN;
+  if (ORIG_MUTATION_TOKEN === undefined) delete process.env.RECONCILE_MUTATION_TOKEN;
+  else process.env.RECONCILE_MUTATION_TOKEN = ORIG_MUTATION_TOKEN;
   rmSync(PRIVATE_TMP, { recursive: true, force: true });
 });
 
@@ -80,13 +87,18 @@ interface FilePart {
   type: string;
 }
 
-function postRequest(fields: { file?: FilePart; accountId?: string }): Request {
+function postRequest(
+  fields: { file?: FilePart; accountId?: string },
+  opts: { withToken?: boolean } = {},
+): Request {
   const form = new FormData();
   if (fields.file) {
     form.append('file', new File([fields.file.bytes], fields.file.name, { type: fields.file.type }));
   }
   if (fields.accountId !== undefined) form.append('accountId', fields.accountId);
-  return new Request('http://localhost/api/ingest', { method: 'POST', body: form });
+  const headers: Record<string, string> = {};
+  if (opts.withToken ?? true) headers['x-reconcile-token'] = TEST_MUTATION_TOKEN;
+  return new Request('http://localhost/api/ingest', { method: 'POST', headers, body: form });
 }
 
 async function count(table: string): Promise<number> {
@@ -153,6 +165,14 @@ describe('POST /api/ingest/bank (real route)', () => {
     const res = await bankPost(postRequest({ file: bankFile(), accountId: 'no-such-account' }));
     expect(res.status).toBe(400);
   });
+
+  it('returns 401 without a mutation token and writes nothing', async () => {
+    const res = await bankPost(
+      postRequest({ file: bankFile(), accountId: DEMO_ACCOUNT_ID }, { withToken: false }),
+    );
+    expect(res.status).toBe(401);
+    expect(await count('transactions')).toBe(0);
+  });
 });
 
 describe('POST /api/ingest/orders (real route)', () => {
@@ -175,6 +195,12 @@ describe('POST /api/ingest/orders (real route)', () => {
   it('returns 400 when the file part is missing', async () => {
     const res = await ordersPost(postRequest({}));
     expect(res.status).toBe(400);
+    expect(await count('orders')).toBe(0);
+  });
+
+  it('returns 401 without a mutation token and writes nothing', async () => {
+    const res = await ordersPost(postRequest({ file: ordersFile() }, { withToken: false }));
+    expect(res.status).toBe(401);
     expect(await count('orders')).toBe(0);
   });
 });
