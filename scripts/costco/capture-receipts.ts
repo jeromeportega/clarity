@@ -30,9 +30,10 @@
  *     the `transactionBarcode` field of Costco's WarehouseReceiptDetail JSON.
  *     A manifest.json in the output dir records what was captured (paths are
  *     relative to the manifest so the set can move as a unit).
- *   - Re-runs skip receipts whose file already exists. Two receipts that
- *     would produce the same filename in ONE run are both kept (suffix _2,
- *     _3, …) and a warning is logged — a receipt is never silently dropped.
+ *   - Re-runs skip receipts the manifest already lists (same barcode, date and
+ *     kind, file still present). Two different receipts that would produce
+ *     the same filename are both kept (suffix _2, _3, …) with a warning —
+ *     a receipt is never overwritten or silently dropped.
  *
  * Why PNG and not PDF: Chrome only exposes print-to-PDF in headless mode, and
  * Costco's sign-in does not survive headless well. The vision pipeline accepts
@@ -259,17 +260,38 @@ async function readReceiptMeta(paper: Locator, kind: ManifestEntry['kind']): Pro
   return { barcode, date: toIsoDate(dateMatch?.[1]), time: dateMatch?.[2], total };
 }
 
-/** Pick a filename base that is unique within this run (never silently drop a receipt). */
+/**
+ * Pick a filename base that collides with nothing already written — neither in
+ * this run nor on disk from earlier runs. A collision means a DIFFERENT
+ * receipt with the same date/barcode text, so it gets a suffix and a warning;
+ * nothing is ever overwritten or dropped.
+ */
 function uniqueBase(run: Run, base: string): string {
-  if (!run.written.has(base)) return base;
-  for (let n = 2; n < 1000; n++) {
-    const candidate = `${base}_${n}`;
+  for (let n = 1; n < 1000; n++) {
+    const candidate = n === 1 ? base : `${base}_${n}`;
     if (!run.written.has(candidate) && !existsSync(join(run.outDir, `${candidate}.png`))) {
-      warn(`filename collision within this run for ${base}; saving as ${candidate}`);
+      if (n > 1) warn(`filename collision for ${base}; saving as ${candidate}`);
       return candidate;
     }
   }
   throw new Error(`could not find a unique filename for ${base}`);
+}
+
+/**
+ * "Already captured" is decided by the manifest, not by filename: an entry
+ * with the same barcode, date and kind whose file is still on disk. A receipt
+ * without a readable barcode can never be identified, so it is always
+ * captured again (with a suffix) rather than risk skipping a different one.
+ */
+function alreadyCaptured(run: Run, meta: ReceiptMeta, kind: ManifestEntry['kind']): boolean {
+  if (meta.barcode === 'no-barcode') return false;
+  return run.manifest.some(
+    (e) =>
+      e.barcode === meta.barcode &&
+      e.date === meta.date &&
+      e.kind === kind &&
+      existsSync(join(run.outDir, e.file)),
+  );
 }
 
 async function captureOpenDialog(
@@ -289,10 +311,8 @@ async function captureOpenDialog(
   if (meta.barcode === 'no-barcode') warn(`no barcode found in a ${kind} dated ${meta.date}; filename will not pair with the JSON export`);
   const rawBase = `${meta.date}_${meta.barcode}${kind === 'return' ? '_return' : ''}`;
 
-  // A file from a PREVIOUS run with this exact name means "already captured".
-  // A collision within THIS run means two different receipts — keep both.
-  if (!run.written.has(rawBase) && existsSync(join(run.outDir, `${rawBase}.png`))) {
-    log(`skip (exists) ${rawBase}`);
+  if (alreadyCaptured(run, meta, kind)) {
+    log(`skip (already captured) ${rawBase}`);
     return 'skipped';
   }
   const base = uniqueBase(run, rawBase);
