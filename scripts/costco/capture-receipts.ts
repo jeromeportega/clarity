@@ -126,8 +126,29 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (msg: string) => console.log(`[costco] ${msg}`);
 const warn = (msg: string) => console.warn(`[costco] WARN ${msg}`);
 
+/**
+ * Load the manifest, normalizing entries written by earlier versions of this
+ * script (no `invoice` / `layout`; a 'no-barcode' sentinel instead of null) so
+ * every consumer can rely on the current shape.
+ */
 function loadManifest(path: string): ManifestEntry[] {
-  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ManifestEntry[]) : [];
+  if (!existsSync(path)) return [];
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Array<Partial<ManifestEntry> & { barcode?: string | null }>;
+  return raw.map((e) => {
+    const barcode = e.barcode && e.barcode !== 'no-barcode' ? e.barcode : null;
+    const invoice = e.invoice ?? null;
+    return {
+      ...e,
+      barcode,
+      invoice,
+      layout: e.layout ?? (invoice ? 'gas' : 'warehouse'),
+      kind: e.kind ?? 'receipt',
+      date: e.date ?? 'unknown-date',
+      range: e.range ?? '',
+      file: e.file ?? '',
+      capturedAt: e.capturedAt ?? '',
+    };
+  });
 }
 
 function saveManifest(path: string, entries: ManifestEntry[]): void {
@@ -287,7 +308,7 @@ async function goToFirstPage(page: Page, current: Caption | null): Promise<Capti
   let caption = current;
   for (let i = 0; i < MAX_PAGES_PER_RANGE && caption && caption.from > 1; i++) {
     const next =
-      (await clickPager(page, /go to page 1$|^page 1$|^1$/i, caption)) ??
+      (await clickPager(page, /^go to page 1$|^page 1$|^1$/i, caption)) ??
       (await clickPager(page, /previous page|^previous$|^prev$/i, caption));
     if (!next || next.text === caption.text) {
       warn(`could not rewind to page 1 (at "${caption.text}")`);
@@ -325,7 +346,7 @@ async function readReceiptMeta(paper: Locator, kind: ManifestEntry['kind']): Pro
     const invoice = text.match(/Invoice#\s*(\d+)/i)?.[1] ?? null;
     const date = toIsoDate(text.match(/Date:\s*(\d{2}\/\d{2}\/\d{2,4})/i)?.[1]);
     const time = text.match(/Time:\s*(\d{1,2}:\d{2})/i)?.[1];
-    const rawTotal = text.match(/Total\s+Sale\s*\$?(-?[\d,]+\.\d{2})/i)?.[1];
+    const rawTotal = text.match(/(?<!Refunded\s)\bTotal\s+Sale\s*\$?(-?[\d,]+\.\d{2})/i)?.[1];
     const total = rawTotal === undefined ? undefined : kind === 'return' ? `-${rawTotal.replace(/^-/, '')}` : rawTotal;
     return { layout: 'gas', barcode: null, invoice, date, time, total };
   }
