@@ -11,7 +11,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createTestDb, type FinanceDb } from '../../db/client';
+import { createDb, createTestDb, type FinanceDb } from '../../db/client';
 import { TAXONOMY_IDS } from '../../db/taxonomy';
 import { accounts, households, matches, receiptItems, receipts, transactions } from '../../db/schema';
 import { applyCorrection } from '../corrections/apply';
@@ -30,6 +30,7 @@ const RI_BLANK = 'ri-run-blank';
 
 let db: FinanceDb;
 let cleanup: () => void;
+let file: string;
 
 async function seedHousehold(): Promise<void> {
   await db.insert(households).values({ id: HH, name: 'Run' });
@@ -84,7 +85,7 @@ async function countedCents(month = '2025-03'): Promise<number> {
 
 describe('reconcileHousehold', () => {
   beforeEach(async () => {
-    ({ db, cleanup } = createTestDb());
+    ({ db, cleanup, file } = createTestDb());
     await seedHousehold();
   });
   afterEach(() => cleanup());
@@ -291,6 +292,41 @@ describe('reconcileHousehold', () => {
       // The handle is not poisoned: a later run still lands.
       const c = await reconcileHousehold(db, HH);
       expect(c).toEqual(a);
+    });
+
+    it('two DIFFERENT households racing on one handle both succeed — the gate is the database, not the household', async () => {
+      await seedStandardPair();
+      await db.insert(households).values({ id: 'hh-other', name: 'Other' });
+      await db.insert(accounts).values({ id: 'acct-other', householdId: 'hh-other', name: 'Checking' });
+      await db.insert(transactions).values({
+        id: 'txn-other', accountId: 'acct-other', postedDate: '2025-03-02', amountCents: -4200, direction: 'debit',
+        normalizedMerchant: 'TARGET', sourceRowHash: 'o', dedupKey: 'o',
+      });
+      await db.insert(receipts).values({ id: 'rcpt-other', householdId: 'hh-other', source: 'photo', store: 'TARGET', purchasedAt: '2025-03-02', totalCents: 4200 });
+      await db.insert(receiptItems).values({ id: 'ri-other', receiptId: 'rcpt-other', lineNo: 1, rawDescription: 'THING', canonicalName: 'Thing', quantity: 1, linePriceCents: 4200 });
+
+      const settled = await Promise.allSettled([
+        reconcileHousehold(db, HH),
+        reconcileHousehold(db, 'hh-other'),
+        reconcileHousehold(db, HH),
+        reconcileHousehold(db, 'hh-other'),
+      ]);
+      expect(settled.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled', 'fulfilled']);
+      expect(await matchRowsFor(TXN)).toHaveLength(2);
+      expect(await matchRowsFor('txn-other')).toHaveLength(1);
+      // Neither household's later run finds a poisoned handle.
+      expect((await reconcileHousehold(db, HH)).matched).toBe(1);
+      expect((await reconcileHousehold(db, 'hh-other')).matched).toBe(1);
+    });
+
+    it('two handles on the same database file, racing, both succeed', async () => {
+      await seedStandardPair();
+      const other = createDb({ url: `file:${file}` });
+
+      const settled = await Promise.allSettled([reconcileHousehold(db, HH), reconcileHousehold(other, HH), reconcileHousehold(other, HH)]);
+      expect(settled.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+      expect(await matchRowsFor(TXN)).toHaveLength(2);
+      expect((await reconcileHousehold(other, HH)).matched).toBe(1);
     });
 
     it('a burst of runs coalesces: every caller gets a result, and the last run sees the newest data', async () => {

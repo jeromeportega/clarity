@@ -45,12 +45,13 @@ const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [100, 300, 900];
  * Concurrency: the sink's transaction holds the database's write lock for the
  * length of the sync, and two runs racing on one shared libSQL handle do not
  * merely fail — the losing `BEGIN` can leave the handle unable to commit
- * anything afterwards. So runs are serialised per household within the
- * process: a run that arrives while one is in flight waits for it and then
- * runs over the newer data (several arrivals coalesce into one wait), and a
- * run that still loses a lock to another process (another serverless
- * instance on the same Turso database) is retried whole, with backoff,
- * because every attempt re-reads before it writes.
+ * anything afterwards — and SQLite's write lock is database-wide, not
+ * per household. So runs are serialised process-wide: a run that arrives
+ * while any run is in flight waits for it and then runs over the newer data
+ * (arrivals for the same household coalesce into one wait), and a run that
+ * still loses a lock to another process (another serverless instance on the
+ * same Turso database) is retried whole, with backoff, because every attempt
+ * re-reads before it writes.
  */
 export async function reconcileHousehold(
   db: FinanceDb,
@@ -89,45 +90,42 @@ async function runOnce(db: FinanceDb, householdId: string, opts: ReconcileHouseh
 }
 
 // ---------------------------------------------------------------------------
-// Per-process, per-household serialisation with coalescing
+// Process-wide write gate, with per-household coalescing
 // ---------------------------------------------------------------------------
+//
+// SQLite's write lock is database-wide, so the gate is too: every run in this
+// process — any household, any handle on the same database — takes its turn
+// behind the previous one. Arrivals for a household that already has a run
+// queued share that run (it will read the newer data when its turn comes).
+//
+// This is deliberately mutable process-global state inside `core`, which is
+// otherwise DI-seamed: a lock is a property of the process, not of a caller.
+// It persists across tests in a worker (harmless: it only orders runs). If a
+// bundler ever duplicates this module across server chunks, each chunk gets
+// its own gate and `withLockRetry` is the remaining backstop.
 
-/** The run currently holding the household's turn, if any. */
-const running = new Map<string, Promise<unknown>>();
-/** The single run queued behind it; later arrivals share this promise. */
+/** The run currently holding — or last to hold — the gate. */
+let tail: Promise<unknown> = Promise.resolve();
+/** Per household: the run queued behind the gate, shared by later arrivals until it starts. */
 const waiting = new Map<string, Promise<ReconcileRunSummary>>();
 
-function serialised(key: string, fn: () => Promise<ReconcileRunSummary>): Promise<ReconcileRunSummary> {
-  const queued = waiting.get(key);
+function serialised(householdId: string, fn: () => Promise<ReconcileRunSummary>): Promise<ReconcileRunSummary> {
+  const queued = waiting.get(householdId);
   if (queued) return queued;
 
-  const current = running.get(key);
-  if (!current) {
-    const run = fn();
-    running.set(key, run);
-    void run
-      .finally(() => {
-        if (running.get(key) === run) running.delete(key);
-      })
-      .catch(() => undefined);
-    return run;
-  }
-
-  // Wait for the in-flight run to settle (either way), then take the turn.
-  const next = current.then(fn, fn);
-  waiting.set(key, next);
-  void current
+  const previous = tail;
+  // Take the turn once whatever holds the gate settles, either way.
+  const run = previous.then(fn, fn);
+  tail = run.catch(() => undefined);
+  waiting.set(householdId, run);
+  // The moment the run starts it is no longer "queued": a later arrival must
+  // queue a fresh run so it sees data written after this one began.
+  void previous
     .finally(() => {
-      if (waiting.get(key) === next) waiting.delete(key);
-      running.set(key, next);
+      if (waiting.get(householdId) === run) waiting.delete(householdId);
     })
     .catch(() => undefined);
-  void next
-    .finally(() => {
-      if (running.get(key) === next) running.delete(key);
-    })
-    .catch(() => undefined);
-  return next;
+  return run;
 }
 
 // ---------------------------------------------------------------------------
