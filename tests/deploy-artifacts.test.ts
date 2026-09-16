@@ -16,11 +16,18 @@ function exists(relPath: string): boolean {
 
 const ARTIFACTS = ['vercel.json', 'deploy/deploy.sh', 'deploy/ENV.md', 'deploy/smoke.sh'];
 
+// Every variable the app reads in production must be documented here, so a
+// merge or a rewrite that drops a row fails the suite instead of an operator.
 const ENV_VAR_NAMES = [
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
   'RECONCILE_MUTATION_TOKEN',
   'PUBLIC_DEMO_MODE',
+  'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
+  'CLERK_SECRET_KEY',
+  'CLARITY_OPERATOR_EMAILS',
+  'BLOB_READ_WRITE_TOKEN',
 ];
 
 // Patterns that indicate a secret value is committed (name=value assignments with
@@ -70,6 +77,13 @@ describe('ENV.md — env-var names, no values (NFR-5)', () => {
     const content = read('deploy/ENV.md');
     for (const name of ENV_VAR_NAMES) {
       expect(content).toContain(name);
+    }
+  });
+
+  it('.env.example carries the same names (empty or commented, never a value)', () => {
+    const content = read('.env.example');
+    for (const name of ENV_VAR_NAMES) {
+      expect(content, name).toContain(name);
     }
   });
 
