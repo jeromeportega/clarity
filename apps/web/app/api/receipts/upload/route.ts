@@ -1,11 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { requireWriter } from '../../../lib/auth/writer';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
+import { getImageStore } from '../../../../lib/image-store';
 import { buildReceiptPipelineDeps } from '../../../../lib/receipt-pipeline';
 import { reconcileAfterWrite } from '../../../../lib/reconcile';
+import { imageHash } from '../../../../../../modules/finance/core/receipts/image-hash';
+import { receiptImageKey } from '../../../../../../modules/finance/core/receipts/store/image-store';
 import {
   DEFAULT_MAX_UPLOAD_BYTES,
   handleReceiptUpload,
@@ -20,26 +19,21 @@ function getDb(): FinanceDb {
   return _db;
 }
 
-const MIME_EXT: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'application/pdf': '.pdf',
-};
-
 /**
  * POST /api/receipts/upload — multipart/form-data { file: File }.
  *
- * Mutation route: guarded by x-reconcile-token via the shared
- * `requireMutationToken` gate. Rejects oversized bodies by Content-Length
- * before buffering, then validates MIME and the per-file size cap before the
- * file's bytes are copied into memory or the pipeline runs. Asset stored with
- * a UUID filename — the client filename is never used as a path.
+ * Mutation route: the writer (a session, or the script token) decides the
+ * household. Rejects oversized bodies by Content-Length before buffering,
+ * then validates MIME and the per-file size cap before the file's bytes are
+ * copied into memory or the pipeline runs. The image is stored under a key
+ * derived from the household and the image hash — the client filename is
+ * never a path — before anything touches the database.
  */
 // Slack over the file cap for multipart boundaries/headers.
 const MAX_BODY_BYTES = DEFAULT_MAX_UPLOAD_BYTES + 64 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
-  // Mutation token gate — must reject before any upload or pipeline work.
+  // Writer gate — must reject before any upload or pipeline work.
   const writer = await requireWriter(request);
   if (writer instanceof Response) return writer;
 
@@ -74,17 +68,15 @@ export async function POST(request: Request): Promise<Response> {
 
   const bytes = new Uint8Array(await file.arrayBuffer());
 
-  // Keep the raw asset BEFORE anything is committed to the database, so a
-  // storage failure is a clean 500 with no half-recorded receipt. Uses a
-  // server-generated UUID filename (the client name is never a path) under
-  // /tmp — ephemeral on serverless; durable image storage is the next step.
-  const ext = MIME_EXT[mimeType] ?? '.bin';
-  const safeFilename = `${randomUUID()}${ext}`;
-  const dataDir = join('/tmp', 'receipts');
+  // Keep the image BEFORE anything is committed to the database, so a
+  // storage failure is a clean 500 with no half-recorded receipt. The key is
+  // the household plus the image hash — the same hash the pipeline uses for
+  // idempotency — so the receipt row and its image find each other without a
+  // link column, and a re-upload of the same photo rewrites the same key.
   try {
-    await mkdir(dataDir, { recursive: true });
-    await writeFile(join(dataDir, safeFilename), bytes);
-  } catch {
+    await getImageStore().put(receiptImageKey(writer.householdId, imageHash(bytes)), bytes, mimeType);
+  } catch (err) {
+    console.error('[receipts/upload] image storage failed', err);
     return Response.json({ error: 'Storage failed' }, { status: 500 });
   }
 
