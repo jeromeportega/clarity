@@ -38,15 +38,20 @@ single-household loop is excellent.
   dictionary only what the human actually said, and is refused for items not in
   the queue or outside the household. `recomputeRollups` stays a no-op by
   design — rollups are computed on read.
-- **Render the queue actions.** `QueueItemActions` and `CorrectionDialog` exist
-  but are never rendered; wire them into the home page.
+- ~~**Render the queue actions.**~~ Done for a signed-in person (`QueueActions`
+  on the queue page, driving the server actions); the public demo stays
+  read-only.
 - **Evidence image route.** `/api/receipts/image/[id]` is linked from evidence
   but doesn't exist; store receipt images durably (not `/tmp`) and serve them.
-- **Real login.** Single-user auth for the household operator; derive
-  `household_id` from the session in one place (`resolveHouseholdScope`) and
-  remove the inline `DEMO_HOUSEHOLD_ID` call sites.
-- **Tenancy columns now, while the schema is young.** `household_id` on
-  `sku_dictionary`, `categories`, and `matches`; FK on `review_decisions`.
+- ~~**Real login.**~~ Done with Clerk: `resolveReadScope` / `requireWriter`
+  derive the household from the session in one place; a first sign-in
+  provisions the person's household (`users`, `household_members`, migration
+  0007). The demo constant survives only for the public demo and the script
+  token.
+- **Tenancy columns still open.** `household_id` on `sku_dictionary` (the
+  pooling-with-consent question), FK on `review_decisions`, household switching
+  for a person in several households, and the bank route trusting a token
+  caller's `accountId`.
 - ~~**Costco digital receipts as a first-class source.**~~ Done: the
   `WarehouseReceiptDetail` export (item number, abbreviated description,
   **canonical product name**, department, price, instant savings, tender)

@@ -1,5 +1,6 @@
-import { notFound } from 'next/navigation';
-import { fetchBreakdown, resolveHouseholdScope } from '../../lib/truespend';
+import { redirect } from 'next/navigation';
+import { resolveReadScope } from '../../lib/public-mode';
+import { fetchBreakdown } from '../../lib/truespend';
 import { TrueSpendView } from '../components/truespend/TrueSpendView';
 
 export const dynamic = 'force-dynamic';
@@ -9,14 +10,12 @@ interface TrueSpendPageProps {
 }
 
 export default async function TrueSpendPage({ searchParams }: TrueSpendPageProps) {
-  if (!process.env.PUBLIC_DEMO_MODE) {
-    notFound();
-  }
+  const scope = await resolveReadScope();
+  if (!scope) redirect('/sign-in');
 
   const params = searchParams instanceof Promise ? await searchParams : searchParams;
   const month = params.month;
 
-  const scope = resolveHouseholdScope();
   const breakdown = await fetchBreakdown(scope, month);
 
   return (

@@ -5,8 +5,7 @@ import { retailerApiAdapter } from '../../../../../../modules/finance/core/adapt
 import type { RawInput, SourceAdapter } from '../../../../../../modules/finance/core/adapters/source-adapter';
 import { importSource } from '../../../../../../modules/finance/core/ingest/pipeline';
 import { createDb } from '../../../../../../modules/finance/db/client';
-import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
-import { requireMutationToken } from '../../../lib/auth/token';
+import { requireWriter } from '../../../lib/auth/writer';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
 import { reconcileAfterWrite } from '../../../../lib/reconcile';
 
@@ -28,8 +27,8 @@ const adapters: SourceAdapter[] = [bankAdapter, amazonAdapter, retailerApiAdapte
 const MAX_BODY_BYTES = 25 * 1024 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
-  const denied = requireMutationToken(request);
-  if (denied) return denied;
+  const writer = await requireWriter(request);
+  if (writer instanceof Response) return writer;
 
   const tooBig = rejectOversizedBody(request, MAX_BODY_BYTES);
   if (tooBig) return tooBig;
@@ -53,8 +52,8 @@ export async function POST(request: Request): Promise<Response> {
   };
 
   const db = createDb();
-  const result = await importSource(db, input, { householdId: DEMO_HOUSEHOLD_ID }, adapters);
+  const result = await importSource(db, input, { householdId: writer.householdId }, adapters);
   // Imported rows are only useful once matched: reconcile before answering.
-  const reconciliation = await reconcileAfterWrite(db, DEMO_HOUSEHOLD_ID);
+  const reconciliation = await reconcileAfterWrite(db, writer.householdId);
   return Response.json({ ...result, reconciled: !('error' in reconciliation), reconciliation });
 }

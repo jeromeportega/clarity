@@ -1,53 +1,99 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveHouseholdScope } from '../apps/web/lib/public-mode';
+// The identity provider is mocked so the scope resolver can be exercised in
+// every configuration without a Clerk key or a request context.
+const clerk = vi.hoisted(() => ({
+  auth: vi.fn(),
+  currentUser: vi.fn(),
+}));
+vi.mock('@clerk/nextjs/server', () => ({ auth: clerk.auth, currentUser: clerk.currentUser }));
+
+// The membership lookup is mocked too: this file tests scope resolution, not
+// provisioning (core/auth/membership.test.ts does that against a real DB).
+const membership = vi.hoisted(() => ({ resolveMembership: vi.fn() }));
+vi.mock('../modules/finance/core/auth/membership', () => ({ resolveMembership: membership.resolveMembership }));
+vi.mock('../modules/finance/db/client', () => ({ createDb: vi.fn(() => ({})) }));
+
+import { resolveReadScope } from '../apps/web/lib/public-mode';
+import { getPrincipal, isClerkConfigured } from '../apps/web/app/lib/auth/session';
 import { DEMO_HOUSEHOLD_ID } from '../modules/finance/core/scope';
 
-describe('resolveHouseholdScope', () => {
+function configureClerk(): void {
+  vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_x');
+  vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_x');
+}
+
+describe('resolveReadScope', () => {
+  beforeEach(() => {
+    clerk.auth.mockReset();
+    clerk.currentUser.mockReset();
+    membership.resolveMembership.mockReset();
+    membership.resolveMembership.mockResolvedValue({ householdId: 'hh-mine', role: 'owner', provisioned: false });
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
   describe('PUBLIC_DEMO_MODE=1', () => {
-    it('returns DEMO_HOUSEHOLD_ID with readonly:true', () => {
+    it('returns DEMO_HOUSEHOLD_ID, read-only, without consulting the identity provider', async () => {
       vi.stubEnv('PUBLIC_DEMO_MODE', '1');
-      const scope = resolveHouseholdScope();
-      expect(scope.householdId).toBe(DEMO_HOUSEHOLD_ID);
-      expect(scope.readonly).toBe(true);
-    });
+      configureClerk();
+      clerk.auth.mockResolvedValue({ userId: 'user_1' });
 
-    it('ignores any household hint in the request — no opt-out (T2)', () => {
-      vi.stubEnv('PUBLIC_DEMO_MODE', '1');
-      const req = new Request('http://test/', {
-        headers: { 'x-household-id': 'some-other-household' },
-      });
-      const scope = resolveHouseholdScope(req);
-      expect(scope.householdId).toBe(DEMO_HOUSEHOLD_ID);
-      expect(scope.readonly).toBe(true);
+      const scope = await resolveReadScope();
+      expect(scope).toEqual({ householdId: DEMO_HOUSEHOLD_ID, readonly: true });
+      expect(clerk.auth).not.toHaveBeenCalled();
     });
   });
 
-  describe('non-public mode', () => {
-    it('returns a defined scope — no unscoped read path', () => {
+  describe('sign-in configured', () => {
+    beforeEach(() => {
       vi.stubEnv('PUBLIC_DEMO_MODE', '0');
-      const scope = resolveHouseholdScope();
-      expect(scope).toBeDefined();
-      expect(scope.householdId).toBeDefined();
+      configureClerk();
     });
 
-    it('does not set readonly when PUBLIC_DEMO_MODE is not "1"', () => {
-      vi.stubEnv('PUBLIC_DEMO_MODE', '0');
-      expect(resolveHouseholdScope().readonly).toBeUndefined();
+    it('a signed-in person gets their own household, writable', async () => {
+      clerk.auth.mockResolvedValue({ userId: 'user_1' });
+      clerk.currentUser.mockResolvedValue({
+        primaryEmailAddress: { emailAddress: 'sam@example.com' },
+        emailAddresses: [],
+        fullName: 'Sam',
+        firstName: 'Sam',
+      });
+
+      const scope = await resolveReadScope();
+      expect(scope).toEqual({ householdId: 'hh-mine' });
+      expect(membership.resolveMembership).toHaveBeenCalledWith({}, { userId: 'user_1', email: 'sam@example.com', displayName: 'Sam' });
     });
 
-    it('does not set readonly when PUBLIC_DEMO_MODE is absent', () => {
-      vi.stubEnv('PUBLIC_DEMO_MODE', undefined as unknown as string);
-      expect(resolveHouseholdScope().readonly).toBeUndefined();
+    it('nobody signed in → null (the caller redirects or answers 403)', async () => {
+      clerk.auth.mockResolvedValue({ userId: null });
+      expect(await resolveReadScope()).toBeNull();
+      expect(membership.resolveMembership).not.toHaveBeenCalled();
     });
 
-    it('still scopes to DEMO_HOUSEHOLD_ID (no unscoped read path)', () => {
+    it('outside a request context (a build-time render) there is no session, not an error', async () => {
+      clerk.auth.mockRejectedValue(new Error('auth() was called outside a request'));
+      expect(await resolveReadScope()).toBeNull();
+    });
+  });
+
+  describe('sign-in not configured', () => {
+    it('is never a session, and never touches the identity provider', async () => {
       vi.stubEnv('PUBLIC_DEMO_MODE', '0');
-      expect(resolveHouseholdScope().householdId).toBe(DEMO_HOUSEHOLD_ID);
+      vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
+      vi.stubEnv('CLERK_SECRET_KEY', '');
+      expect(isClerkConfigured()).toBe(false);
+      expect(await getPrincipal()).toBeNull();
+      expect(await resolveReadScope()).toBeNull();
+      expect(clerk.auth).not.toHaveBeenCalled();
+    });
+
+    it('needs BOTH keys', () => {
+      expect(isClerkConfigured({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk' })).toBe(false);
+      expect(isClerkConfigured({ CLERK_SECRET_KEY: 'sk' })).toBe(false);
+      expect(isClerkConfigured({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ' ', CLERK_SECRET_KEY: 'sk' })).toBe(false);
+      expect(isClerkConfigured({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk', CLERK_SECRET_KEY: 'sk' })).toBe(true);
     });
   });
 });

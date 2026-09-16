@@ -2,11 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { requireMutationToken } from '../../../lib/auth/token';
+import { requireWriter } from '../../../lib/auth/writer';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
 import { buildReceiptPipelineDeps } from '../../../../lib/receipt-pipeline';
 import { reconcileAfterWrite } from '../../../../lib/reconcile';
-import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
 import {
   DEFAULT_MAX_UPLOAD_BYTES,
   handleReceiptUpload,
@@ -41,8 +40,8 @@ const MAX_BODY_BYTES = DEFAULT_MAX_UPLOAD_BYTES + 64 * 1024;
 
 export async function POST(request: Request): Promise<Response> {
   // Mutation token gate — must reject before any upload or pipeline work.
-  const denied = requireMutationToken(request);
-  if (denied) return denied;
+  const writer = await requireWriter(request);
+  if (writer instanceof Response) return writer;
 
   const tooBig = rejectOversizedBody(request, MAX_BODY_BYTES);
   if (tooBig) return tooBig;
@@ -92,7 +91,7 @@ export async function POST(request: Request): Promise<Response> {
   let outcome: Awaited<ReturnType<typeof handleReceiptUpload>>;
   try {
     // Real persistence: receipt, line items and learned SKUs land in the DB.
-    outcome = await handleReceiptUpload(bytes, mimeType, buildReceiptPipelineDeps(getDb(), DEMO_HOUSEHOLD_ID));
+    outcome = await handleReceiptUpload(bytes, mimeType, buildReceiptPipelineDeps(getDb(), writer.householdId));
   } catch {
     return Response.json({ error: 'Processing failed' }, { status: 500 });
   }
@@ -110,6 +109,6 @@ export async function POST(request: Request): Promise<Response> {
   // A photographed receipt is only useful once it is matched to the bank line
   // that paid for it: reconcile before answering (a duplicate upload changed
   // nothing, so it skips the run).
-  const reconciliation = outcome.result.idempotent ? undefined : await reconcileAfterWrite(getDb(), DEMO_HOUSEHOLD_ID);
+  const reconciliation = outcome.result.idempotent ? undefined : await reconcileAfterWrite(getDb(), writer.householdId);
   return Response.json({ ...outcome.result, reconciliation });
 }

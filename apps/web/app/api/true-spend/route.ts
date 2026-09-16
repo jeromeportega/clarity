@@ -1,12 +1,12 @@
-import { fetchBreakdown, resolveHouseholdScope } from '../../../lib/truespend';
+import { resolveReadScope } from '../../../lib/public-mode';
+import { fetchBreakdown } from '../../../lib/truespend';
 
 // Every API route serves live household data; never prerender.
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request): Promise<Response> {
-  if (!process.env.PUBLIC_DEMO_MODE) {
-    return new Response('Forbidden', { status: 403 });
-  }
+  const scope = await resolveReadScope();
+  if (!scope) return new Response('Forbidden', { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const rawMonth = searchParams.get('month');
@@ -15,7 +15,6 @@ export async function GET(request: Request): Promise<Response> {
   }
   const month = rawMonth ?? undefined;
 
-  const scope = resolveHouseholdScope();
   const breakdown = await fetchBreakdown(scope, month);
   return Response.json(breakdown);
 }

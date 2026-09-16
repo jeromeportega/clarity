@@ -31,7 +31,7 @@ function tempDbFile(): string {
  */
 export function resolveDbConfig(
   opts?: CreateDbOptions,
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): { url: string; authToken?: string } {
   if (opts?.url) {
     return { url: opts.url, authToken: opts.authToken };

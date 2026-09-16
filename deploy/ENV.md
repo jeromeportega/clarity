@@ -9,7 +9,8 @@ local `.env` (gitignored). **Never commit values** — this file lists names onl
 | `TURSO_AUTH_TOKEN` | Prod: yes | Turso auth token for the database above |
 | `ANTHROPIC_API_KEY` | For live vision / SKU resolution | Without it the upload route falls back to recorded fixtures — fine for tests, useless for real receipts |
 | `RECONCILE_MUTATION_TOKEN` | Yes | Secret that gates all mutation routes (`x-reconcile-token` header). Generate with `openssl rand -hex 32`. Read only by `apps/web/app/lib/auth/token.ts` (the boolean gate) and `apps/web/instrumentation.ts` (a startup existence check that never logs the value); a test fails if any other file under `apps/web` mentions it |
-| `PUBLIC_DEMO_MODE` | Public demo only | Set to `1` to pin all reads to the demo household and enable the read endpoints |
+| `PUBLIC_DEMO_MODE` | Public demo only | Set to `1` to pin all reads to the demo household, read-only, for everyone — no sign-in needed. Leave unset on a private deployment |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Private deployment | Clerk sign-in. Both set → sign-in exists: a signed-in person reads and writes their own household (provisioned on first sign-in), the queue actions and uploads work in the browser. Either unset → no sessions anywhere: reads need `PUBLIC_DEMO_MODE`, writes the token. Provisioned by the Vercel Marketplace Clerk integration |
 | `RECON_BACKEND` | No | Leave unset for the DB-backed reconciliation gateway (the default). `stub` opts out to the hardcoded demo rows — tests and throwaway demos only |
 | `CLARITY_DATA_DIR` | No | Directory for the local file database when `TURSO_*` is unset (default `./data`) |
 | `RECEIPT_EVAL_DIR`, `RECEIPT_EVAL_RATIO` | No | `npm run vision:eval` overrides: receipt directory and Dice-similarity ratio |

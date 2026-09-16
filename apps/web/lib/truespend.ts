@@ -2,7 +2,6 @@ import { createDb } from '../../../modules/finance/db/client';
 import { gatewayFor } from '../../../modules/finance/core/reconciliation/gateway';
 import { assembleBreakdown } from '../../../modules/finance/core/truespend/assemble';
 import { resolveEvidence } from '../../../modules/finance/core/evidence/resolve';
-import { DEMO_HOUSEHOLD_ID } from '../../../modules/finance/core/scope';
 import type { HouseholdScope } from '../../../modules/finance/core/reconciliation/types';
 import type { FinanceDb } from '../../../modules/finance/db/client';
 import type { TrueSpendBreakdown } from '../../../modules/finance/core/truespend/assemble';
@@ -10,10 +9,6 @@ import type { EvidenceResult } from '../../../modules/finance/core/evidence/type
 
 export type { TrueSpendBreakdown };
 export type { EvidenceResult };
-
-export function resolveHouseholdScope(): HouseholdScope {
-  return { householdId: DEMO_HOUSEHOLD_ID };
-}
 
 let _db: FinanceDb | undefined;
 function getDb(): FinanceDb {
@@ -38,7 +33,7 @@ export async function fetchBreakdown(
   return assembleBreakdown(scope, gw, db, month);
 }
 
-export async function fetchEvidence(itemId: string): Promise<EvidenceResult> {
+export async function fetchEvidence(itemId: string, scope: HouseholdScope): Promise<EvidenceResult> {
   const db = getDb();
-  return resolveEvidence(itemId, db);
+  return resolveEvidence(itemId, db, scope);
 }

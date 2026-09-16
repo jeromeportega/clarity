@@ -20,7 +20,7 @@ export interface ReceiptPipelineOverrides {
   llm?: SkuResolver;
   store?: ReceiptStore;
   dictionary?: SkuDictionary;
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
 }
 
 /**
