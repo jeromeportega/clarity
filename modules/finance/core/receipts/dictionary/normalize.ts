@@ -36,10 +36,16 @@ const PUNCTUATION_ONLY = /^[^A-Z0-9]+$/;
  */
 export function normalizeStore(store: string): string {
   const plain = normalizeKey(store);
-  const tokens = plain.split(' ').filter((t) => !/^#\d+$/.test(t) && !RETAILER_NOISE.has(t));
+  // Drop every token that can never be identity FIRST, then pop trailing store
+  // numbers. Order matters for idempotence: a trailing punctuation token must
+  // not shield a digit run on one pass only to expose it on the next
+  // ("COSTCO 1234 -" → "COSTCO 1234" → "COSTCO" would move a row to a key no
+  // lookup computes). Filtering first makes a second pass a no-op.
+  const tokens = plain
+    .split(' ')
+    .filter((t) => !/^#\d+$/.test(t) && !RETAILER_NOISE.has(t) && !PUNCTUATION_ONLY.test(t));
   while (tokens.length > 1 && /^\d+$/.test(tokens[tokens.length - 1]!)) tokens.pop();
-  const kept = tokens.filter((t) => !PUNCTUATION_ONLY.test(t));
-  return kept.length > 0 ? kept.join(' ') : plain;
+  return tokens.length > 0 ? tokens.join(' ') : plain;
 }
 
 /**

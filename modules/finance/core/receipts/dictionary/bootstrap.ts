@@ -116,7 +116,12 @@ export async function learnFromDigitalReceipts(
     if (store === '' || key === '') continue;
 
     // A category the household has already settled on this line is theirs;
-    // anything else is a guess from the name, and priced as one.
+    // anything else is a guess from the name, and priced as one. The columns
+    // record no provenance, so "a human did this" is inferred from
+    // category_confidence === 1: today only a queue correction writes that on
+    // an imported line (`ingest/persist.ts` leaves both NULL). If an automatic
+    // classifier ever stamps imported lines at 1.0, this inference must change
+    // or model guesses would enter the dictionary past the review gate.
     const human = line.categoryId !== null && line.categoryConfidence === 1;
     const category = human
       ? line.categoryId!

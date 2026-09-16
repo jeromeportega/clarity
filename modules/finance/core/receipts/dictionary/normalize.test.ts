@@ -66,10 +66,37 @@ describe('normalizeStore', () => {
   });
 
   it('canonicalisation is idempotent, including through the all-noise fallback', () => {
-    for (const raw of ['Costco Wholesale #1234', 'WHOLESALE', '#1234', '-', 'COSTCO WHOLESALE - ONLINE ORDER', '99 RANCH MARKET 12', 'WHSE 1234']) {
+    for (const raw of ['Costco Wholesale #1234', 'WHOLESALE', '#1234', '-', 'COSTCO WHOLESALE - ONLINE ORDER', '99 RANCH MARKET 12', 'WHSE 1234', 'COSTCO 1234 -', 'COSTCO WHSE 1234 -', 'SAFEWAY 1234 #']) {
       const once = normalizeStore(raw);
       expect(normalizeStore(once)).toBe(once);
     }
+  });
+
+  // Idempotence is load-bearing: the dictionary re-keys rows under the current
+  // rule, and a rule that moves a row on a SECOND pass strands it at a key no
+  // lookup computes. A fixed list of fixed points cannot catch that; every
+  // token combination up to three long over the vocabulary the rule cares
+  // about (names, noise words, store numbers, punctuation, apostrophes) must be
+  // a fixed point after one pass.
+  it('is idempotent over every token combination the rule can see', () => {
+    const vocab = ['COSTCO', 'WHSE', 'Wholesale', '#1234', '1234', '0482', '-', '&', '99', 'RANCH', 'MARKET', 'INC', "JOE'S", 'SAM’S', 'K', '76'];
+    const combos: string[] = [];
+    for (const a of vocab) {
+      combos.push(a);
+      for (const b of vocab) {
+        combos.push(`${a} ${b}`);
+        for (const c of vocab) combos.push(`${a} ${b} ${c}`);
+      }
+    }
+    const failures: string[] = [];
+    for (const raw of combos) {
+      const once = normalizeStore(raw);
+      if (normalizeStore(once) !== once) failures.push(`${JSON.stringify(raw)} → ${JSON.stringify(once)} → ${JSON.stringify(normalizeStore(once))}`);
+      const key = normalizeSkuOrAbbrev(raw);
+      if (normalizeSkuOrAbbrev(key) !== key) failures.push(`sku ${JSON.stringify(raw)}`);
+    }
+    expect(combos.length).toBeGreaterThan(4000);
+    expect(failures).toEqual([]);
   });
 });
 
