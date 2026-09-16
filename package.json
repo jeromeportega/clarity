@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "costco:capture": "tsx scripts/costco/capture-receipts.ts",
-    "costco:eval-set": "tsx scripts/costco/build-eval-set.ts"
+    "costco:eval-set": "tsx scripts/costco/build-eval-set.ts",
+    "dictionary:bootstrap": "tsx scripts/dictionary-bootstrap.ts"
   },
   "engines": {
     "node": ">=20"

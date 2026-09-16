@@ -45,7 +45,7 @@ export function matchAmazonOrders(
 
     if (directPool.length > 0) {
       // Best = smallest amount diff, tie-break by closest date
-      const best = directPool.reduce<BankLine>((a, b) => {
+      const best = directPool.reduce((a, b) => {
         const diffA = Math.abs(Math.abs(a.amountCents) - total);
         const diffB = Math.abs(Math.abs(b.amountCents) - total);
         if (diffA !== diffB) return diffA < diffB ? a : b;
@@ -115,7 +115,7 @@ export function matchAmazonOrders(
     records.push({
       id: `${c.type}-${c.order.id}-${allLineIds.join('+')}`,
       type: c.type,
-      transactionId: c.lines[0].id,
+      transactionId: c.lines[0]!.id,
       transactionIds: allLineIds,
       orderId: c.order.id,
       confidence: c.confidence,

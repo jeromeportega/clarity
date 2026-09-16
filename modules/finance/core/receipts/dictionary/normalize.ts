@@ -4,20 +4,57 @@
 // normalizing an already-normalized string is a no-op, so callers and the
 // dictionary may both normalize without divergence.
 
+// Typographic apostrophes vision tends to emit, folded onto the ASCII one the
+// adapters write — "SAM’S CLUB" and "SAM'S CLUB" are one retailer.
+const APOSTROPHES = /[‘’‛ʼ]/g;
+
 // Trim, collapse internal runs of whitespace to a single space, then uppercase.
 function normalizeKey(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toUpperCase();
+  return value.replace(APOSTROPHES, "'").trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
-// Store name: upper / trim / whitespace-collapse. e.g. "  Trader  Joe's " ->
-// "TRADER JOE'S".
+// Words a retailer prints after its name that carry no identity: the same
+// warehouse is "COSTCO WHSE" on a digital receipt, "COSTCO WHOLESALE" as the
+// photo's header reads, and "COSTCO WHSE #1234" on a bank line. Every one of
+// those must land on the same dictionary row.
+const RETAILER_NOISE = new Set(['WHSE', 'WHOLESALE', 'INC', 'LLC', 'CORP']);
+
+/** A token that is only punctuation (an orphaned `-` once its neighbours are gone). */
+const PUNCTUATION_ONLY = /^[^A-Z0-9]+$/;
+
+/**
+ * Store name → one key per retailer: upper / trim / whitespace-collapse, then
+ * drop store numbers and generic corporate suffixes.
+ *
+ * Store numbers are `#1234` anywhere, or a bare digit run at the END of the
+ * name — never a leading or inner number, which is part of the name
+ * (`99 RANCH MARKET`, `7 ELEVEN`, `365 BY WHOLE FOODS MARKET`). So
+ * `"  Trader  Joe's "` → `"TRADER JOE'S"`; `"COSTCO WHSE #1234"`,
+ * `"Costco Wholesale 0482"` and `"COSTCO"` → `"COSTCO"`. A name that is
+ * nothing but noise keeps its plain normalization rather than collapsing to
+ * an empty key.
+ */
 export function normalizeStore(store: string): string {
-  return normalizeKey(store);
+  const plain = normalizeKey(store);
+  // Drop every token that can never be identity FIRST, then pop trailing store
+  // numbers. Order matters for idempotence: a trailing punctuation token must
+  // not shield a digit run on one pass only to expose it on the next
+  // ("COSTCO 1234 -" → "COSTCO 1234" → "COSTCO" would move a row to a key no
+  // lookup computes). Filtering first makes a second pass a no-op.
+  const tokens = plain
+    .split(' ')
+    .filter((t) => !/^#\d+$/.test(t) && !RETAILER_NOISE.has(t) && !PUNCTUATION_ONLY.test(t));
+  while (tokens.length > 1 && /^\d+$/.test(tokens[tokens.length - 1]!)) tokens.pop();
+  return tokens.length > 0 ? tokens.join(' ') : plain;
 }
 
-// SKU or abbreviation key. The caller picks the raw key as `sku ?? description`
-// ("key = SKU when present else abbreviation"); this function only normalizes
-// whatever string it is given, the same way as the store.
+/**
+ * SKU or abbreviation key. The caller picks the raw key as `sku ?? description`
+ * ("key = SKU when present else abbreviation"); this normalizes whatever string
+ * it is given the same way as the store, and additionally treats the `*`
+ * emphasis markers Costco prints around some descriptions as separators
+ * (`***BOUNTY***` → `BOUNTY`) so a digital line and the photo of it agree.
+ */
 export function normalizeSkuOrAbbrev(skuOrAbbrev: string): string {
-  return normalizeKey(skuOrAbbrev);
+  return normalizeKey(skuOrAbbrev.replace(/\*/g, ' '));
 }

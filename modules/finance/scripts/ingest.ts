@@ -12,6 +12,7 @@ import { emlAdapter } from '../core/adapters/eml.adapter';
 import { retailerApiAdapter } from '../core/adapters/retailer-api.adapter';
 import type { RawInput, SourceAdapter, SourceKind } from '../core/adapters/source-adapter';
 import { importSource, type ImportContext, type ImportResult } from '../core/ingest/pipeline';
+import { learnFromDigitalReceipts, type LearnFromDigitalReceiptsSummary } from '../core/receipts/dictionary/bootstrap';
 import { createDb, type FinanceDb } from '../db/client';
 import { accounts } from '../db/schema';
 
@@ -102,6 +103,8 @@ export interface RunIngestOptions {
   baseDir?: string;
 }
 
+export type RunIngestResult = ImportResult & { dictionary?: LearnFromDigitalReceiptsSummary | { error: string } };
+
 /**
  * Resolve the import context (the bank command derives `householdId` from the
  * account named by `accountId`; orders and Costco receipts fall under the single
@@ -132,13 +135,21 @@ async function resolveContext(
   return { householdId: account.householdId, accountId };
 }
 
-export async function runIngest(opts: RunIngestOptions): Promise<ImportResult> {
+export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult> {
   const resolvedPath = resolveInputPath(opts.path, opts.baseDir);
   const input = buildRawInput(COMMAND_KIND[opts.command], resolvedPath);
   const db = opts.db ?? createDb();
   const adapters = opts.adapters ?? allAdapters;
   const ctx = await resolveContext(db, opts.command, opts.accountId);
-  return importSource(db, input, ctx, adapters);
+  const result = await importSource(db, input, ctx, adapters);
+  if (opts.command !== 'costco' || result.inserted.receipts === 0) return result;
+  // Digital receipts name their lines: teach the dictionary, as the route does.
+  // The import is committed; a failure here is reported next to it.
+  try {
+    return { ...result, dictionary: await learnFromDigitalReceipts(db, { householdId: ctx.householdId }) };
+  } catch (err) {
+    return { ...result, dictionary: { error: err instanceof Error ? err.message : String(err) } };
+  }
 }
 
 export interface ParsedArgs {
@@ -178,6 +189,7 @@ async function main(): Promise<void> {
     baseDir: env.CLARITY_INGEST_BASE_DIR ?? cwd(),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (result.dictionary && 'error' in result.dictionary) process.exitCode = 1;
 }
 
 if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {

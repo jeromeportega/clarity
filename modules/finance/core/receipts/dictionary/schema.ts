@@ -7,10 +7,13 @@ import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite
 // (FR-16). It is the single source of truth for both the libSQL dictionary and
 // the stub DDL below.
 //
-// Upsert law (enforced by LibSqlSkuDictionary / StubSkuDictionary, not by the
-// table): `source='human'` always overwrites; `source='auto'` writes only when
-// no row exists for the key and never overwrites an existing row. The
-// confidence gate is the resolver's job, applied before upsert.
+// Upsert law (enforced by the writers, not by the table): `source='human'`
+// always overwrites; an `auto` row written by the resolver (LibSqlSkuDictionary
+// / StubSkuDictionary) writes only when no row exists for the key and never
+// overwrites an existing row. One writer sits above that: the digital-receipt
+// bootstrap (`./bootstrap.ts`) carries the retailer's own name and may
+// overwrite an `auto` row — never a `human` one. The confidence gate is the
+// resolver's job, applied before upsert.
 // =============================================================================
 
 export const skuDictionary = sqliteTable(
