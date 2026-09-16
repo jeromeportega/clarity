@@ -1,16 +1,20 @@
 import { similarityRatio } from '../../receipts';
 import type { BankLine, MatchRecord, ReceiptView } from '../model';
 import type { ReconcileConfig } from '../thresholds';
-import { daysBetween } from './utils';
+import { epochDay, lowerBound, upperBound } from './utils';
+
+/** A bank debit with its absolute amount and day number pre-computed. */
+interface IndexedDebit {
+  line: BankLine;
+  abs: number;
+  day: number | null;
+}
 
 /**
- * Attempt to match `receipt` to one bank debit line.
+ * Score one (receipt, bank debit) pair that has already passed the amount and
+ * date gates.
  *
- * Hard gates (any one fails → no match):
- *   - receipt missing totalCents or capturedAt
- *   - |receiptAmt - |bankAmt|| > tipAdjustmentToleranceCents
- *   - date distance > receiptDateWindowDays
- *   - merchantSimilarity < merchantSimilarityCutoff
+ * Hard gate applied here: merchantSimilarity < merchantSimilarityCutoff ⇒ null.
  *
  * Confidence = weighted sum of four signals:
  *   merchant similarity  40 %
@@ -22,19 +26,11 @@ function scoreReceiptBank(
   receipt: ReceiptView,
   bank: BankLine,
   cfg: ReconcileConfig,
+  amountDiff: number,
+  dateDiff: number,
 ): { confidence: number; rationale: string } | null {
-  // No total, a placeholder total (an unreadable photo persists as 0 — never
-  // a real purchase), or no date ⇒ nothing to score against.
-  if (receipt.totalCents == null || receipt.totalCents === 0 || !receipt.capturedAt) return null;
-  if (bank.direction !== 'debit') return null;
-
-  const receiptAmt = receipt.totalCents;
+  const receiptAmt = receipt.totalCents!;
   const bankAmt = Math.abs(bank.amountCents);
-  const amountDiff = Math.abs(receiptAmt - bankAmt);
-  if (amountDiff > cfg.tipAdjustmentToleranceCents) return null;
-
-  const dateDiff = daysBetween(receipt.capturedAt, bank.postedDate);
-  if (dateDiff > cfg.receiptDateWindowDays) return null;
 
   const merchantSim = similarityRatio(receipt.merchant ?? '', bank.normalizedMerchant);
   if (merchantSim < cfg.merchantSimilarityCutoff) return null;
@@ -68,31 +64,63 @@ function scoreReceiptBank(
 /**
  * Match every receipt to at most one bank debit line.
  *
+ * Hard gates (any one fails → the pair is never scored):
+ *   - receipt missing totalCents, a placeholder 0 total, or missing capturedAt
+ *   - |receiptAmt - |bankAmt|| > tipAdjustmentToleranceCents
+ *   - date distance > receiptDateWindowDays
+ *   - merchantSimilarity < merchantSimilarityCutoff
+ *
+ * Bank debits are indexed by absolute amount once, so each receipt only looks
+ * at the lines inside its amount window (binary search) instead of every line
+ * in the household — the pair loop is O(R · k) for k candidates in-window, not
+ * O(R · B) with a date parse and a string similarity per pair.
+ *
  * For each receipt, all qualifying bank lines are scored; the highest-scoring
- * line wins.  Each bank line is claimed by at most one receipt (first come,
- * first served by confidence order — highest confidence receipt claims the
- * line).
+ * line wins. Each bank line is claimed by at most one receipt (highest
+ * confidence receipt claims the line).
  */
 export function matchReceipts(
   bank: BankLine[],
   receipts: ReceiptView[],
   cfg: ReconcileConfig,
 ): MatchRecord[] {
-  // Score every (receipt, bank) pair.
+  const debits: IndexedDebit[] = bank
+    .filter((b) => b.direction === 'debit')
+    .map((line) => ({ line, abs: Math.abs(line.amountCents), day: epochDay(line.postedDate) }))
+    .sort((a, b) => a.abs - b.abs);
+  const absAmounts = debits.map((d) => d.abs);
+
   type Candidate = { receipt: ReceiptView; bank: BankLine; confidence: number; rationale: string };
   const candidates: Candidate[] = [];
 
   for (const r of receipts) {
-    for (const b of bank) {
-      const score = scoreReceiptBank(r, b, cfg);
-      if (score !== null) {
-        candidates.push({ receipt: r, bank: b, ...score });
-      }
+    // No total, a placeholder total (an unreadable photo persists as 0 — never
+    // a real purchase), or no date ⇒ nothing to score against.
+    if (r.totalCents == null || r.totalCents === 0 || !r.capturedAt) continue;
+    const receiptDay = epochDay(r.capturedAt);
+    if (receiptDay === null) continue;
+
+    const lo = lowerBound(absAmounts, r.totalCents - cfg.tipAdjustmentToleranceCents);
+    const hi = upperBound(absAmounts, r.totalCents + cfg.tipAdjustmentToleranceCents);
+    for (let i = lo; i < hi; i++) {
+      const d = debits[i]!;
+      if (d.day === null) continue;
+      const dateDiff = Math.abs(d.day - receiptDay);
+      if (dateDiff > cfg.receiptDateWindowDays) continue;
+      const amountDiff = Math.abs(r.totalCents - d.abs);
+      const score = scoreReceiptBank(r, d.line, cfg, amountDiff, dateDiff);
+      if (score !== null) candidates.push({ receipt: r, bank: d.line, ...score });
     }
   }
 
-  // Sort descending by confidence so the best matches claim bank lines first.
-  candidates.sort((a, b) => b.confidence - a.confidence);
+  // Sort descending by confidence so the best matches claim bank lines first;
+  // ids break ties so the result never depends on input order.
+  candidates.sort(
+    (a, b) =>
+      b.confidence - a.confidence ||
+      (a.receipt.id < b.receipt.id ? -1 : a.receipt.id > b.receipt.id ? 1 : 0) ||
+      (a.bank.id < b.bank.id ? -1 : a.bank.id > b.bank.id ? 1 : 0),
+  );
 
   const claimedBankIds = new Set<string>();
   const claimedReceiptIds = new Set<string>();

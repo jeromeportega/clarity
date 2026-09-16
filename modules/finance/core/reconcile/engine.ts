@@ -1,4 +1,4 @@
-import type { ClassifiedItem, LedgerEvent, MatchRecord, ReconcileInputs, ReconciledLedger } from './model';
+import type { ClassifiedItem, ConfirmedMatch, LedgerEvent, MatchRecord, ReconcileInputs, ReconciledLedger } from './model';
 import { matchAmazonOrders, matchReceipts } from './match';
 import { mergeCounted } from './dedup';
 import { reconcileRefunds } from './refunds';
@@ -66,6 +66,78 @@ function classifyEvent(event: LedgerEvent, itemContext: Map<string, ItemContext>
 }
 
 /**
+ * Honour the humans. A ConfirmedMatch says "this transaction is paid by this
+ * receipt (or order)", full stop:
+ *   - the candidate for that exact pair is promoted to auto_linked at
+ *     confidence 1 (and synthesised if the scorer no longer proposes it);
+ *   - every other candidate for that transaction is dropped;
+ *   - every other candidate for that receipt / order is dropped — a receipt
+ *     pays exactly one bank line.
+ * Anything the scorer would otherwise have linked to those rows simply becomes
+ * unmatched again; it is not re-matched here.
+ */
+export function applyHumanDecisions(candidates: MatchRecord[], confirmed: ConfirmedMatch[]): MatchRecord[] {
+  if (confirmed.length === 0) return candidates;
+
+  const byTransaction = new Map<string, ConfirmedMatch>();
+  const confirmedReceipts = new Set<string>();
+  const confirmedOrders = new Set<string>();
+  for (const c of confirmed) {
+    if (!c.receiptId && !c.orderId) continue; // nothing identifiable to honour
+    byTransaction.set(c.transactionId, c);
+    if (c.receiptId) confirmedReceipts.add(c.receiptId);
+    if (c.orderId) confirmedOrders.add(c.orderId);
+  }
+
+  const out: MatchRecord[] = [];
+  const honoured = new Set<string>();
+  for (const m of candidates) {
+    const lineIds = m.transactionIds ?? (m.transactionId ? [m.transactionId] : []);
+    const decision = lineIds.map((id) => byTransaction.get(id)).find((d): d is ConfirmedMatch => d !== undefined);
+    if (decision) {
+      const isThePair =
+        (decision.receiptId !== undefined && m.receiptId === decision.receiptId) ||
+        (decision.orderId !== undefined && m.orderId === decision.orderId);
+      if (!isThePair) continue;
+      out.push({ ...m, status: 'auto_linked', confidence: 1, confirmedBy: 'human', rationale: `${m.rationale}; confirmed by human` });
+      honoured.add(decision.transactionId);
+      continue;
+    }
+    if ((m.receiptId && confirmedReceipts.has(m.receiptId)) || (m.orderId && confirmedOrders.has(m.orderId))) continue;
+    out.push(m);
+  }
+
+  for (const d of byTransaction.values()) {
+    if (honoured.has(d.transactionId)) continue;
+    if (d.receiptId) {
+      out.push({
+        id: `receipt_bank-${d.receiptId}-${d.transactionId}`,
+        type: 'receipt_bank',
+        transactionId: d.transactionId,
+        receiptId: d.receiptId,
+        confidence: 1,
+        rationale: 'Confirmed by human',
+        status: 'auto_linked',
+        confirmedBy: 'human',
+      });
+    } else if (d.orderId) {
+      out.push({
+        id: `order_bank-${d.orderId}-${d.transactionId}`,
+        type: 'order_bank',
+        transactionId: d.transactionId,
+        transactionIds: [d.transactionId],
+        orderId: d.orderId,
+        confidence: 1,
+        rationale: 'Confirmed by human',
+        status: 'auto_linked',
+        confirmedBy: 'human',
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Pure reconciliation entry point. Composes the full matching → dedup →
  * refund → classification pipeline over the provided inputs and returns a
  * complete `ReconciledLedger`.
@@ -85,7 +157,10 @@ export function reconcile(inputs: ReconcileInputs, config?: Partial<ReconcileCon
   const receiptMatches = matchReceipts(inputs.bankLines, inputs.receipts, cfg);
   const orderMatches = matchAmazonOrders(inputs.bankLines, inputs.orders, cfg);
 
-  const matchMatches: MatchRecord[] = [...receiptMatches, ...orderMatches];
+  const matchMatches: MatchRecord[] = applyHumanDecisions(
+    [...receiptMatches, ...orderMatches],
+    inputs.confirmedMatches ?? [],
+  );
 
   // Refunds & store-credit drawdowns produce their own match records (card
   // refunds, store-credit refunds, partial-payment drawdowns) plus the

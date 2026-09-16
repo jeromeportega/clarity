@@ -10,6 +10,7 @@ import {
 import { DEMO_HOUSEHOLD_ID } from '../../../../modules/finance/core/scope';
 import type { QueueItemType } from '../../../../modules/finance/core/queue/types';
 import { isValidMutationToken, mutationTokenFromHeaders } from '../lib/auth/token';
+import { reconcileAfterWrite } from '../../lib/reconcile';
 
 const SCOPE = { householdId: DEMO_HOUSEHOLD_ID };
 
@@ -43,13 +44,15 @@ export async function confirmItem(
 ): Promise<{ removedItemId: string }> {
   await requireMutationToken();
   const db = getDb();
-  return applyCorrection(
+  const result = await applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
     { type: 'confirm' },
     getGateway(db),
     db,
   );
+  if (itemType === 'ambiguous_match') await reconcileAfterWrite(db, SCOPE.householdId);
+  return result;
 }
 
 export async function dismissItem(
@@ -74,11 +77,13 @@ export async function correctItem(
 ): Promise<{ removedItemId: string }> {
   await requireMutationToken();
   const db = getDb();
-  return applyCorrection(
+  const result = await applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
     { type: 'correct', correction },
     getGateway(db),
     db,
   );
+  if (itemType === 'ambiguous_match') await reconcileAfterWrite(db, SCOPE.householdId);
+  return result;
 }

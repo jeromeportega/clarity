@@ -564,12 +564,13 @@ export async function applyCorrection(
       await applyCorrect(tx, scope, item, action.correction);
     }
 
-    // 3. Notify the gateway. If it throws, everything above rolls back — but
-    //    the gateway holds its OWN connection, not `tx`, so nothing it might
-    //    write is inside this transaction, and a write there would contend
-    //    with the lock this transaction holds. Both gateways compute rollups
-    //    on read and treat this as a no-op; keep it that way, or thread `tx`
-    //    through the seam before giving it writes. Affected set: [item.id].
+    // 3. Notify the gateway. If it throws, everything above rolls back. The
+    //    gateway is handed the same `db` the routes opened, NOT `tx`: a write
+    //    inside it would run outside this transaction (or contend with the
+    //    lock it holds). Both gateways compute rollups on read and treat this
+    //    as a no-op; keep it that way, or thread `tx` through the seam before
+    //    giving it writes. Re-deriving matches after a decision is the
+    //    caller's job: the routes run `reconcileAfterWrite` once this commits.
     await gw.recomputeRollups(scope, [item.id]);
   });
 

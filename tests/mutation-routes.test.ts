@@ -57,6 +57,7 @@ const MUTATION_ROUTES = await discoverWriteRoutes();
 
 const KNOWN_WRITE_ROUTES = [
   'POST /api/ingest/bank',
+  'POST /api/ingest/costco',
   'POST /api/ingest/orders',
   'POST /api/queue/[id]/confirm',
   'POST /api/queue/[id]/correct',

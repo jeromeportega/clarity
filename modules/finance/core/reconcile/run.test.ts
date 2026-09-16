@@ -1,11 +1,12 @@
 /**
  * reconcileHousehold — the runtime entry point: DB → reconcile() → DB.
  *
- * Against a real (throwaway) libSQL database: a photographed receipt and the
- * bank line that paid for it become a `matched` row and a categorised item;
- * running again changes nothing; and a re-run can neither overwrite a
- * category a human (or the resolver) set nor re-open a transaction a human
- * has settled.
+ * Against a real (throwaway) libSQL database, through the same read layer the
+ * app uses (LiveReconciliationGateway, assembleQueue): a photographed receipt
+ * and the bank line that paid for it become `matched` rows and categorised
+ * items; running again changes nothing; a retracted match disappears and its
+ * dollars stop counting; a below-threshold match is ONE candidate the human
+ * can settle, and once settled it is honoured, categorised and counted.
  */
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -13,11 +14,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb, type FinanceDb } from '../../db/client';
 import { TAXONOMY_IDS } from '../../db/taxonomy';
 import { accounts, households, matches, receiptItems, receipts, transactions } from '../../db/schema';
-import type { ReconciledLedger } from './model';
+import { applyCorrection } from '../corrections/apply';
+import { assembleQueue } from '../queue/assemble';
+import { LiveReconciliationGateway } from '../reconciliation/live';
+import type { HouseholdScope } from '../scope';
 import { reconcileHousehold } from './run';
-import { DrizzleReconcileSink } from './sink';
+import { ENGINE_MATCH_ID_PREFIX } from './sink';
 
 const HH = 'hh-run';
+const SCOPE: HouseholdScope = { householdId: HH };
 const TXN = 'txn-run-1';
 const RECEIPT = 'rcpt-run-1';
 const RI_HUMAN = 'ri-run-human';
@@ -26,30 +31,45 @@ const RI_BLANK = 'ri-run-blank';
 let db: FinanceDb;
 let cleanup: () => void;
 
-async function seed(): Promise<void> {
+async function seedHousehold(): Promise<void> {
   await db.insert(households).values({ id: HH, name: 'Run' });
   await db.insert(accounts).values({ id: 'acct-run', householdId: HH, name: 'Checking' });
+}
+
+async function seedTransaction(id: string, amountCents: number, postedDate: string, merchant = 'COSTCO'): Promise<void> {
   await db.insert(transactions).values({
-    id: TXN, accountId: 'acct-run', postedDate: '2025-03-02', amountCents: -2599,
-    direction: 'debit', normalizedMerchant: 'COSTCO', sourceRowHash: 'r1', dedupKey: 'r1',
+    id, accountId: 'acct-run', postedDate, amountCents, direction: amountCents > 0 ? 'credit' : 'debit',
+    normalizedMerchant: merchant, sourceRowHash: id, dedupKey: id,
   });
-  await db.insert(receipts).values({
-    id: RECEIPT, householdId: HH, source: 'photo', store: 'COSTCO', purchasedAt: '2025-03-02', totalCents: 2599,
-  });
-  await db.insert(receiptItems).values([
-    {
-      id: RI_HUMAN, receiptId: RECEIPT, lineNo: 1, rawDescription: 'KS PAPER TOWEL', canonicalName: 'Kirkland Paper Towels',
-      categoryId: 'household', categoryConfidence: 1.0, quantity: 1, linePriceCents: 1999,
-    },
-    {
-      id: RI_BLANK, receiptId: RECEIPT, lineNo: 2, rawDescription: 'ORG BANANAS', canonicalName: 'Organic Bananas',
-      categoryId: null, quantity: 1, linePriceCents: 600,
-    },
+}
+
+/** A COSTCO receipt with a human-categorised paper-towel line and an uncategorised banana line. */
+async function seedReceipt(
+  id: string,
+  totalCents: number,
+  purchasedAt: string,
+  items: Array<{ id: string; name: string; cents: number; discount?: number; categoryId?: string | null }>,
+): Promise<void> {
+  await db.insert(receipts).values({ id, householdId: HH, source: 'photo', store: 'COSTCO', purchasedAt, totalCents });
+  await db.insert(receiptItems).values(
+    items.map((i, idx) => ({
+      id: i.id, receiptId: id, lineNo: idx + 1, rawDescription: i.name.toUpperCase(), canonicalName: i.name,
+      categoryId: i.categoryId ?? null, categoryConfidence: i.categoryId ? 1.0 : null,
+      quantity: 1, linePriceCents: i.cents, discountCents: i.discount ?? 0,
+    })),
+  );
+}
+
+async function seedStandardPair(): Promise<void> {
+  await seedTransaction(TXN, -2599, '2025-03-02');
+  await seedReceipt(RECEIPT, 2599, '2025-03-02', [
+    { id: RI_HUMAN, name: 'Kirkland Paper Towels', cents: 1999, categoryId: 'household' },
+    { id: RI_BLANK, name: 'Organic Bananas', cents: 600 },
   ]);
 }
 
 async function matchRowsFor(transactionId: string) {
-  return db.select().from(matches).where(eq(matches.transactionId, transactionId));
+  return db.select().from(matches).where(eq(matches.transactionId, transactionId)).orderBy(matches.id);
 }
 
 async function categoryOf(itemId: string): Promise<string | null> {
@@ -57,29 +77,42 @@ async function categoryOf(itemId: string): Promise<string | null> {
   return rows[0]!.categoryId;
 }
 
+async function countedCents(month = '2025-03'): Promise<number> {
+  const rollups = await new LiveReconciliationGateway(db).getRollups(SCOPE, { month });
+  return rollups.reduce((sum, r) => sum + r.netCents, 0);
+}
+
 describe('reconcileHousehold', () => {
   beforeEach(async () => {
     ({ db, cleanup } = createTestDb());
-    await seed();
+    await seedHousehold();
   });
   afterEach(() => cleanup());
 
   it('matches the receipt to the bank line that paid for it and reports what it did', async () => {
+    await seedStandardPair();
     const summary = await reconcileHousehold(db, HH);
 
     expect(summary.householdId).toBe(HH);
-    expect(summary.inputs).toEqual({ bankLines: 1, orders: 0, receipts: 1, storeCreditAccruals: 0 });
+    expect(summary.inputs).toEqual({ bankLines: 1, orders: 0, receipts: 1, storeCreditAccruals: 0, confirmedMatches: 0 });
     expect(summary.matched).toBe(1);
+    expect(summary.review).toBe(0);
     expect(summary.unmatched).toEqual({ bankLines: 0, orderItems: 0, receipts: 0 });
     expect(summary.netSpendCents).toBe(2599);
 
     const rows = await matchRowsFor(TXN);
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.every((r) => r.status === 'matched' && r.method === 'receipt_bank')).toBe(true);
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.id.startsWith(ENGINE_MATCH_ID_PREFIX)).toBe(true);
+      expect(r.status).toBe('matched');
+      expect(r.method).toBe('receipt_bank');
+      expect(r.receiptId).toBe(RECEIPT);
+    }
     expect(new Set(rows.map((r) => r.receiptItemId))).toEqual(new Set([RI_HUMAN, RI_BLANK]));
   });
 
   it('fills in a category only where there is none — a human’s (or the resolver’s) category is never overwritten', async () => {
+    await seedStandardPair();
     await reconcileHousehold(db, HH);
 
     const blank = await categoryOf(RI_BLANK);
@@ -88,7 +121,20 @@ describe('reconcileHousehold', () => {
     expect(await categoryOf(RI_HUMAN)).toBe('household');
   });
 
+  it('a matched receipt’s lines are counted dollars in True Spend — net of their discounts', async () => {
+    await seedTransaction(TXN, -2099, '2025-03-02');
+    await seedReceipt(RECEIPT, 2099, '2025-03-02', [
+      { id: RI_HUMAN, name: 'Kirkland Paper Towels', cents: 1999, discount: 500, categoryId: 'household' },
+      { id: RI_BLANK, name: 'Organic Bananas', cents: 600 },
+    ]);
+    await reconcileHousehold(db, HH);
+
+    // 1999 − 500 + 600 = 2099, i.e. exactly what the bank line paid.
+    expect(await countedCents()).toBe(-2099);
+  });
+
   it('is idempotent: a second run adds no rows and changes no categories', async () => {
+    await seedStandardPair();
     const first = await reconcileHousehold(db, HH);
     const rowsAfterFirst = await matchRowsFor(TXN);
     const blankAfterFirst = await categoryOf(RI_BLANK);
@@ -101,40 +147,130 @@ describe('reconcileHousehold', () => {
     expect(await categoryOf(RI_HUMAN)).toBe('household');
   });
 
-  it('never re-opens a transaction a human has settled', async () => {
+  it('a match the engine retracts is deleted, and its dollars stop counting — one bank line, one receipt', async () => {
+    // Run 1: a near-miss receipt (50¢ short, a day early) is the best the engine has.
+    await seedTransaction(TXN, -2599, '2025-03-02');
+    await seedReceipt('rcpt-near', 2549, '2025-03-01', [{ id: 'ri-near', name: 'Organic Bananas', cents: 2549 }]);
     await reconcileHousehold(db, HH);
-    // The human picked a winner: every row for this transaction is now decided.
-    await db.update(matches).set({ status: 'manual' }).where(eq(matches.transactionId, TXN));
-    const settled = await matchRowsFor(TXN);
+    expect((await matchRowsFor(TXN)).map((r) => r.receiptId)).toEqual(['rcpt-near']);
+    expect(await countedCents()).toBe(-2549);
 
-    // A later run finds a fresh below-threshold candidate for the same transaction…
-    const ledger: ReconciledLedger = {
-      events: [],
-      matches: [],
-      reviewQueue: [{
-        id: 'fresh-candidate', type: 'receipt_bank', transactionId: TXN, receiptId: RECEIPT,
-        confidence: 0.4, rationale: 'weak', status: 'review',
-      }],
-      storeCreditDrawdowns: [],
-      unmatched: { bankLines: [], orderItems: [], receipts: [] },
-      netSpendCents: 0,
-    };
-    await new DrizzleReconcileSink(db).persist(HH, ledger);
+    // Run 2: the exact receipt arrives (the digital copy, say) and outscores it.
+    await seedReceipt(RECEIPT, 2599, '2025-03-02', [
+      { id: RI_HUMAN, name: 'Kirkland Paper Towels', cents: 1999, categoryId: 'household' },
+      { id: RI_BLANK, name: 'Organic Bananas', cents: 600 },
+    ]);
+    const summary = await reconcileHousehold(db, HH);
 
-    // …and writes nothing for it: no new pending sibling, the manual rows untouched.
-    expect(await matchRowsFor(TXN)).toEqual(settled);
-    const pending = await db.select().from(matches).where(and(eq(matches.transactionId, TXN), eq(matches.status, 'pending')));
-    expect(pending).toHaveLength(0);
+    expect(summary.matched).toBe(1);
+    expect(summary.unmatched.receipts).toBe(1);
+    const rows = await matchRowsFor(TXN);
+    expect(new Set(rows.map((r) => r.receiptId))).toEqual(new Set([RECEIPT]));
+    expect(rows.some((r) => r.receiptItemId === 'ri-near')).toBe(false);
+    // The near-miss keeps its category but is no longer a counted dollar.
+    expect(await categoryOf('ri-near')).not.toBeNull();
+    expect(await countedCents()).toBe(-2599);
+    expect((await new LiveReconciliationGateway(db).listMatches(SCOPE)).filter((m) => m.transactionId === TXN && m.status === 'confirmed'))
+      .toHaveLength(2);
+  });
+
+  describe('a below-threshold match', () => {
+    // Same merchant, 1000¢ apart, 3 days apart: passes every gate, scores 0.55 < 0.70.
+    async function seedWeakPair(): Promise<void> {
+      await seedTransaction(TXN, -3599, '2025-03-05');
+      await seedReceipt(RECEIPT, 2599, '2025-03-02', [
+        { id: RI_HUMAN, name: 'Kirkland Paper Towels', cents: 1999, categoryId: 'household' },
+        { id: RI_BLANK, name: 'Organic Bananas', cents: 600 },
+      ]);
+    }
+
+    it('persists as ONE candidate row naming the receipt, and the queue shows one candidate', async () => {
+      await seedWeakPair();
+      const summary = await reconcileHousehold(db, HH);
+
+      expect(summary.review).toBe(1);
+      expect(summary.matched).toBe(0);
+      const rows = await matchRowsFor(TXN);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: 'pending', receiptId: RECEIPT, orderId: null, receiptItemId: null, orderItemId: null });
+
+      const queue = await assembleQueue(SCOPE, new LiveReconciliationGateway(db), db);
+      const ambiguous = queue.filter((q) => q.type === 'ambiguous_match');
+      expect(ambiguous).toHaveLength(1);
+      expect(ambiguous[0]!.reason).toBe('Ambiguous match: 1 candidate for transaction');
+      // Not yet a counted dollar, and no category was guessed for it.
+      expect(await countedCents()).toBe(0);
+      expect(await categoryOf(RI_BLANK)).toBeNull();
+    });
+
+    it('once a human confirms it, the next run honours the decision: linked, categorised, counted', async () => {
+      await seedWeakPair();
+      await reconcileHousehold(db, HH);
+      const gw = new LiveReconciliationGateway(db);
+
+      await applyCorrection(SCOPE, { id: TXN, type: 'ambiguous_match', reason: '' }, { type: 'confirm' }, gw, db);
+      const manual = await db.select().from(matches).where(and(eq(matches.transactionId, TXN), eq(matches.status, 'manual')));
+      expect(manual).toHaveLength(1);
+
+      const summary = await reconcileHousehold(db, HH);
+
+      expect(summary.inputs.confirmedMatches).toBe(1);
+      expect(summary.matched).toBe(1);
+      expect(summary.review).toBe(0);
+      const rows = await matchRowsFor(TXN);
+      // The human's row is untouched; the engine adds the item-level links.
+      expect(rows.filter((r) => r.status === 'manual')).toEqual(manual);
+      const engineRows = rows.filter((r) => r.status === 'matched');
+      expect(new Set(engineRows.map((r) => r.receiptItemId))).toEqual(new Set([RI_HUMAN, RI_BLANK]));
+      expect(engineRows.every((r) => r.confidence === 100 && r.rationale?.includes('confirmed by human'))).toBe(true);
+      expect(rows.some((r) => r.status === 'rejected' || r.status === 'pending')).toBe(false);
+      // …and the receipt is now categorised and counted.
+      expect(await categoryOf(RI_BLANK)).not.toBeNull();
+      expect(await categoryOf(RI_HUMAN)).toBe('household');
+      expect(await countedCents()).toBe(-2599);
+      expect(await assembleQueue(SCOPE, gw, db)).toEqual([]);
+      // A further run changes nothing.
+      const again = await reconcileHousehold(db, HH);
+      expect(again).toEqual(summary);
+      expect(await matchRowsFor(TXN)).toEqual(rows);
+    });
+
+    it('a decision stands even when the engine would now prefer another receipt', async () => {
+      await seedWeakPair();
+      await reconcileHousehold(db, HH);
+      await applyCorrection(SCOPE, { id: TXN, type: 'ambiguous_match', reason: '' }, { type: 'confirm' }, new LiveReconciliationGateway(db), db);
+      // An exact-amount receipt shows up later: without the decision it would win.
+      await seedReceipt('rcpt-exact', 3599, '2025-03-05', [{ id: 'ri-exact', name: 'Something Else', cents: 3599 }]);
+
+      const summary = await reconcileHousehold(db, HH);
+
+      expect(summary.matched).toBe(1);
+      expect(summary.unmatched.receipts).toBe(1);
+      expect(new Set((await matchRowsFor(TXN)).map((r) => r.receiptId))).toEqual(new Set([RECEIPT]));
+      expect(await countedCents()).toBe(-2599);
+    });
+  });
+
+  it('never touches a human’s rows, whatever their id', async () => {
+    await seedStandardPair();
+    await reconcileHousehold(db, HH);
+    await db.insert(matches).values({
+      id: `${ENGINE_MATCH_ID_PREFIX}looks-like-ours`, transactionId: TXN, receiptId: RECEIPT, status: 'rejected', confidence: 10, method: 'receipt_bank',
+    });
+
+    await reconcileHousehold(db, HH);
+
+    const rejected = await db.select().from(matches).where(eq(matches.id, `${ENGINE_MATCH_ID_PREFIX}looks-like-ours`));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.status).toBe('rejected');
   });
 
   it('an unreadable-photo placeholder is never matched to anything', async () => {
+    await seedStandardPair();
     await db.insert(receipts).values({
       id: 'rcpt-placeholder', householdId: HH, source: 'photo', store: '', purchasedAt: '', totalCents: 0, needsReview: true,
     });
-    await db.insert(transactions).values({
-      id: 'txn-zero', accountId: 'acct-run', postedDate: '2025-03-03', amountCents: 0,
-      direction: 'debit', normalizedMerchant: '', sourceRowHash: 'z', dedupKey: 'z',
-    });
+    await seedTransaction('txn-zero', 0, '2025-03-03', '');
 
     const summary = await reconcileHousehold(db, HH);
 

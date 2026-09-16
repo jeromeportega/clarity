@@ -22,6 +22,14 @@ local `.env` (gitignored). **Never commit values** — this file lists names onl
 - Mutations are gated by `RECONCILE_MUTATION_TOKEN` regardless of `PUBLIC_DEMO_MODE`.
 - After setting variables: `npm run db:migrate --workspace=@clarity/finance`,
   then optionally `npm run seed:demo`.
+- **Before a deploy that changes the read backend or the schema:** (1) apply
+  the new migrations to the production database from a checkout that contains
+  them (migration 0006 adds `matches.receipt_id` / `order_id`); (2) confirm the
+  production database is seeded or imported — with the DB-backed gateway the
+  queue and True Spend show what is in Turso, and `deploy/smoke.sh` expects a
+  non-empty queue; (3) check the Vercel value of `RECON_BACKEND` in the
+  dashboard — the CLI cannot read it — and remove it (or set `live`) unless
+  the stub demo rows are wanted; a stale `stub` silently keeps the old rows.
 - No secret is ever read from the repo; deploys run from an authenticated
   Vercel session (`deploy/deploy.sh`), and `deploy/smoke.sh` verifies the
   deployment from the outside.

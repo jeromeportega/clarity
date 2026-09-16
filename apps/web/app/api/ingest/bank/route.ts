@@ -76,5 +76,5 @@ export async function POST(request: Request): Promise<Response> {
   const result = await importSource(db, input, { householdId: account.householdId, accountId }, adapters);
   // New bank lines are only useful once matched: reconcile before answering.
   const reconciliation = await reconcileAfterWrite(db, account.householdId);
-  return Response.json({ ...result, reconciliation });
+  return Response.json({ ...result, reconciled: !('error' in reconciliation), reconciliation });
 }

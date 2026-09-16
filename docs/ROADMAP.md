@@ -30,7 +30,9 @@ single-household loop is excellent.
   upload (and on demand via `POST /api/reconcile`), the sink never overwrites a
   human's or the resolver's category nor re-opens a settled transaction, and the
   DB-backed gateway is the default (`RECON_BACKEND=stub` is the opt-out).
-  Still whole-household and synchronous — incremental runs are a later step.
+  Human match decisions are engine inputs, True Spend counts only bank-linked
+  receipt lines (net of discount), and the matchers are indexed. Still
+  whole-household and synchronous — incremental runs are a later step.
 - ~~**Corrections that apply.**~~ Done: every decision lands at its source
   (`receipt_items`, `receipts`, `matches`), clears `needs_review`, teaches the
   dictionary only what the human actually said, and is refused for items not in

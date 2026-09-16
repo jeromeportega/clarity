@@ -105,7 +105,7 @@ export interface RunIngestOptions {
   reconcile?: boolean;
 }
 
-export type RunIngestResult = ImportResult & { reconciliation?: ReconcileRunSummary };
+export type RunIngestResult = ImportResult & { reconciliation?: ReconcileRunSummary | { error: string } };
 
 /**
  * Resolve the import context (the bank command derives `householdId` from the
@@ -145,9 +145,14 @@ export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult
   const ctx = await resolveContext(db, opts.command, opts.accountId);
   const result = await importSource(db, input, ctx, adapters);
   if (opts.reconcile === false) return result;
-  // Imported rows are only useful once matched — same as the HTTP routes.
-  const reconciliation = await reconcileHousehold(db, ctx.householdId);
-  return { ...result, reconciliation };
+  // Imported rows are only useful once matched — same as the HTTP routes. The
+  // import is committed by now, so a reconcile failure is reported next to it
+  // rather than thrown away with it; `npm run` exits non-zero via main().
+  try {
+    return { ...result, reconciliation: await reconcileHousehold(db, ctx.householdId) };
+  } catch (err) {
+    return { ...result, reconciliation: { error: err instanceof Error ? err.message : String(err) } };
+  }
 }
 
 export interface ParsedArgs {
@@ -187,6 +192,7 @@ async function main(): Promise<void> {
     baseDir: env.CLARITY_INGEST_BASE_DIR ?? cwd(),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (result.reconciliation && 'error' in result.reconciliation) process.exitCode = 1;
 }
 
 if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {

@@ -1,8 +1,9 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
 import {
   accounts,
+  matches,
   orderItems,
   orders,
   receiptItems,
@@ -13,6 +14,7 @@ import {
 import { FIXTURE_INPUTS } from './__fixtures__/index';
 import type {
   BankLine,
+  ConfirmedMatch,
   OrderItemView,
   OrderView,
   ReceiptItemView,
@@ -68,13 +70,44 @@ export class DrizzleReconcileSource implements ReconcileSource {
   constructor(private readonly db: FinanceDb) {}
 
   async load(householdId: string): Promise<ReconcileInputs> {
-    const [bankLines, orderViews, receiptViews, storeCreditAccruals] = await Promise.all([
+    const [bankLines, orderViews, receiptViews, storeCreditAccruals, confirmedMatches] = await Promise.all([
       this.loadBankLines(householdId),
       this.loadOrders(householdId),
       this.loadReceipts(householdId),
       this.loadStoreCredit(householdId),
+      this.loadConfirmedMatches(householdId),
     ]);
-    return { householdId, bankLines, orders: orderViews, receipts: receiptViews, storeCreditAccruals };
+    return { householdId, bankLines, orders: orderViews, receipts: receiptViews, storeCreditAccruals, confirmedMatches };
+  }
+
+  private householdTransactionIds(householdId: string) {
+    return this.db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(eq(accounts.householdId, householdId));
+  }
+
+  /**
+   * The humans' settled matches: every `manual` row that names the receipt or
+   * order it stands for, one decision per transaction (a transaction is paid
+   * once). A `manual` row with neither anchor — a candidate for a receipt with
+   * no line items, say — has nothing the engine could honour and is skipped.
+   */
+  private async loadConfirmedMatches(householdId: string): Promise<ConfirmedMatch[]> {
+    const rows = await this.db
+      .select({ transactionId: matches.transactionId, receiptId: matches.receiptId, orderId: matches.orderId })
+      .from(matches)
+      .where(and(inArray(matches.transactionId, this.householdTransactionIds(householdId)), eq(matches.status, 'manual')))
+      .orderBy(asc(matches.id));
+
+    const byTransaction = new Map<string, ConfirmedMatch>();
+    for (const r of rows) {
+      if (byTransaction.has(r.transactionId)) continue;
+      if (r.receiptId) byTransaction.set(r.transactionId, { transactionId: r.transactionId, receiptId: r.receiptId });
+      else if (r.orderId) byTransaction.set(r.transactionId, { transactionId: r.transactionId, orderId: r.orderId });
+    }
+    return [...byTransaction.values()];
   }
 
   private householdOrderIds(householdId: string) {
@@ -226,7 +259,8 @@ export class DrizzleReconcileSource implements ReconcileSource {
       })
       .from(storeCreditBalances)
       .leftJoin(orderItems, eq(storeCreditBalances.orderItemId, orderItems.id))
-      .leftJoin(orders, eq(orderItems.orderId, orders.id))
+      // Scoped like every other join here: a foreign order can never date an accrual.
+      .leftJoin(orders, and(eq(orderItems.orderId, orders.id), eq(orders.householdId, householdId)))
       .where(eq(storeCreditBalances.householdId, householdId))
       .orderBy(asc(storeCreditBalances.id));
 

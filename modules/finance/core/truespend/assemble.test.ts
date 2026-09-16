@@ -161,6 +161,37 @@ async function seedReceiptItem(
   return id;
 }
 
+/**
+ * A receipt line is a counted dollar only once a `matched` / `manual` match row
+ * links it to a bank line (the live gateway's rule, shared by the drill-down),
+ * so tests that expect an item to appear link it here.
+ */
+async function linkToBankLine(db: FinanceDb, receiptId: string, itemId: string): Promise<string> {
+  const acctId = randomUUID();
+  await db.insert(accounts).values({ id: acctId, householdId: HOUSEHOLD_ID, name: 'Checking' });
+  const txnId = randomUUID();
+  await db.insert(transactions).values({
+    id: txnId,
+    accountId: acctId,
+    postedDate: '2025-01-15',
+    amountCents: -1,
+    direction: 'debit',
+    normalizedMerchant: 'STORE',
+    sourceRowHash: `hash-${randomUUID()}`,
+    dedupKey: `dedup-${randomUUID()}`,
+  });
+  await db.insert(matches).values({
+    id: `m-link-${randomUUID()}`,
+    transactionId: txnId,
+    receiptId,
+    receiptItemId: itemId,
+    status: 'matched',
+    confidence: 95,
+    method: 'receipt_bank',
+  });
+  return txnId;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -241,6 +272,7 @@ describe('assembleBreakdown', () => {
     const groceryCatId = await seedCategory(db, 'groceries');
     const receiptId = await seedReceipt(db, '2025-01');
     const itemId = await seedReceiptItem(db, receiptId, groceryCatId, 1, -399, 'Organic Apples');
+    await linkToBankLine(db, receiptId, itemId);
 
     const rollup: SpendRollup = {
       key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' },
@@ -254,10 +286,12 @@ describe('assembleBreakdown', () => {
     const cat = result.categories[0]!;
     expect(cat.category).toBe('groceries');
     expect(cat.netCents).toBe(-399);
-    expect(cat.items).toHaveLength(1);
-    expect(cat.items[0]!.id).toBe(itemId);
-    expect(cat.items[0]!.description).toBe('Organic Apples');
-    expect(cat.items[0]!.amountCents).toBe(-399);
+    // The receipt line, plus the bank line it is linked to (the drill-down
+    // lists every source that carries the category).
+    const item = cat.items.find((i) => i.id === itemId);
+    expect(item).toBeDefined();
+    expect(item!.description).toBe('Organic Apples');
+    expect(item!.amountCents).toBe(-399);
   });
 
   // -------------------------------------------------------------------------
@@ -388,8 +422,10 @@ describe('assembleBreakdown', () => {
     const groceryCatId = await seedCategory(db, 'groceries');
     const jan = await seedReceipt(db, '2025-01');
     const feb = await seedReceipt(db, '2025-02');
-    await seedReceiptItem(db, jan, groceryCatId, 1, -399, 'Jan Item');
-    await seedReceiptItem(db, feb, groceryCatId, 1, -599, 'Feb Item');
+    const janItem = await seedReceiptItem(db, jan, groceryCatId, 1, -399, 'Jan Item');
+    const febItem = await seedReceiptItem(db, feb, groceryCatId, 1, -599, 'Feb Item');
+    await linkToBankLine(db, jan, janItem);
+    await linkToBankLine(db, feb, febItem);
 
     const rollup: SpendRollup = {
       key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' },
@@ -398,9 +434,9 @@ describe('assembleBreakdown', () => {
     const gw = new ControllableGateway([rollup]);
 
     const result = await assembleBreakdown(SCOPE, gw, db, '2025-01');
-    const items = result.categories[0]!.items;
-    expect(items).toHaveLength(1);
-    expect(items[0]!.description).toBe('Jan Item');
+    const descriptions = result.categories[0]!.items.map((i) => i.description);
+    expect(descriptions).toContain('Jan Item');
+    expect(descriptions).not.toContain('Feb Item');
   });
 
   // -------------------------------------------------------------------------
@@ -433,8 +469,10 @@ describe('assembleBreakdown', () => {
     const groceryCatId = await seedCategory(db, 'groceries');
     const electronicsCatId = await seedCategory(db, 'electronics');
     const receiptId = await seedReceipt(db, '2025-01');
-    await seedReceiptItem(db, receiptId, groceryCatId, 1, -1200, 'Milk');
-    await seedReceiptItem(db, receiptId, electronicsCatId, 2, -4999, 'Headphones');
+    const milk = await seedReceiptItem(db, receiptId, groceryCatId, 1, -1200, 'Milk');
+    const headphones = await seedReceiptItem(db, receiptId, electronicsCatId, 2, -4999, 'Headphones');
+    await linkToBankLine(db, receiptId, milk);
+    await linkToBankLine(db, receiptId, headphones);
 
     const rollups: SpendRollup[] = [
       { key: { householdId: HOUSEHOLD_ID, category: 'groceries', month: '2025-01' }, netCents: -1200 },
@@ -447,8 +485,10 @@ describe('assembleBreakdown', () => {
     const grocery = result.categories.find((c) => c.category === 'groceries');
     const electronics = result.categories.find((c) => c.category === 'electronics');
     expect(grocery?.netCents).toBe(-1200);
-    expect(grocery?.items).toHaveLength(1);
+    expect(grocery?.items.map((i) => i.id)).toContain(milk);
+    expect(grocery?.items.map((i) => i.id)).not.toContain(headphones);
     expect(electronics?.netCents).toBe(-4999);
-    expect(electronics?.items).toHaveLength(1);
+    expect(electronics?.items.map((i) => i.id)).toContain(headphones);
+    expect(electronics?.items.map((i) => i.id)).not.toContain(milk);
   });
 });

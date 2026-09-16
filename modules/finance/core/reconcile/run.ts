@@ -7,7 +7,7 @@ import type { ReconcileConfig } from './thresholds';
 /** What one reconciliation run saw and produced — small enough for a response body. */
 export interface ReconcileRunSummary {
   householdId: string;
-  inputs: { bankLines: number; orders: number; receipts: number; storeCreditAccruals: number };
+  inputs: { bankLines: number; orders: number; receipts: number; storeCreditAccruals: number; confirmedMatches: number };
   /** Auto-linked matches (persisted as `matched`). */
   matched: number;
   /** Below-threshold candidates (persisted as `pending`; the queue's ambiguous_match source). */
@@ -28,12 +28,13 @@ export interface ReconcileHouseholdOptions {
  * the ingest and upload routes call after they commit new rows, and what
  * `POST /api/reconcile` runs on demand.
  *
- * Safe to run again at any time. The sink only ever adds: match rows carry
- * deterministic ids (a re-run is a no-op for rows that already exist), a
- * transaction a human has settled is never re-opened, and a receipt item that
- * already has a category — from the SKU resolver or from a correction — keeps
- * it. A run that fails part-way leaves nothing inconsistent to repair beyond
- * running it again.
+ * Safe to run again at any time, and meant to be: the engine's output is a
+ * function of the household's data plus the humans' decisions (`manual`
+ * match rows become `confirmedMatches`), and the sink SYNCS the engine's rows
+ * to that output inside one transaction — new rows appear, changed rows
+ * follow the engine, retracted rows disappear, human rows are never touched,
+ * and a receipt item that already has a category (from the SKU resolver or a
+ * correction) keeps it. A run either lands whole or not at all.
  */
 export async function reconcileHousehold(
   db: FinanceDb,
@@ -54,6 +55,7 @@ export async function reconcileHousehold(
       orders: inputs.orders.length,
       receipts: inputs.receipts.length,
       storeCreditAccruals: inputs.storeCreditAccruals.length,
+      confirmedMatches: inputs.confirmedMatches?.length ?? 0,
     },
     matched: ledger.matches.length,
     review: ledger.reviewQueue.length,

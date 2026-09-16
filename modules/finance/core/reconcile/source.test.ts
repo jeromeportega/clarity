@@ -11,6 +11,7 @@ import { createTestDb, type FinanceDb } from '../../db/client';
 import {
   accounts,
   households,
+  matches,
   orderItems,
   orders,
   receiptItems,
@@ -150,9 +151,31 @@ describe('DrizzleReconcileSource.load', () => {
     expect(storeCreditAccruals[1]).not.toHaveProperty('orderId');
   });
 
+  it('loads the humans’ decisions: one manual row per transaction naming its receipt or order, foreign and anchorless rows ignored', async () => {
+    await db.insert(matches).values([
+      { id: 'm-1', transactionId: 'txn-a-1', receiptId: 'rcpt-a-1', status: 'manual', confidence: 100, method: 'receipt_bank' },
+      // Item-level rows from the same decision resolve to the same receipt — one decision per transaction.
+      { id: 'm-1b', transactionId: 'txn-a-1', receiptId: 'rcpt-a-1', receiptItemId: 'ri-a-1a', status: 'manual', confidence: 100, method: 'receipt_bank' },
+      { id: 'm-2', transactionId: 'txn-a-2', orderId: 'ord-a-1', status: 'manual', confidence: 100, method: 'order_bank' },
+      // A decision about nothing identifiable.
+      { id: 'm-3', transactionId: 'txn-a-3', status: 'manual', confidence: 100, method: 'receipt_bank' },
+      // Not a decision.
+      { id: 'm-4', transactionId: 'txn-a-3', receiptId: 'rcpt-a-1', status: 'pending', confidence: 50, method: 'receipt_bank' },
+      // Another household's.
+      { id: 'm-5', transactionId: 'txn-b-1', receiptId: 'rcpt-b-1', status: 'manual', confidence: 100, method: 'receipt_bank' },
+    ]);
+
+    const { confirmedMatches } = await new DrizzleReconcileSource(db).load(HH);
+
+    expect(confirmedMatches).toEqual([
+      { transactionId: 'txn-a-1', receiptId: 'rcpt-a-1' },
+      { transactionId: 'txn-a-2', orderId: 'ord-a-1' },
+    ]);
+  });
+
   it('a household with no data loads as empty inputs, not an error', async () => {
     await db.insert(households).values({ id: 'hh-empty', name: 'Empty' });
     const inputs = await new DrizzleReconcileSource(db).load('hh-empty');
-    expect(inputs).toEqual({ householdId: 'hh-empty', bankLines: [], orders: [], receipts: [], storeCreditAccruals: [] });
+    expect(inputs).toEqual({ householdId: 'hh-empty', bankLines: [], orders: [], receipts: [], storeCreditAccruals: [], confirmedMatches: [] });
   });
 });

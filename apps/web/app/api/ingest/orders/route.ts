@@ -56,5 +56,5 @@ export async function POST(request: Request): Promise<Response> {
   const result = await importSource(db, input, { householdId: DEMO_HOUSEHOLD_ID }, adapters);
   // Imported rows are only useful once matched: reconcile before answering.
   const reconciliation = await reconcileAfterWrite(db, DEMO_HOUSEHOLD_ID);
-  return Response.json({ ...result, reconciliation });
+  return Response.json({ ...result, reconciled: !('error' in reconciliation), reconciliation });
 }
