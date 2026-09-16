@@ -16,7 +16,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FinanceDb } from '../../db/client';
-import { households, receiptItems, receipts, reviewDecisions } from '../../db/schema';
+import { accounts, households, receiptItems, receipts, reviewDecisions, transactions } from '../../db/schema';
 import { skuDictionary } from '../receipts/dictionary/schema';
 import { assembleQueue } from '../queue/assemble';
 import type {
@@ -152,16 +152,22 @@ afterAll(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function seedReceiptItem(lineNo: number): Promise<string> {
+async function seedReceiptItem(
+  lineNo: number,
+  opts: { sku?: string; canonicalName?: string; nameConfidence?: number; needsReview?: boolean } = {},
+): Promise<string> {
   const id = `ri-integration-${randomUUID()}`;
   await db.insert(receiptItems).values({
     id,
     receiptId: sharedReceiptId,
     lineNo,
+    sku: opts.sku ?? null,
     rawDescription: 'KS EVOO',
+    canonicalName: opts.canonicalName ?? null,
     quantity: 1,
     linePriceCents: 1000,
-    needsReview: true,
+    nameConfidence: opts.nameConfidence ?? null,
+    needsReview: opts.needsReview ?? true,
   });
   return id;
 }
@@ -208,8 +214,6 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
       itemType: 'sku_resolution',
       correction: {
         variant: 'editResolution',
-        store: 'COSTCO',
-        skuOrAbbrev: 'KS-EVOO',
         canonicalName: 'Kirkland Organic Olive Oil',
         category: 'groceries',
       },
@@ -225,11 +229,13 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
     const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
     expect(queueItems.map((i) => i.id)).not.toContain(skuItemId);
 
-    // (b) sku_dictionary has the new canonical entry at confidence 1.0
+    // (b) sku_dictionary has the new canonical entry at confidence 1.0, keyed
+    //     by the item (receipt store + raw description, since it has no sku)
     const skuRows = await db.select().from(skuDictionary).where(
-      eq(skuDictionary.skuOrAbbrev, 'KS-EVOO'),
+      eq(skuDictionary.skuOrAbbrev, 'KS EVOO'),
     );
     expect(skuRows).toHaveLength(1);
+    expect(skuRows[0]!.store).toBe('COSTCO');
     expect(skuRows[0]!.canonicalName).toBe('Kirkland Organic Olive Oil');
     expect(skuRows[0]!.category).toBe('groceries');
     expect(skuRows[0]!.nameConfidence).toBe(1.0);
@@ -243,9 +249,179 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
     expect(decRows).toHaveLength(1);
     expect(decRows[0]!.decision).toBe('correct');
 
-    // (d) rollup propagation: route handler called recomputeRollups with [skuItemId]
+    // (d) the ITEM itself carries the human's answer — the correction applied,
+    //     not merely logged.
+    const itemRows = await db.select().from(receiptItems).where(
+      eq(receiptItems.id, skuItemId),
+    );
+    expect(itemRows[0]!.canonicalName).toBe('Kirkland Organic Olive Oil');
+    expect(itemRows[0]!.categoryId).toBe('groceries');
+    expect(itemRows[0]!.nameConfidence).toBe(1);
+    expect(itemRows[0]!.categoryConfidence).toBe(1);
+    expect(itemRows[0]!.needsReview).toBe(false);
+
+    // (e) rollup propagation: route handler called recomputeRollups with [skuItemId]
     expect(routeGw.recomputeRollupsCalls).toHaveLength(1);
     expect(routeGw.recomputeRollupsCalls[0]!.ids).toEqual([skuItemId]);
+  });
+});
+
+describe('anti-stub integration: POST /api/queue/[id]/correct (pickCategoryId)', () => {
+  let pickItemId: string;
+
+  beforeAll(async () => {
+    pickItemId = await seedReceiptItem(nextLineNo(), {
+      sku: 'KS-TP-30',
+      canonicalName: 'Kirkland Bath Tissue 30-pack',
+      nameConfidence: 0.55,
+    });
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
+  it('re-categorises the item, clears its flag, and teaches the dictionary the category (not a new name)', async () => {
+    const body = {
+      itemType: 'sku_resolution',
+      correction: { variant: 'pickCategoryId', categoryId: 'Health & Medical' },
+    };
+
+    const res = await postCorrect(makeRequest(body, 'correct'), makeContext(pickItemId));
+    expect(res.status).toBe(200);
+
+    const itemRows = await db.select().from(receiptItems).where(
+      eq(receiptItems.id, pickItemId),
+    );
+    expect(itemRows[0]!.categoryId).toBe('health-medical');
+    expect(itemRows[0]!.categoryConfidence).toBe(1);
+    expect(itemRows[0]!.needsReview).toBe(false);
+
+    // Learned for next time, under the receipt's store and the item's key,
+    // with the item's own name at the item's own confidence.
+    const skuRows = await db.select().from(skuDictionary).where(
+      eq(skuDictionary.skuOrAbbrev, 'KS-TP-30'),
+    );
+    expect(skuRows).toHaveLength(1);
+    expect(skuRows[0]!.store).toBe('COSTCO');
+    expect(skuRows[0]!.category).toBe('health-medical');
+    expect(skuRows[0]!.categoryConfidence).toBe(1);
+    expect(skuRows[0]!.canonicalName).toBe('Kirkland Bath Tissue 30-pack');
+    expect(skuRows[0]!.nameConfidence).toBe(0.55);
+    expect(skuRows[0]!.source).toBe('human');
+
+    // And it is gone from the queue.
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
+    expect(queueItems.map((i) => i.id)).not.toContain(pickItemId);
+  });
+});
+
+describe('anti-stub integration: CorrectionError → 400 with the code in the body', () => {
+  beforeAll(() => {
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
+  it('unknown category → 400 unknown_category, and the item is untouched', async () => {
+    const itemId = await seedReceiptItem(nextLineNo());
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'sku_resolution',
+          correction: { variant: 'pickCategoryId', categoryId: 'snacks' },
+        },
+        'correct',
+      ),
+      makeContext(itemId),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'unknown_category' });
+
+    const itemRows = await db.select().from(receiptItems).where(eq(receiptItems.id, itemId));
+    expect(itemRows[0]!.needsReview).toBe(true);
+    const decRows = await db.select().from(reviewDecisions).where(
+      eq(reviewDecisions.itemId, itemId),
+    );
+    expect(decRows).toHaveLength(0);
+  });
+
+  it('pickCategoryId on a non-sku item → 400 invalid_variant', async () => {
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'unmatched_txn',
+          correction: { variant: 'pickCategoryId', categoryId: 'groceries' },
+        },
+        'correct',
+      ),
+      makeContext(`txn-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_variant' });
+  });
+
+  it('unknown match candidate on a real transaction → 400 candidate_mismatch', async () => {
+    const accountId = `acct-integration-${randomUUID()}`;
+    await db.insert(accounts).values({ id: accountId, householdId: DEMO_HOUSEHOLD_ID, name: 'Checking' });
+    const txnId = `txn-integration-${randomUUID()}`;
+    await db.insert(transactions).values({
+      id: txnId,
+      accountId,
+      postedDate: '2025-01-21',
+      amountCents: -2499,
+      direction: 'debit',
+      normalizedMerchant: 'COSTCO',
+      sourceRowHash: txnId,
+      dedupKey: txnId,
+    });
+
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'ambiguous_match',
+          correction: { variant: 'pickMatchCandidateId', candidateId: 'no-such-match' },
+        },
+        'correct',
+      ),
+      makeContext(txnId),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'candidate_mismatch' });
+  });
+
+  it('a transaction outside the household → 400 not_found, before any candidate check', async () => {
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'ambiguous_match',
+          correction: { variant: 'pickMatchCandidateId', candidateId: 'no-such-match' },
+        },
+        'correct',
+      ),
+      makeContext(`txn-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_found' });
+  });
+
+  it('confirm on an item outside the household → 400 not_found', async () => {
+    const res = await postConfirm(
+      makeRequest({ itemType: 'sku_resolution' }, 'confirm'),
+      makeContext(`ri-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_found' });
+  });
+
+  it('dismiss on a receipt outside the household → 400 not_found', async () => {
+    const res = await postDismiss(
+      makeRequest({ itemType: 'flagged_receipt' }, 'dismiss'),
+      makeContext(`receipt-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_found' });
   });
 });
 
@@ -346,14 +522,14 @@ describe('anti-stub integration: input validation', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 for editResolution with missing store field', async () => {
+  it('returns 400 for editResolution with missing canonicalName', async () => {
     const res = await postCorrect(
       new Request('http://localhost', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-reconcile-token': TEST_TOKEN },
         body: JSON.stringify({
           itemType: 'sku_resolution',
-          correction: { variant: 'editResolution', skuOrAbbrev: 'X', canonicalName: 'Y', category: 'groceries' },
+          correction: { variant: 'editResolution', category: 'groceries' },
         }),
       }),
       makeContext('some-id'),
@@ -383,5 +559,44 @@ describe('anti-stub integration: input validation', () => {
       makeContext('some-id'),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe('anti-stub integration: repeat and off-queue decisions', () => {
+  beforeAll(() => {
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
+  it('a second decision on the same item is 409 and leaves the first decision as the only one', async () => {
+    const itemId = await seedReceiptItem(nextLineNo());
+
+    const first = await postConfirm(makeRequest({ itemType: 'sku_resolution' }, 'confirm'), makeContext(itemId));
+    expect(first.status).toBe(200);
+
+    // The item is no longer queued after the first decision, but the decision
+    // row is written first — so the UNIQUE violation is what the caller sees.
+    const second = await postDismiss(makeRequest({ itemType: 'sku_resolution' }, 'dismiss'), makeContext(itemId));
+    expect(second.status).toBe(409);
+
+    const decRows = await db.select().from(reviewDecisions).where(eq(reviewDecisions.itemId, itemId));
+    expect(decRows).toHaveLength(1);
+    expect(decRows[0]!.decision).toBe('confirm');
+  });
+
+  it('a decision on an item that is not in the queue is 400 not_queued and rewrites nothing', async () => {
+    const itemId = await seedReceiptItem(nextLineNo(), {
+      needsReview: false,
+      canonicalName: 'Kirkland Olive Oil',
+      nameConfidence: 0.7,
+    });
+
+    const res = await postConfirm(makeRequest({ itemType: 'sku_resolution' }, 'confirm'), makeContext(itemId));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_queued' });
+
+    const itemRows = await db.select().from(receiptItems).where(eq(receiptItems.id, itemId));
+    expect(itemRows[0]!.nameConfidence).toBe(0.7);
+    const decRows = await db.select().from(reviewDecisions).where(eq(reviewDecisions.itemId, itemId));
+    expect(decRows).toHaveLength(0);
   });
 });
