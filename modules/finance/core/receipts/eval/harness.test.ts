@@ -13,6 +13,7 @@ import {
   meetsThreshold,
   mimeTypeForFile,
   resolveEvalDir,
+  resolveEvalLimit,
   resolveEvalRatio,
   type ExpectedReceipt,
   type GradedItem,
@@ -133,6 +134,23 @@ describe('gradeReceipt (threshold grading, G-1 / NFR-5)', () => {
     ];
     expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 1, total: 2 });
   });
+
+  it('grades on the name alone when the expected category is null (ground truth without categories)', () => {
+    const actual = [{ sku: '1', canonicalName: 'Bounty Advanced Paper Towels, 12-count', category: 'household' }];
+    const expected = [{ sku: '1', name: 'Bounty Advanced Paper Towels 12 count', category: null }];
+    expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 1, total: 1 });
+    const wrongName = [{ sku: '1', canonicalName: 'Charmin Bath Tissue', category: 'household' }];
+    expect(gradeReceipt(wrongName, expected, 0.85)).toEqual({ correct: 0, total: 1 });
+  });
+});
+
+describe('resolveEvalLimit', () => {
+  it('is null when unset or invalid, else the positive integer', () => {
+    expect(resolveEvalLimit({})).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: '0' })).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: 'ten' })).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: '10' })).toBe(10);
+  });
 });
 
 describe('meetsThreshold — the single ≥80% assertion (NFR-5)', () => {
@@ -171,7 +189,7 @@ describe('committed eval sample (FR-18: ≥5 receipts process end-to-end)', () =
       expect(typeof expected.totalCents).toBe('number');
       for (const item of expected.items) {
         expect(typeof item.name).toBe('string');
-        expect(typeof item.category).toBe('string');
+        expect(item.category === null || typeof item.category === 'string').toBe(true);
       }
     }
   });

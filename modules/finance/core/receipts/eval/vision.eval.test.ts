@@ -17,6 +17,7 @@ import {
   meetsThreshold,
   mimeTypeForFile,
   resolveEvalDir,
+  resolveEvalLimit,
   resolveEvalRatio,
   type ExpectedReceipt,
   type GradedItem,
@@ -48,7 +49,11 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
   let deps: ReceiptPipelineDeps;
   const dir = resolveEvalDir();
   const ratio = resolveEvalRatio();
-  const receiptFiles = RUN ? discoverReceipts(dir) : [];
+  const limit = resolveEvalLimit();
+  const discovered = RUN ? discoverReceipts(dir) : [];
+  const receiptFiles = limit ? discovered.slice(0, limit) : discovered;
+  // Budget ~30 s per receipt (vision + one resolver call per line item).
+  const timeoutMs = Math.max(180_000, receiptFiles.length * 30_000);
 
   beforeAll(() => {
     const client = new Anthropic(); // reads ANTHROPIC_API_KEY; guarded by RUN
@@ -68,6 +73,7 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
 
       let correct = 0;
       let total = 0;
+      const perReceipt: string[] = [];
       for (const file of receiptFiles) {
         const input: ReceiptImageInput = {
           bytes: new Uint8Array(readFileSync(file)),
@@ -85,7 +91,11 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         const score = gradeReceipt(graded, expected.items, ratio);
         correct += score.correct;
         total += score.total;
+        const totalOk = out.receipt.totalCents === expected.totalCents ? 'total ok' : `total ${out.receipt.totalCents} vs ${expected.totalCents}`;
+        perReceipt.push(`${file.split('/').pop()}: ${score.correct}/${score.total} items, ${totalOk}${out.status === 'ok' ? '' : ` [${out.status}]`}`);
       }
+      // Per-receipt diagnostics for the operator; the assertion stays a single threshold.
+      console.log(`vision:eval — ${correct}/${total} line items resolved (${((100 * correct) / Math.max(total, 1)).toFixed(1)}%)\n${perReceipt.join('\n')}`);
 
       // A single threshold assertion over the whole sample — never per-item.
       expect(total).toBeGreaterThan(0);
@@ -94,6 +104,6 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         `correctly resolved ${correct}/${total} line items (need ≥${EVAL_PASS_FRACTION})`,
       ).toBe(true);
     },
-    180_000,
+    timeoutMs,
   );
 });
