@@ -95,6 +95,8 @@ async function seedReceiptItem(
     rawDescription?: string;
     store?: string;
     receiptId?: string;
+    categoryId?: string | null;
+    nameConfidence?: number;
   } = {},
 ): Promise<{ receiptId: string; itemId: string }> {
   const receiptId = opts.receiptId
@@ -107,9 +109,10 @@ async function seedReceiptItem(
     sku: opts.sku ?? null,
     rawDescription: opts.rawDescription ?? 'KS EVOO',
     canonicalName: opts.canonicalName ?? null,
+    categoryId: opts.categoryId ?? null,
     quantity: 1,
     linePriceCents: 1000,
-    nameConfidence: 0.4,
+    nameConfidence: opts.nameConfidence ?? 0.4,
     categoryConfidence: 0.3,
     needsReview: opts.needsReview ?? false,
   });
@@ -200,8 +203,12 @@ describe('applyCorrection', () => {
       expect(rows[0]!.householdId).toBe(HH);
     });
 
-    it('sku_resolution: clears needs_review and vouches for both confidences', async () => {
-      const { itemId } = await seedReceiptItem({ needsReview: true });
+    it('sku_resolution: clears needs_review and vouches for both confidences when both halves exist', async () => {
+      const { itemId } = await seedReceiptItem({
+        needsReview: true,
+        canonicalName: 'Kirkland Olive Oil',
+        categoryId: 'groceries',
+      });
 
       await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'confirm' }, gw, db);
 
@@ -209,6 +216,30 @@ describe('applyCorrection', () => {
       expect(row.needsReview).toBe(false);
       expect(row.nameConfidence).toBe(1);
       expect(row.categoryConfidence).toBe(1);
+    });
+
+    it('sku_resolution: vouches only for what exists — an unresolved item keeps its confidences', async () => {
+      // A Costco import: raw description only, no canonical name, no category.
+      const { itemId } = await seedReceiptItem({ needsReview: true, canonicalName: null, categoryId: null });
+
+      await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'confirm' }, gw, db);
+
+      const row = await readItem(itemId);
+      expect(row.needsReview).toBe(false);
+      expect(row.nameConfidence).toBe(0.4);
+      expect(row.categoryConfidence).toBe(0.3);
+      expect(row.canonicalName).toBeNull();
+      expect(row.categoryId).toBeNull();
+    });
+
+    it('sku_resolution: a named but uncategorised item gets only its name vouched for', async () => {
+      const { itemId } = await seedReceiptItem({ needsReview: true, canonicalName: 'Kirkland Olive Oil', categoryId: null });
+
+      await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'confirm' }, gw, db);
+
+      const row = await readItem(itemId);
+      expect(row.nameConfidence).toBe(1);
+      expect(row.categoryConfidence).toBe(0.3);
     });
 
     it('flagged_receipt: clears receipts.needs_review', async () => {
@@ -362,12 +393,13 @@ describe('applyCorrection', () => {
       expect(JSON.parse(decRows[0]!.payloadJson!)).toEqual(pick('household').correction);
     });
 
-    it('learns: writes a human sku_dictionary row keyed by store + sku', async () => {
+    it('learns: writes a human sku_dictionary row keyed by store + sku, carrying the item’s own name confidence', async () => {
       const { itemId } = await seedReceiptItem({
         needsReview: true,
         store: "trader  joe's",
         sku: ' ks-evoo ',
         canonicalName: 'Kirkland Olive Oil',
+        nameConfidence: 0.62,
       });
 
       await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), pick('groceries'), gw, db);
@@ -378,12 +410,31 @@ describe('applyCorrection', () => {
       expect(rows[0]!.skuOrAbbrev).toBe('KS-EVOO');
       expect(rows[0]!.canonicalName).toBe('Kirkland Olive Oil');
       expect(rows[0]!.category).toBe('groceries');
-      expect(rows[0]!.nameConfidence).toBe(1);
+      // The human chose a category, not a name: the category is certain, the
+      // name is exactly as certain as it was before.
+      expect(rows[0]!.nameConfidence).toBe(0.62);
       expect(rows[0]!.categoryConfidence).toBe(1);
       expect(rows[0]!.source).toBe('human');
     });
 
-    it('falls back to raw_description for both the key and the canonical name', async () => {
+    it('keys by raw_description when the item has no sku', async () => {
+      const { itemId } = await seedReceiptItem({
+        needsReview: true,
+        sku: null,
+        canonicalName: 'Kirkland Olive Oil 2L',
+        rawDescription: 'KS EVOO 2L',
+      });
+
+      await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), pick('groceries'), gw, db);
+
+      const rows = await db.select().from(skuDictionary);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.skuOrAbbrev).toBe('KS EVOO 2L');
+      expect(rows[0]!.canonicalName).toBe('Kirkland Olive Oil 2L');
+    });
+
+    it('teaches the dictionary nothing when the item has no canonical name — the category lands on the item only', async () => {
+      // A raw shelf abbreviation must never become a permanent "human" name.
       const { itemId } = await seedReceiptItem({
         needsReview: true,
         sku: null,
@@ -393,9 +444,12 @@ describe('applyCorrection', () => {
 
       await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), pick('groceries'), gw, db);
 
-      const rows = await db.select().from(skuDictionary);
-      expect(rows[0]!.skuOrAbbrev).toBe('KS EVOO 2L');
-      expect(rows[0]!.canonicalName).toBe('KS EVOO 2L');
+      expect(await db.select().from(skuDictionary)).toHaveLength(0);
+      const row = await readItem(itemId);
+      expect(row.categoryId).toBe('groceries');
+      expect(row.categoryConfidence).toBe(1);
+      expect(row.canonicalName).toBeNull();
+      expect(row.needsReview).toBe(false);
     });
 
     it('accepts a display name and stores the slug id', async () => {
@@ -488,9 +542,10 @@ describe('applyCorrection', () => {
         applyCorrection(
           SCOPE, item(foreignTxn, 'ambiguous_match'), pickMatch(foreignMatch), gw, db,
         ),
-      ).rejects.toMatchObject({ code: 'candidate_mismatch' });
+      ).rejects.toMatchObject({ code: 'not_found' });
 
       expect(await readMatchStatus(foreignMatch)).toBe('pending');
+      expect(await readDecisions(foreignTxn)).toHaveLength(0);
     });
 
     it('rejects a candidate id that does not exist', async () => {
@@ -500,6 +555,24 @@ describe('applyCorrection', () => {
       await expect(
         applyCorrection(SCOPE, item(txnId, 'ambiguous_match'), pickMatch('no-such-match'), gw, db),
       ).rejects.toMatchObject({ code: 'candidate_mismatch' });
+    });
+
+    it('rejects a candidate that is no longer pending and leaves the pending rows alone', async () => {
+      const txnId = await seedTransaction();
+      const alreadyRejected = await seedMatch(txnId, { status: 'rejected', confidence: 0.9 });
+      const settled = await seedMatch(txnId, { status: 'matched', confidence: 0.8 });
+      const stillPending = await seedMatch(txnId, { confidence: 0.5 });
+
+      for (const notOnOffer of [alreadyRejected, settled]) {
+        await expect(
+          applyCorrection(SCOPE, item(txnId, 'ambiguous_match'), pickMatch(notOnOffer), gw, db),
+        ).rejects.toMatchObject({ code: 'candidate_mismatch' });
+      }
+
+      expect(await readMatchStatus(alreadyRejected)).toBe('rejected');
+      expect(await readMatchStatus(settled)).toBe('matched');
+      expect(await readMatchStatus(stillPending)).toBe('pending');
+      expect(await readDecisions(txnId)).toHaveLength(0);
     });
 
     it('rejects the variant on a non-ambiguous_match item', async () => {
@@ -516,12 +589,10 @@ describe('applyCorrection', () => {
   // -------------------------------------------------------------------------
 
   describe('correct → editResolution', () => {
-    const edit = (over: Partial<{ store: string; skuOrAbbrev: string; canonicalName: string; category: string }> = {}) => ({
+    const edit = (over: Partial<{ canonicalName: string; category: string }> = {}) => ({
       type: 'correct' as const,
       correction: {
         variant: 'editResolution' as const,
-        store: 'COSTCO',
-        skuOrAbbrev: 'KS-EVOO',
         canonicalName: 'Kirkland Organic Olive Oil',
         category: 'groceries',
         ...over,
@@ -539,6 +610,10 @@ describe('applyCorrection', () => {
 
       const skuRows = await db.select().from(skuDictionary);
       expect(skuRows).toHaveLength(1);
+      // Keyed by the ITEM (its receipt's store + sku ?? raw_description), not
+      // by anything the caller typed.
+      expect(skuRows[0]!.store).toBe('COSTCO');
+      expect(skuRows[0]!.skuOrAbbrev).toBe('KS EVOO');
       expect(skuRows[0]!.canonicalName).toBe('Kirkland Organic Olive Oil');
       expect(skuRows[0]!.category).toBe('groceries');
       expect(skuRows[0]!.nameConfidence).toBe(1.0);
@@ -564,8 +639,23 @@ describe('applyCorrection', () => {
       expect((await db.select().from(skuDictionary))[0]!.category).toBe('books-media');
     });
 
+    it('keys the dictionary by the item’s store + sku, normalised', async () => {
+      const { itemId } = await seedReceiptItem({
+        needsReview: true,
+        store: "trader  joe's",
+        sku: ' ks-evoo ',
+      });
+
+      await applyCorrection(SCOPE, item(itemId, 'sku_resolution'), edit(), gw, db);
+
+      const skuRows = await db.select().from(skuDictionary);
+      expect(skuRows).toHaveLength(1);
+      expect(skuRows[0]!.store).toBe("TRADER JOE'S");
+      expect(skuRows[0]!.skuOrAbbrev).toBe('KS-EVOO');
+    });
+
     it('overwrites an existing auto sku_dictionary entry on conflict', async () => {
-      const { itemId } = await seedReceiptItem({ needsReview: true });
+      const { itemId } = await seedReceiptItem({ needsReview: true, sku: 'KS-EVOO' });
       await db.insert(skuDictionary).values({
         store: 'COSTCO',
         skuOrAbbrev: 'KS-EVOO',
@@ -593,7 +683,7 @@ describe('applyCorrection', () => {
     });
 
     it('overwrites an existing human entry (human-over-human always wins)', async () => {
-      const { itemId } = await seedReceiptItem({ needsReview: true });
+      const { itemId } = await seedReceiptItem({ needsReview: true, store: 'WALMART', sku: 'GV-BREAD' });
       await db.insert(skuDictionary).values({
         store: 'WALMART',
         skuOrAbbrev: 'GV-BREAD',
@@ -608,11 +698,7 @@ describe('applyCorrection', () => {
       await applyCorrection(
         SCOPE,
         item(itemId, 'sku_resolution'),
-        edit({
-          store: 'WALMART',
-          skuOrAbbrev: 'GV-BREAD',
-          canonicalName: 'Great Value Wheat Bread',
-        }),
+        edit({ canonicalName: 'Great Value Wheat Bread' }),
         gw,
         db,
       );
@@ -744,15 +830,98 @@ describe('applyCorrection', () => {
       expect(rows[0]!.needsReview).toBe(true);
     });
 
-    it('confirm on an ambiguous match in another household leaves its candidates pending', async () => {
+    it('confirm on an ambiguous match in another household throws not_found and writes nothing', async () => {
       const foreignTxn = await seedTransaction(OTHER_HH);
       const foreignMatch = await seedMatch(foreignTxn, { confidence: 0.9 });
 
-      await applyCorrection(
-        SCOPE, item(foreignTxn, 'ambiguous_match'), { type: 'confirm' }, gw, db,
-      );
+      await expect(
+        applyCorrection(SCOPE, item(foreignTxn, 'ambiguous_match'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_found' });
 
       expect(await readMatchStatus(foreignMatch)).toBe('pending');
+      expect(await readDecisions(foreignTxn)).toHaveLength(0);
+    });
+
+    it('confirm on an unmatched transaction in another household throws not_found', async () => {
+      const foreignTxn = await seedTransaction(OTHER_HH);
+
+      await expect(
+        applyCorrection(SCOPE, item(foreignTxn, 'unmatched_txn'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_found' });
+
+      expect(await readDecisions(foreignTxn)).toHaveLength(0);
+    });
+
+    it('dismiss on a transaction-typed item in another household throws not_found', async () => {
+      const foreignTxn = await seedTransaction(OTHER_HH);
+
+      for (const type of ['ambiguous_match', 'unmatched_txn'] as const) {
+        await expect(
+          applyCorrection(SCOPE, item(foreignTxn, type), { type: 'dismiss' }, gw, db),
+        ).rejects.toMatchObject({ code: 'not_found' });
+      }
+      expect(await readDecisions(foreignTxn)).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Only queued items take decisions
+  // -------------------------------------------------------------------------
+
+  describe('not_queued', () => {
+    it('confirm on a receipt item whose flag is clear throws not_queued and rewrites nothing', async () => {
+      const { itemId } = await seedReceiptItem({
+        needsReview: false,
+        canonicalName: 'Kirkland Olive Oil',
+        categoryId: 'groceries',
+      });
+
+      await expect(
+        applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_queued' });
+
+      const row = await readItem(itemId);
+      expect(row.nameConfidence).toBe(0.4);
+      expect(row.categoryConfidence).toBe(0.3);
+      expect(await readDecisions(itemId)).toHaveLength(0);
+    });
+
+    it('dismiss and correct on an unflagged receipt item throw not_queued', async () => {
+      const { itemId } = await seedReceiptItem({ needsReview: false });
+
+      await expect(
+        applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'dismiss' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_queued' });
+      await expect(
+        applyCorrection(
+          SCOPE,
+          item(itemId, 'sku_resolution'),
+          { type: 'correct', correction: { variant: 'pickCategoryId', categoryId: 'groceries' } },
+          gw,
+          db,
+        ),
+      ).rejects.toMatchObject({ code: 'not_queued' });
+
+      expect((await readItem(itemId)).categoryId).toBeNull();
+      expect(await db.select().from(skuDictionary)).toHaveLength(0);
+    });
+
+    it('confirm on a receipt that is not flagged throws not_queued', async () => {
+      const receiptId = await seedReceipt({ needsReview: false });
+
+      await expect(
+        applyCorrection(SCOPE, item(receiptId, 'flagged_receipt'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_queued' });
+
+      expect(await readDecisions(receiptId)).toHaveLength(0);
+    });
+
+    it('a foreign item is not_found before it is not_queued', async () => {
+      const { itemId } = await seedReceiptItem({ householdId: OTHER_HH, needsReview: false });
+
+      await expect(
+        applyCorrection(SCOPE, item(itemId, 'sku_resolution'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_found' });
     });
   });
 

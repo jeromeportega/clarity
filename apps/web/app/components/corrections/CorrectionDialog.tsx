@@ -38,9 +38,8 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
   // Pick-match state
   const [candidateId, setCandidateId] = React.useState('');
 
-  // Edit-resolution state
-  const [store, setStore] = React.useState('');
-  const [skuOrAbbrev, setSkuOrAbbrev] = React.useState('');
+  // Edit-resolution state (the dictionary key is the item's own store + SKU;
+  // the human only supplies what the line IS and which category it belongs to)
   const [canonicalName, setCanonicalName] = React.useState('');
   const [category, setCategory] = React.useState<string>(TAXONOMY[0].id);
 
@@ -50,8 +49,6 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
       setMode('editResolution');
       setCategoryId('');
       setCandidateId('');
-      setStore('');
-      setSkuOrAbbrev('');
       setCanonicalName('');
       setCategory(TAXONOMY[0].id);
       setSubmitError(null);
@@ -70,7 +67,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
     } else if (mode === 'pickMatchCandidateId') {
       correction = { variant: 'pickMatchCandidateId', candidateId };
     } else {
-      correction = { variant: 'editResolution', store, skuOrAbbrev, canonicalName, category };
+      correction = { variant: 'editResolution', canonicalName, category };
     }
 
     try {
@@ -159,31 +156,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
           {mode === 'editResolution' && (
             <>
               <div className="flex flex-col gap-1">
-                <label htmlFor="store" className="text-sm font-medium">Store</label>
-                <input
-                  id="store"
-                  type="text"
-                  value={store}
-                  onChange={(e) => setStore(e.target.value)}
-                  required
-                  placeholder="COSTCO"
-                  className="rounded border p-2 text-sm"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="skuOrAbbrev" className="text-sm font-medium">SKU / abbreviation</label>
-                <input
-                  id="skuOrAbbrev"
-                  type="text"
-                  value={skuOrAbbrev}
-                  onChange={(e) => setSkuOrAbbrev(e.target.value)}
-                  required
-                  placeholder="KS-EVOO"
-                  className="rounded border p-2 text-sm"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="canonicalName" className="text-sm font-medium">Canonical name</label>
+                <label htmlFor="canonicalName" className="text-sm font-medium">What is this item?</label>
                 <input
                   id="canonicalName"
                   type="text"

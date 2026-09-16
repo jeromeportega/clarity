@@ -23,8 +23,8 @@ function validateCorrectionFields(
       return 'pickMatchCandidateId requires non-empty candidateId (max 128 chars)';
     }
   } else {
-    // editResolution
-    for (const field of ['store', 'skuOrAbbrev', 'canonicalName', 'category'] as const) {
+    // editResolution — the dictionary key is the item's own, never sent.
+    for (const field of ['canonicalName', 'category'] as const) {
       const v = correction[field];
       if (typeof v !== 'string' || v.length === 0 || v.length > MAX_FIELD_LEN) {
         return `editResolution requires non-empty ${field} (max 128 chars)`;

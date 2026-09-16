@@ -26,8 +26,6 @@ export default async function TrueSpendPage({ searchParams }: TrueSpendPageProps
         <p className="mt-1 text-sm text-muted-foreground">
           Item-level category breakdown
           {month ? ` for ${month}` : ''}.
-          Totals are computed from item categories, so a correction in the review
-          queue moves them.
         </p>
       </div>
       <TrueSpendView breakdown={breakdown} />
