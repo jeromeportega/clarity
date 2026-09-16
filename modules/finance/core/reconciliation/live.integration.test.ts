@@ -114,7 +114,7 @@ describe('LiveReconciliationGateway — DB-backed reconciliation', () => {
   });
 
   it('gatewayFor selects the live backend even in public demo mode', async () => {
-    const live = gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'live' });
+    const live = gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'live' }, db);
     expect(live).toBeInstanceOf(LiveReconciliationGateway);
   });
 

@@ -12,6 +12,7 @@ import { emlAdapter } from '../core/adapters/eml.adapter';
 import { retailerApiAdapter } from '../core/adapters/retailer-api.adapter';
 import type { RawInput, SourceAdapter, SourceKind } from '../core/adapters/source-adapter';
 import { importSource, type ImportContext, type ImportResult } from '../core/ingest/pipeline';
+import { reconcileHousehold, type ReconcileRunSummary } from '../core/reconcile/run';
 import { createDb, type FinanceDb } from '../db/client';
 import { accounts } from '../db/schema';
 
@@ -100,7 +101,11 @@ export interface RunIngestOptions {
   db?: FinanceDb;
   adapters?: SourceAdapter[];
   baseDir?: string;
+  /** Reconcile the household after the import lands (default true), as the HTTP routes do. */
+  reconcile?: boolean;
 }
+
+export type RunIngestResult = ImportResult & { reconciliation?: ReconcileRunSummary };
 
 /**
  * Resolve the import context (the bank command derives `householdId` from the
@@ -132,13 +137,17 @@ async function resolveContext(
   return { householdId: account.householdId, accountId };
 }
 
-export async function runIngest(opts: RunIngestOptions): Promise<ImportResult> {
+export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult> {
   const resolvedPath = resolveInputPath(opts.path, opts.baseDir);
   const input = buildRawInput(COMMAND_KIND[opts.command], resolvedPath);
   const db = opts.db ?? createDb();
   const adapters = opts.adapters ?? allAdapters;
   const ctx = await resolveContext(db, opts.command, opts.accountId);
-  return importSource(db, input, ctx, adapters);
+  const result = await importSource(db, input, ctx, adapters);
+  if (opts.reconcile === false) return result;
+  // Imported rows are only useful once matched — same as the HTTP routes.
+  const reconciliation = await reconcileHousehold(db, ctx.householdId);
+  return { ...result, reconciliation };
 }
 
 export interface ParsedArgs {

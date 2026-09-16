@@ -9,6 +9,7 @@ import { createDb } from '../../../../../../modules/finance/db/client';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
+import { reconcileAfterWrite } from '../../../../lib/reconcile';
 
 /**
  * POST /api/ingest/costco — multipart/form-data { file: File } where the file is
@@ -52,6 +53,9 @@ export async function POST(request: Request): Promise<Response> {
     mimeType: 'application/json',
   };
 
-  const result = await importSource(createDb(), input, { householdId: DEMO_HOUSEHOLD_ID }, adapters);
-  return Response.json(result);
+  const db = createDb();
+  const result = await importSource(db, input, { householdId: DEMO_HOUSEHOLD_ID }, adapters);
+  // Imported rows are only useful once matched: reconcile before answering.
+  const reconciliation = await reconcileAfterWrite(db, DEMO_HOUSEHOLD_ID);
+  return Response.json({ ...result, reconciliation });
 }

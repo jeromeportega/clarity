@@ -25,6 +25,6 @@ export async function fetchQueue(scope: HouseholdScope): Promise<QueueItem[]> {
   const gw = gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     RECON_BACKEND: resolveBackend(),
-  });
+  }, db);
   return assembleQueue(scope, gw, db);
 }

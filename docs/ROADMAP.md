@@ -25,13 +25,17 @@ single-household loop is excellent.
   items and learned SKUs survive the request and re-uploads are idempotent.
   Unreadable receipts persist as flagged placeholders. Images still go to
   `/tmp` — see the evidence-image item below.
-- **Reconcile at runtime.** Implement `DrizzleReconcileSource.load` and run
-  `reconcile()` after every upload/ingest (or on demand), persisting via
-  `DrizzleReconcileSink`. Make `RECON_BACKEND=live` the default; retire the
-  stub gateway to tests.
-- **Corrections that apply.** `pickCategoryId` must write `receipt_items.category_id`;
-  `pickMatchCandidateId` must write `matches`; every decision clears
-  `needs_review`; `recomputeRollups` must actually recompute.
+- ~~**Reconcile at runtime.**~~ Done: `DrizzleReconcileSource.load` reads the
+  household from the database, `reconcileHousehold` runs after every ingest and
+  upload (and on demand via `POST /api/reconcile`), the sink never overwrites a
+  human's or the resolver's category nor re-opens a settled transaction, and the
+  DB-backed gateway is the default (`RECON_BACKEND=stub` is the opt-out).
+  Still whole-household and synchronous — incremental runs are a later step.
+- ~~**Corrections that apply.**~~ Done: every decision lands at its source
+  (`receipt_items`, `receipts`, `matches`), clears `needs_review`, teaches the
+  dictionary only what the human actually said, and is refused for items not in
+  the queue or outside the household. `recomputeRollups` stays a no-op by
+  design — rollups are computed on read.
 - **Render the queue actions.** `QueueItemActions` and `CorrectionDialog` exist
   but are never rendered; wire them into the home page.
 - **Evidence image route.** `/api/receipts/image/[id]` is linked from evidence

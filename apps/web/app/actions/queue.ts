@@ -1,7 +1,7 @@
 'use server';
 
 import { headers } from 'next/headers';
-import { createDb } from '../../../../modules/finance/db/client';
+import { createDb, type FinanceDb } from '../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../modules/finance/core/reconciliation/gateway';
 import {
   applyCorrection,
@@ -30,11 +30,11 @@ function getDb() {
   return createDb();
 }
 
-function getGateway() {
+function getGateway(db: FinanceDb) {
   return gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     RECON_BACKEND: process.env.RECON_BACKEND as 'stub' | 'live' | undefined,
-  });
+  }, db);
 }
 
 export async function confirmItem(
@@ -42,12 +42,13 @@ export async function confirmItem(
   itemType: QueueItemType,
 ): Promise<{ removedItemId: string }> {
   await requireMutationToken();
+  const db = getDb();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
     { type: 'confirm' },
-    getGateway(),
-    getDb(),
+    getGateway(db),
+    db,
   );
 }
 
@@ -56,12 +57,13 @@ export async function dismissItem(
   itemType: QueueItemType,
 ): Promise<{ removedItemId: string }> {
   await requireMutationToken();
+  const db = getDb();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
     { type: 'dismiss' },
-    getGateway(),
-    getDb(),
+    getGateway(db),
+    db,
   );
 }
 
@@ -71,11 +73,12 @@ export async function correctItem(
   correction: CorrectionVariant,
 ): Promise<{ removedItemId: string }> {
   await requireMutationToken();
+  const db = getDb();
   return applyCorrection(
     SCOPE,
     { id: itemId, type: itemType, reason: '' },
     { type: 'correct', correction },
-    getGateway(),
-    getDb(),
+    getGateway(db),
+    db,
   );
 }

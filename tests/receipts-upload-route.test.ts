@@ -26,10 +26,14 @@ vi.mock('../modules/finance/db/client', () => ({
 vi.mock('../apps/web/lib/receipt-pipeline', () => ({
   buildReceiptPipelineDeps: vi.fn(() => ({})),
 }));
+vi.mock('../apps/web/lib/reconcile', () => ({
+  reconcileAfterWrite: vi.fn(async () => ({ householdId: 'demo', matched: 1, review: 0 })),
+}));
 
 // --- Imports after mocks are in place -----------------------------------------
 
 import { mkdir, writeFile } from 'node:fs/promises';
+import { reconcileAfterWrite } from '../apps/web/lib/reconcile';
 import { processReceipt } from '../modules/finance/core/receipts/process-receipt';
 import type { ProcessReceiptResult } from '../modules/finance/core/receipts/process-receipt';
 import type { ReceiptItemRecord, ReceiptRecord } from '../modules/finance/core/receipts/store/receipt-store';
@@ -116,6 +120,7 @@ describe('POST /api/receipts/upload', () => {
     mockProcess.mockReset();
     mockMkdir.mockReset();
     mockWriteFile.mockReset();
+    vi.mocked(reconcileAfterWrite).mockClear();
     mockProcess.mockResolvedValue(cannedResult());
     mockMkdir.mockResolvedValue(undefined);
     mockWriteFile.mockResolvedValue(undefined);
@@ -146,12 +151,21 @@ describe('POST /api/receipts/upload', () => {
 
   // -- Happy path ---
 
-  it('happy path: valid token + image/jpeg returns receipt items', async () => {
+  it('happy path: valid token + image/jpeg returns receipt items and reconciles the household', async () => {
     const res = await POST(makeRequest(new Uint8Array([10, 20, 30]), 'image/jpeg', VALID_TOKEN));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: ReceiptItemRecord[] };
+    const body = (await res.json()) as { items: ReceiptItemRecord[]; reconciliation: { matched: number } };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]!.rawDescription).toBe('KS AA BATTRY 48');
+    expect(vi.mocked(reconcileAfterWrite)).toHaveBeenCalledOnce();
+    expect(body.reconciliation.matched).toBe(1);
+  });
+
+  it('a duplicate upload changed nothing, so it does not reconcile', async () => {
+    mockProcess.mockResolvedValueOnce({ ...cannedResult(), idempotent: true });
+    const res = await POST(makeRequest(new Uint8Array([10, 20, 30]), 'image/jpeg', VALID_TOKEN));
+    expect(res.status).toBe(200);
+    expect(vi.mocked(reconcileAfterWrite)).not.toHaveBeenCalled();
   });
 
   it('delegates to H2 pipeline (processReceipt) — not a re-implementation', async () => {
@@ -173,11 +187,12 @@ describe('POST /api/receipts/upload', () => {
 
   // -- MIME gate (runs BEFORE bytes are read into memory) ---
 
-  it('returns 415 for text/html without calling processReceipt or storing', async () => {
+  it('returns 415 for text/html without calling processReceipt, storing, or reconciling', async () => {
     const res = await POST(makeRequest(new Uint8Array([1]), 'text/html', VALID_TOKEN));
     expect(res.status).toBe(415);
     expect(mockProcess).not.toHaveBeenCalled();
     expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(vi.mocked(reconcileAfterWrite)).not.toHaveBeenCalled();
   });
 
   it('returns 415 for application/zip without calling processReceipt', async () => {

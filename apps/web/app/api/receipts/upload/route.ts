@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
 import { buildReceiptPipelineDeps } from '../../../../lib/receipt-pipeline';
+import { reconcileAfterWrite } from '../../../../lib/reconcile';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
 import {
   DEFAULT_MAX_UPLOAD_BYTES,
@@ -106,5 +107,9 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'File too large' }, { status: 413 });
   }
 
-  return Response.json(outcome.result);
+  // A photographed receipt is only useful once it is matched to the bank line
+  // that paid for it: reconcile before answering (a duplicate upload changed
+  // nothing, so it skips the run).
+  const reconciliation = outcome.result.idempotent ? undefined : await reconcileAfterWrite(getDb(), DEMO_HOUSEHOLD_ID);
+  return Response.json({ ...outcome.result, reconciliation });
 }

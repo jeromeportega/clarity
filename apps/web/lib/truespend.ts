@@ -34,7 +34,7 @@ export async function fetchBreakdown(
   const gw = gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     RECON_BACKEND: resolveBackend(),
-  });
+  }, db);
   return assembleBreakdown(scope, gw, db, month);
 }
 

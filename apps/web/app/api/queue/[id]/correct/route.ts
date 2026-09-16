@@ -70,7 +70,7 @@ export async function POST(
   const gw = gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     RECON_BACKEND: process.env.RECON_BACKEND as 'stub' | 'live' | undefined,
-  });
+  }, db);
 
   try {
     const result = await applyCorrection(

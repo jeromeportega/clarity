@@ -62,6 +62,7 @@ const KNOWN_WRITE_ROUTES = [
   'POST /api/queue/[id]/correct',
   'POST /api/queue/[id]/dismiss',
   'POST /api/receipts/upload',
+  'POST /api/reconcile',
 ];
 
 const TEST_TOKEN = 'mutation-gate-test-secret-123';
