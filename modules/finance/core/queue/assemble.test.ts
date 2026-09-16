@@ -443,6 +443,18 @@ describe('assembleQueue', () => {
     expect(flaggedItem?.amountCents).toBe(5499);
   });
 
+  it('an unreadable-photo placeholder ("" store, 0 total) is described as unreadable, not as an arithmetic failure', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+
+    const placeholder = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: '', totalCents: 0 });
+    const arithmetic = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: 'COSTCO', totalCents: 1234 });
+
+    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    expect(items.find((i) => i.id === placeholder)?.reason).toBe('Flagged receipt: photo could not be read');
+    expect(items.find((i) => i.id === arithmetic)?.reason).toBe('Flagged receipt: arithmetic check failed (COSTCO)');
+  });
+
   it('ambiguous_match items do not carry amountCents (gateway has no amount)', async () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);

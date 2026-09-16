@@ -20,10 +20,11 @@ single-household loop is excellent.
 
 ## Phase 1 — Make it real for one household
 
-- **Persist uploads.** The upload route uses in-memory stub store/dictionary;
-  swap in the existing `LibSqlReceiptStore` / `LibSqlSkuDictionary` so
-  receipts, items, and learned SKUs survive the request. Fix the
-  unreadable-receipt insert (`store`/`purchasedAt`/`totalCents` are `NOT NULL`).
+- ~~**Persist uploads.**~~ Done: `apps/web/lib/receipt-pipeline.ts` wires the
+  libSQL store (household-scoped, conflict-safe) and dictionary; receipts,
+  items and learned SKUs survive the request and re-uploads are idempotent.
+  Unreadable receipts persist as flagged placeholders. Images still go to
+  `/tmp` — see the evidence-image item below.
 - **Reconcile at runtime.** Implement `DrizzleReconcileSource.load` and run
   `reconcile()` after every upload/ingest (or on demand), persisting via
   `DrizzleReconcileSink`. Make `RECON_BACKEND=live` the default; retire the

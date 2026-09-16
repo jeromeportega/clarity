@@ -23,7 +23,9 @@ function scoreReceiptBank(
   bank: BankLine,
   cfg: ReconcileConfig,
 ): { confidence: number; rationale: string } | null {
-  if (receipt.totalCents == null || !receipt.capturedAt) return null;
+  // No total, a placeholder total (an unreadable photo persists as 0 — never
+  // a real purchase), or no date ⇒ nothing to score against.
+  if (receipt.totalCents == null || receipt.totalCents === 0 || !receipt.capturedAt) return null;
   if (bank.direction !== 'debit') return null;
 
   const receiptAmt = receipt.totalCents;

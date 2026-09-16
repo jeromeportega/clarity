@@ -69,6 +69,23 @@ describe('matchReceipts — FR-3 / FR-4 shape', () => {
   });
 });
 
+// ── Placeholder receipts ──────────────────────────────────────────────────────
+
+describe('matchReceipts — unscorable receipts', () => {
+  it('never matches a 0-cent receipt (an unreadable photo persists as a 0-total placeholder)', () => {
+    const placeholder = receipt({ id: 'r-placeholder', merchant: '', totalCents: 0 });
+    const zeroBank = bankLine({ id: 'b-zero', amountCents: 0, normalizedMerchant: '' });
+    const realBank = bankLine({ id: 'b-real', amountCents: -1 });
+    expect(matchReceipts([zeroBank, realBank], [placeholder], DEFAULT_CONFIG)).toEqual([]);
+  });
+
+  it('never matches a receipt with no total or no date', () => {
+    const b = bankLine({ id: 'b1' });
+    expect(matchReceipts([b], [receipt({ id: 'r-no-total', totalCents: undefined })], DEFAULT_CONFIG)).toEqual([]);
+    expect(matchReceipts([b], [receipt({ id: 'r-no-date', capturedAt: undefined })], DEFAULT_CONFIG)).toEqual([]);
+  });
+});
+
 // ── Tip / adjustment tolerance ────────────────────────────────────────────────
 
 describe('matchReceipts — tip/adjustment tolerance', () => {

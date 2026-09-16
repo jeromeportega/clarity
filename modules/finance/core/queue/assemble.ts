@@ -109,10 +109,15 @@ export async function assembleQueue(
 
   for (const row of flaggedRows) {
     if (keep('flagged_receipt', row.id)) {
+      // An unreadable photo is persisted as a placeholder ('' store, 0 total)
+      // flagged for review; say so rather than blaming its arithmetic.
+      const placeholder = row.store === '' && row.totalCents === 0;
       items.push({
         id: row.id,
         type: 'flagged_receipt',
-        reason: `Flagged receipt: arithmetic check failed (${row.store})`,
+        reason: placeholder
+          ? 'Flagged receipt: photo could not be read'
+          : `Flagged receipt: arithmetic check failed (${row.store})`,
         amountCents: row.totalCents,
       });
     }
