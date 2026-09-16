@@ -74,6 +74,20 @@ export async function POST(request: Request): Promise<Response> {
 
   const bytes = new Uint8Array(await file.arrayBuffer());
 
+  // Keep the raw asset BEFORE anything is committed to the database, so a
+  // storage failure is a clean 500 with no half-recorded receipt. Uses a
+  // server-generated UUID filename (the client name is never a path) under
+  // /tmp — ephemeral on serverless; durable image storage is the next step.
+  const ext = MIME_EXT[mimeType] ?? '.bin';
+  const safeFilename = `${randomUUID()}${ext}`;
+  const dataDir = join('/tmp', 'receipts');
+  try {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(join(dataDir, safeFilename), bytes);
+  } catch {
+    return Response.json({ error: 'Storage failed' }, { status: 500 });
+  }
+
   let outcome: Awaited<ReturnType<typeof handleReceiptUpload>>;
   try {
     // Real persistence: receipt, line items and learned SKUs land in the DB.
@@ -90,19 +104,6 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     return Response.json({ error: 'File too large' }, { status: 413 });
-  }
-
-  // Persist the raw asset using a server-generated UUID filename.
-  // Uses /tmp which is writable in both local dev and serverless runtimes.
-  // The client-supplied file.name is intentionally never used as a path.
-  const ext = MIME_EXT[mimeType] ?? '.bin';
-  const safeFilename = `${randomUUID()}${ext}`;
-  const dataDir = join('/tmp', 'receipts');
-  try {
-    await mkdir(dataDir, { recursive: true });
-    await writeFile(join(dataDir, safeFilename), bytes);
-  } catch {
-    return Response.json({ error: 'Storage failed' }, { status: 500 });
   }
 
   return Response.json(outcome.result);

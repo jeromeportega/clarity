@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { normalizeSkuOrAbbrev, normalizeStore } from './normalize';
-import { schema, skuDictionary } from './schema';
+import { skuDictionary } from './schema';
 import type { DictionaryEntry, SkuDictionary } from './sku-dictionary';
 
 // Drizzle-ORM-over-libSQL/Turso implementation of SkuDictionary, reading and
@@ -10,7 +10,7 @@ import type { DictionaryEntry, SkuDictionary } from './sku-dictionary';
 export class LibSqlSkuDictionary implements SkuDictionary {
   // Any Drizzle-over-libSQL handle: only the table-level builder is used, so
   // the app's schema-less `FinanceDb` and a schema-typed test handle both fit.
-  constructor(private readonly db: LibSQLDatabase<Record<string, unknown>> | LibSQLDatabase<typeof schema>) {}
+  constructor(private readonly db: LibSQLDatabase<Record<string, unknown>>) {}
 
   async lookup(store: string, skuOrAbbrev: string): Promise<DictionaryEntry | null> {
     const rows = await this.db

@@ -24,6 +24,11 @@ export class StubReceiptStore implements ReceiptStore {
     this.householdId = opts.householdId;
   }
 
+  /** The household this store is scoped to (undefined = unscoped). */
+  get scopedHouseholdId(): string | undefined {
+    return this.householdId;
+  }
+
   async findReceiptByImageHash(hash: string): Promise<ReceiptRecord | null> {
     const found = this.receipts.find(
       (r) => r.imageHash === hash && (this.householdId === undefined || r.householdId === this.householdId),

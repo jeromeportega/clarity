@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { categories, receiptItems, receipts, schema } from './h1-schema';
+import { categories, receiptItems, receipts } from './h1-schema';
 import type {
   NewReceipt,
   NewReceiptItem,
@@ -36,14 +36,19 @@ export class LibSqlReceiptStore implements ReceiptStore {
 
   // Any Drizzle-over-libSQL handle works: only the table-level query builder is
   // used (never `db.query`), so the app's schema-less `FinanceDb` and a
-  // schema-typed test handle are both accepted.
+  // schema-typed test handle are both assignable to this parameter.
   constructor(
-    private readonly db: LibSQLDatabase<Record<string, unknown>> | LibSQLDatabase<typeof schema>,
+    private readonly db: LibSQLDatabase<Record<string, unknown>>,
     opts: LibSqlReceiptStoreOptions = {},
   ) {
     this.now = opts.clock ?? Date.now;
     this.newId = opts.id ?? randomUUID;
     this.householdId = opts.householdId;
+  }
+
+  /** The household this store is scoped to (undefined = unscoped). */
+  get scopedHouseholdId(): string | undefined {
+    return this.householdId;
   }
 
   async findReceiptByImageHash(hash: string): Promise<ReceiptRecord | null> {

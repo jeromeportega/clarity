@@ -17,6 +17,16 @@ vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The route's composition root opens a real database; this file tests the
+// HTTP contract only (processReceipt is mocked), so keep it fully offline —
+// no file DB under data/ may be created as a side effect.
+vi.mock('../modules/finance/db/client', () => ({
+  createDb: vi.fn(() => ({})),
+}));
+vi.mock('../apps/web/lib/receipt-pipeline', () => ({
+  buildReceiptPipelineDeps: vi.fn(() => ({})),
+}));
+
 // --- Imports after mocks are in place -----------------------------------------
 
 import { mkdir, writeFile } from 'node:fs/promises';
