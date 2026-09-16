@@ -1,7 +1,7 @@
 import { LibsqlError } from '@libsql/client';
 import { createDb } from '../../../../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
-import { applyCorrection } from '../../../../../../../modules/finance/core/corrections/apply';
+import { applyCorrection, CorrectionError } from '../../../../../../../modules/finance/core/corrections/apply';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
 import { VALID_ITEM_TYPES, isValidItemType } from '../_lib/validation';
 import { requireMutationToken } from '../../../../lib/auth/token';
@@ -42,6 +42,10 @@ export async function POST(
   } catch (err) {
     if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return new Response('Conflict: item already decided', { status: 409 });
+    }
+    // The decision cannot apply to this item (e.g. not in this household).
+    if (err instanceof CorrectionError) {
+      return Response.json({ error: err.code, message: err.message }, { status: 400 });
     }
     console.error('[queue/dismiss] applyCorrection failed', err);
     return new Response('Internal Server Error', { status: 500 });

@@ -147,7 +147,21 @@ I/O ports:
 
 …then anti-joins against `review_decisions` on `(household_id, item_type, item_id)`; a decided item disappears from the queue.
 
-`applyCorrection(scope, item, action, gateway, db)` (`corrections/apply.ts`) runs one transaction: insert a `review_decisions` row (`confirm | correct | dismiss`, with the correction serialized to `payload_json`); for `correct` with `variant: 'editResolution'`, upsert `sku_dictionary` with `source: 'human'` and confidences 1.0 (human always overwrites); then call `gateway.recomputeRollups` (currently a no-op in both backends).
+`applyCorrection(scope, item, action, gateway, db)` (`corrections/apply.ts`) runs **one transaction**: insert the terminal `review_decisions` row (`confirm | correct | dismiss`, correction serialized to `payload_json`) — written first, so a second decision on the same `(household, type, id)` trips `ux_review_decisions_item` and the routes turn that UNIQUE violation into a 409 — then apply the decision at its source, then call `gateway.recomputeRollups(scope, [item.id])` (a no-op in both backends: rollups are computed on read). Any failure rolls the whole thing back.
+
+What "apply at its source" means:
+
+| decision | `sku_resolution` | `flagged_receipt` | `ambiguous_match` | `unmatched_txn` |
+|---|---|---|---|---|
+| `confirm` | `needs_review = 0`, both confidences `1.0` | `receipts.needs_review = 0` | highest-confidence pending `matches` row → `manual`, its siblings → `rejected` | decision row only |
+| `dismiss` | `needs_review = 0` (confidences untouched) | `receipts.needs_review = 0` | decision row only | decision row only |
+| `correct / pickCategoryId` | `category_id`, `category_confidence = 1.0`, `needs_review = 0`, **and** a `source: 'human'` `sku_dictionary` upsert keyed by the receipt's store + `sku ?? raw_description` | — | — | — |
+| `correct / pickMatchCandidateId` | — | — | the named candidate → `manual`, other pending rows for that transaction → `rejected` | — |
+| `correct / editResolution` | `canonical_name`, `category_id`, both confidences `1.0`, `needs_review = 0`, **and** the human `sku_dictionary` upsert | — | — | — |
+
+So an item leaves the queue two ways at once: the `review_decisions` anti-join, and the `needs_review` flag the queue reads. A correction variant that is meaningless for the item type is refused, not silently logged.
+
+Every write is scoped to the household — `receipt_items` through `receipts.household_id`, `matches` through `transactions → accounts.household_id` — and a target outside it throws rather than updating nothing. Refusals are a `CorrectionError` with a stable `code` (`invalid_variant`, `unknown_category`, `not_found`, `candidate_mismatch`) that the three mutation routes map to **400** with the code in the JSON body. Categories arrive as anything `categoryIdFor` accepts (slug, display name, legacy name) and are stored as the slug id; an unrecognised one is `unknown_category`.
 
 ### 7. Read gateway, true spend, evidence — `core/reconciliation/`, `core/truespend/`, `core/evidence/`
 
@@ -254,10 +268,10 @@ Seams that exist and are tested but are not connected on the live HTTP path, or 
 - **Receipt images are not stored durably.** Uploads persist the receipt, its line items and learned SKUs (`apps/web/lib/receipt-pipeline.ts` wires `LibSqlReceiptStore` scoped to the household + `LibSqlSkuDictionary`), but the raw image still goes to `/tmp/receipts/<uuid>.<ext>` — ephemeral on serverless and referenced by no row — so the evidence view has no image to show yet.
 - **Reconciliation never runs at request time.** `reconcile()` has one non-test caller — the demo seed — over a hand-written literal. `DrizzleReconcileSource.load` throws. Uploads and ingests do not trigger matching.
 - **Imported digital receipts reach the review queue only.** `receipt_items` from the Costco adapter carry `category_id = NULL` until something classifies them, and true-spend inner-joins `categories`, so they are absent from rollups; the receipt↔bank matcher runs only inside `reconcile()` (seed-only, above); evidence links assume an image the import never has. Refund receipts (negative totals) are structurally unmatchable by the current matcher, which only considers bank debits. All of this is the Phase 1 wiring.
-- **Default read backend is the stub.** `RECON_BACKEND` defaults to `stub`, which serves hard-coded demo matches/rollups from `reconciliation/stub.ts`.
+- **Default read backend is the stub.** `RECON_BACKEND` defaults to `stub`, which serves hard-coded demo matches/rollups from `reconciliation/stub.ts`. True Spend totals therefore only move with a correction when `RECON_BACKEND=live`, where `getRollups` sums `receipt_items.category_id` on read.
 - **The review queue has no actions in the browser.** `app/page.tsx` renders `QueueView` without `renderActions`; `QueueItemActions` and `CorrectionDialog` are not mounted anywhere. Mutations are reachable only via the token-gated API routes (the server actions exist but cannot be invoked from a browser until session auth replaces the shared secret).
 - **Browser uploads are disabled.** `/receipts` renders `ReceiptDrop` with `enabled={false}` for the same reason; `POST /api/receipts/upload` remains available to token-holding scripts.
-- **Two of three correction variants are stored, not applied.** `pickCategoryId` and `pickMatchCandidateId` land in `review_decisions.payload_json` only; nothing updates `receipt_items.category_id` or `matches`, and `needs_review` is never cleared. Only `editResolution` produces a durable effect (the `sku_dictionary` upsert) — and the live upload path reads from the stub dictionary, so the next receipt does not benefit. The True Spend page's "totals reflect corrections" copy is not accurate for category corrections.
+- **What corrections teach doesn't reach the next upload.** All three variants now apply (see §6): `pickCategoryId` and `editResolution` write `receipt_items`, `pickMatchCandidateId` settles `matches`, and every decision clears the `needs_review` flag that raised it. What is still not wired is the *learning* half: both category variants upsert a `source: 'human'` `sku_dictionary` row, but `POST /api/receipts/upload` builds its bundle with `StubSkuDictionary` (see the first gap above), so the next receipt carrying that SKU is resolved against an empty in-memory dictionary and asks again. Corrections also do not re-run reconciliation, so promoting a match candidate does not re-derive anything downstream of `matches`.
 - **`recomputeRollups` is a no-op** in both gateways.
 - **Evidence image link is dead.** `resolveEvidence` builds `/api/receipts/image/<receiptId>`; that route does not exist.
 - **Classifier has no confidence signal**, so a misclassified item never reaches the queue; only low-confidence SKU resolutions and arithmetic failures do.

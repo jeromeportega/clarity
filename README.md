@@ -116,5 +116,6 @@ Without `TURSO_DATABASE_URL` the app falls back to a local file database under
 
 Working, well-tested core engine; the web app is still a thin surface over it
 and several seams are not yet wired on the live path (persistence of uploaded
-receipts, runtime reconciliation, applied corrections, user auth). The
+receipts, runtime reconciliation, the dictionary a correction teaches feeding
+the next upload, user auth). The
 [roadmap](docs/ROADMAP.md) tracks the path from demo to daily-use product.

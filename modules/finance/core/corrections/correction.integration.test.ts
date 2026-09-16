@@ -243,9 +243,141 @@ describe('anti-stub integration: POST /api/queue/[id]/correct (editResolution)',
     expect(decRows).toHaveLength(1);
     expect(decRows[0]!.decision).toBe('correct');
 
-    // (d) rollup propagation: route handler called recomputeRollups with [skuItemId]
+    // (d) the ITEM itself carries the human's answer — the correction applied,
+    //     not merely logged.
+    const itemRows = await db.select().from(receiptItems).where(
+      eq(receiptItems.id, skuItemId),
+    );
+    expect(itemRows[0]!.canonicalName).toBe('Kirkland Organic Olive Oil');
+    expect(itemRows[0]!.categoryId).toBe('groceries');
+    expect(itemRows[0]!.nameConfidence).toBe(1);
+    expect(itemRows[0]!.categoryConfidence).toBe(1);
+    expect(itemRows[0]!.needsReview).toBe(false);
+
+    // (e) rollup propagation: route handler called recomputeRollups with [skuItemId]
     expect(routeGw.recomputeRollupsCalls).toHaveLength(1);
     expect(routeGw.recomputeRollupsCalls[0]!.ids).toEqual([skuItemId]);
+  });
+});
+
+describe('anti-stub integration: POST /api/queue/[id]/correct (pickCategoryId)', () => {
+  let pickItemId: string;
+
+  beforeAll(async () => {
+    pickItemId = await seedReceiptItem(nextLineNo());
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
+  it('re-categorises the item, clears its flag, and teaches the dictionary', async () => {
+    const body = {
+      itemType: 'sku_resolution',
+      correction: { variant: 'pickCategoryId', categoryId: 'Health & Medical' },
+    };
+
+    const res = await postCorrect(makeRequest(body, 'correct'), makeContext(pickItemId));
+    expect(res.status).toBe(200);
+
+    const itemRows = await db.select().from(receiptItems).where(
+      eq(receiptItems.id, pickItemId),
+    );
+    expect(itemRows[0]!.categoryId).toBe('health-medical');
+    expect(itemRows[0]!.categoryConfidence).toBe(1);
+    expect(itemRows[0]!.needsReview).toBe(false);
+
+    // Learned for next time, under the receipt's store and the item's key.
+    const skuRows = await db.select().from(skuDictionary).where(
+      eq(skuDictionary.skuOrAbbrev, 'KS EVOO'),
+    );
+    expect(skuRows).toHaveLength(1);
+    expect(skuRows[0]!.store).toBe('COSTCO');
+    expect(skuRows[0]!.category).toBe('health-medical');
+    expect(skuRows[0]!.source).toBe('human');
+
+    // And it is gone from the queue.
+    const queueItems = await assembleQueue({ householdId: DEMO_HOUSEHOLD_ID }, new NullGateway(), db);
+    expect(queueItems.map((i) => i.id)).not.toContain(pickItemId);
+  });
+});
+
+describe('anti-stub integration: CorrectionError → 400 with the code in the body', () => {
+  beforeAll(() => {
+    vi.mocked(gatewayModule.gatewayFor).mockReturnValue(new NullGateway());
+  });
+
+  it('unknown category → 400 unknown_category, and the item is untouched', async () => {
+    const itemId = await seedReceiptItem(nextLineNo());
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'sku_resolution',
+          correction: { variant: 'pickCategoryId', categoryId: 'snacks' },
+        },
+        'correct',
+      ),
+      makeContext(itemId),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'unknown_category' });
+
+    const itemRows = await db.select().from(receiptItems).where(eq(receiptItems.id, itemId));
+    expect(itemRows[0]!.needsReview).toBe(true);
+    const decRows = await db.select().from(reviewDecisions).where(
+      eq(reviewDecisions.itemId, itemId),
+    );
+    expect(decRows).toHaveLength(0);
+  });
+
+  it('pickCategoryId on a non-sku item → 400 invalid_variant', async () => {
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'unmatched_txn',
+          correction: { variant: 'pickCategoryId', categoryId: 'groceries' },
+        },
+        'correct',
+      ),
+      makeContext(`txn-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_variant' });
+  });
+
+  it('unknown match candidate → 400 candidate_mismatch', async () => {
+    const res = await postCorrect(
+      makeRequest(
+        {
+          itemType: 'ambiguous_match',
+          correction: { variant: 'pickMatchCandidateId', candidateId: 'no-such-match' },
+        },
+        'correct',
+      ),
+      makeContext(`txn-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'candidate_mismatch' });
+  });
+
+  it('confirm on an item outside the household → 400 not_found', async () => {
+    const res = await postConfirm(
+      makeRequest({ itemType: 'sku_resolution' }, 'confirm'),
+      makeContext(`ri-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_found' });
+  });
+
+  it('dismiss on a receipt outside the household → 400 not_found', async () => {
+    const res = await postDismiss(
+      makeRequest({ itemType: 'flagged_receipt' }, 'dismiss'),
+      makeContext(`receipt-nonexistent-${randomUUID()}`),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'not_found' });
   });
 });
 
