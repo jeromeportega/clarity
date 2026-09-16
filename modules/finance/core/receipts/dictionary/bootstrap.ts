@@ -44,7 +44,7 @@ export const BOOTSTRAP_CATEGORY_CONFIDENCE = 0.5;
 export const DIGITAL_RECEIPT_SOURCES: readonly string[] = ['costco_digital'];
 
 /** In-memory dedupe separator; never appears in a normalised key. */
-const KEY_SEP = '';
+const KEY_SEP = '\u001f';
 
 const CHUNK = 100;
 
