@@ -51,9 +51,10 @@ single-household loop is excellent.
   `WarehouseReceiptDetail` export (item number, abbreviated description,
   **canonical product name**, department, price, instant savings, tender)
   imports into `receipts` / `receipt_items` via `POST /api/ingest/costco` or
-  the CLI. Follow-ups: bootstrap the SKU dictionary from these canonical
-  names (needs the category question settled — see Phase 2), and use the
-  same export as labeled ground truth for the vision eval.
+  the CLI. Every retailer-named line also teaches the SKU dictionary
+  (`learnFromDigitalReceipts`, after each import and via
+  `npm run dictionary:bootstrap`); the same export is the labeled ground truth
+  for the vision eval (`npm run costco:eval-set`).
 
 ## Phase 2 — Make the loop great
 
@@ -64,7 +65,12 @@ single-household loop is excellent.
 - **Per-receipt batch resolution.** Today each line item is one model call with
   no receipt context; resolve a whole receipt in one call with store, date,
   department numbers, and neighboring items as context. Cheaper and more accurate.
-- **Bootstrap the dictionary** from Costco canonical names.
+- ~~**Bootstrap the dictionary** from Costco canonical names.~~ Done: the item
+  number keys the retailer's name at confidence 1.0 with the household's own
+  category when a human has set one, else a low-confidence heuristic guess — so
+  a photographed Costco line resolves its name for free and asks the human for
+  the category once. Store keys are retailer-canonical (`COSTCO WHSE` /
+  `COSTCO WHOLESALE #1234` → `COSTCO`).
 - ~~**One taxonomy.**~~ Done (`db/taxonomy.ts`, migration 0005; a Household
   category and household-goods classifier rules added). Per-household
   taxonomies remain a later option.

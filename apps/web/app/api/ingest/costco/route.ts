@@ -10,6 +10,7 @@ import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope'
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
 import { reconcileAfterWrite } from '../../../../lib/reconcile';
+import { learnFromDigitalReceipts } from '../../../../../../modules/finance/core/receipts/dictionary/bootstrap';
 
 /**
  * POST /api/ingest/costco — multipart/form-data { file: File } where the file is
@@ -26,6 +27,18 @@ const adapters: SourceAdapter[] = [bankAdapter, amazonAdapter, costcoAdapter, re
 
 // A multi-year export is a few hundred KB; this only bounds memory before parsing.
 const MAX_BODY_BYTES = 25 * 1024 * 1024;
+
+type DictionaryOutcome = Awaited<ReturnType<typeof learnFromDigitalReceipts>> | { skipped: true } | { error: string };
+
+async function learnAfterImport(db: ReturnType<typeof createDb>, insertedReceipts: number): Promise<DictionaryOutcome> {
+  if (insertedReceipts === 0) return { skipped: true };
+  try {
+    return await learnFromDigitalReceipts(db, { householdId: DEMO_HOUSEHOLD_ID });
+  } catch (err) {
+    console.error('[ingest/costco] dictionary learning failed', err);
+    return { error: 'dictionary learning failed; the import is saved — npm run dictionary:bootstrap to retry' };
+  }
+}
 
 export async function POST(request: Request): Promise<Response> {
   const denied = requireMutationToken(request);
@@ -55,7 +68,11 @@ export async function POST(request: Request): Promise<Response> {
 
   const db = createDb();
   const result = await importSource(db, input, { householdId: DEMO_HOUSEHOLD_ID }, adapters);
+  // Every retailer-named line is a free answer for the photo path. The import
+  // is committed by now, so a failure here is reported next to it, not thrown
+  // away with it; a re-upload that landed nothing new has nothing to teach.
+  const dictionary = await learnAfterImport(db, result.inserted.receipts);
   // Imported rows are only useful once matched: reconcile before answering.
   const reconciliation = await reconcileAfterWrite(db, DEMO_HOUSEHOLD_ID);
-  return Response.json({ ...result, reconciled: !('error' in reconciliation), reconciliation });
+  return Response.json({ ...result, dictionary, reconciled: !('error' in reconciliation), reconciliation });
 }
