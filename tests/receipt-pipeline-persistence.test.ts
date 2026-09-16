@@ -22,6 +22,8 @@ import { buildReceiptPipelineDeps } from '../apps/web/lib/receipt-pipeline';
 import { skuDictionary } from '../modules/finance/core/receipts/dictionary/schema';
 import { imageHash } from '../modules/finance/core/receipts/image-hash';
 import type { Resolution, ResolutionQuery, SkuResolver } from '../modules/finance/core/receipts/resolver/sku-resolver';
+import { LibSqlReceiptStore } from '../modules/finance/core/receipts/store/libsql-receipt-store';
+import { StubReceiptStore } from '../modules/finance/core/receipts/store/stub-receipt-store';
 import { handleReceiptUpload } from '../modules/finance/core/receipts/upload';
 import type { ExtractedReceipt, VisionProvider } from '../modules/finance/core/receipts/vision/vision-provider';
 import { createTestDb, type FinanceDb } from '../modules/finance/db/client';
@@ -168,5 +170,16 @@ describe('receipt upload persistence (real libSQL store + dictionary)', () => {
     const other = await handleReceiptUpload(bytes, 'image/png', buildReceiptPipelineDeps(db, 'hh-2', { vision, llm, env: {} }));
     expect(other.ok && !other.result.idempotent).toBe(true);
     expect(await count('receipts')).toBe(2);
+  });
+
+  it('refuses an injected store scoped to a different household than the pipeline', () => {
+    const foreign = new LibSqlReceiptStore(db, { householdId: 'hh-2' });
+    expect(() => buildReceiptPipelineDeps(db, DEMO_HOUSEHOLD_ID, { store: foreign, env: {} }))
+      .toThrow(/scoped to household hh-2/);
+
+    // A store scoped to the same household, or one with no scope at all, is fine.
+    const same = new LibSqlReceiptStore(db, { householdId: DEMO_HOUSEHOLD_ID });
+    expect(() => buildReceiptPipelineDeps(db, DEMO_HOUSEHOLD_ID, { store: same, env: {} })).not.toThrow();
+    expect(() => buildReceiptPipelineDeps(db, DEMO_HOUSEHOLD_ID, { store: new StubReceiptStore(), env: {} })).not.toThrow();
   });
 });
