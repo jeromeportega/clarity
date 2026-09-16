@@ -110,7 +110,8 @@ Without `TURSO_DATABASE_URL` the app falls back to a local file database under
   extract, never an instruction to follow.
 - All amounts are integer cents end to end.
 - The public demo deployment serves a single seeded demo household in read-only
-  mode; mutations require a server-side token.
+  mode; a private deployment signs people in with Clerk, and scripts write with
+  a server-side token.
 
 ## Status
 
@@ -118,8 +119,9 @@ Working, well-tested core engine, and the live path now runs end to end for one
 household: uploaded and imported receipts persist, reconciliation runs after
 every ingest, upload and match decision (human decisions are inputs the engine
 honours), corrections apply at their source and teach the SKU dictionary, and
-digital Costco receipts seed that dictionary. Still ahead: user auth (the queue
-actions and uploads stay disabled in the browser until then), durable receipt
-images, and the queue UI that shows a decision's context. The
+digital Costco receipts seed that dictionary, and a signed-in person (Clerk)
+gets their own household with the queue actions and uploads live in the
+browser. Still ahead: durable receipt images and the queue UI that shows a
+decision's context. The
 [roadmap](docs/ROADMAP.md) tracks the path from demo to daily-use product;
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) lists what is not wired yet.

@@ -1,19 +1,22 @@
 // Explicit React import for vitest/esbuild compatibility (classic JSX transform).
 import React from 'react';
 
+import { resolveReadScope } from '../../lib/public-mode';
 import { ReceiptDrop } from '../components/receipts/ReceiptDrop';
 
-// Browser-initiated uploads have no legitimate auth path yet: the only write
-// credential is the server-side mutation token, which must never be sent to
-// the client. Uploads stay disabled in the UI until real sign-in exists; the
-// API route remains available to token-holding scripts.
-const UPLOADS_ENABLED = false;
+export const dynamic = 'force-dynamic';
 
-export default function ReceiptsPage() {
+// Browser uploads ride the session cookie: a signed-in person uploads into
+// their own household. The public demo (read-only scope) and a deployment
+// without sign-in keep uploads disabled in the UI; the API route remains
+// available to token-holding scripts.
+export default async function ReceiptsPage() {
+  const scope = await resolveReadScope();
+  const enabled = scope !== null && scope.readonly !== true;
   return (
     <main className="mx-auto max-w-xl px-4 py-12">
       <h1 className="mb-8 text-2xl font-semibold">Upload a Receipt</h1>
-      <ReceiptDrop enabled={UPLOADS_ENABLED} />
+      <ReceiptDrop enabled={enabled} />
     </main>
   );
 }

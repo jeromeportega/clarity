@@ -66,6 +66,8 @@ export interface CorrectionResult {
  * caller's fault, never a server fault — the HTTP routes map it to 400 and put
  * `code` in the body.
  *
+ *   invalid_item_type  — not one of the four queue item types (a decision
+ *                        about nothing is refused, never recorded)
  *   invalid_variant    — this variant is meaningless for this queue item type
  *   unknown_category   — the category is not in `db/taxonomy.ts`
  *   not_found          — the target row does not exist in this household
@@ -76,6 +78,7 @@ export interface CorrectionResult {
  *                        this item
  */
 export type CorrectionErrorCode =
+  | 'invalid_item_type'
   | 'invalid_variant'
   | 'unknown_category'
   | 'not_found'
@@ -296,6 +299,7 @@ function dictionaryKeyFor(row: ScopedReceiptItem): { store: string; skuOrAbbrev:
  */
 async function learnFromHuman(
   tx: CorrectionTx,
+  householdId: string,
   entry: {
     store: string;
     skuOrAbbrev: string;
@@ -313,18 +317,28 @@ async function learnFromHuman(
     source: 'human' as const,
     updatedAt: now,
   };
+  // The household's OWN dictionary: what its humans teach never reaches
+  // another household's photos.
   await tx
     .insert(skuDictionary)
     .values({
+      householdId,
       store: normalizeStore(entry.store),
       skuOrAbbrev: normalizeSkuOrAbbrev(entry.skuOrAbbrev),
       ...set,
     })
     .onConflictDoUpdate({
-      target: [skuDictionary.store, skuDictionary.skuOrAbbrev],
+      target: [skuDictionary.householdId, skuDictionary.store, skuDictionary.skuOrAbbrev],
       set,
     });
 }
+
+const QUEUE_ITEM_TYPES: ReadonlySet<string> = new Set<QueueItem['type']>([
+  'sku_resolution',
+  'ambiguous_match',
+  'unmatched_txn',
+  'flagged_receipt',
+]);
 
 function requireItemType(item: QueueItem, expected: QueueItem['type'], variant: string): void {
   if (item.type !== expected) {
@@ -429,6 +443,11 @@ async function applyCorrect(
   correction: CorrectionVariant,
 ): Promise<void> {
   switch (correction.variant) {
+    default:
+      throw new CorrectionError(
+        'invalid_variant',
+        `"${String((correction as { variant?: unknown }).variant)}" is not a correction variant`,
+      );
     case 'pickCategoryId': {
       requireItemType(item, 'sku_resolution', correction.variant);
       const row = await loadQueuedReceiptItem(tx, scope, item.id);
@@ -445,7 +464,7 @@ async function applyCorrect(
       // no canonical name at all there is nothing to teach: a raw shelf
       // abbreviation must never become a permanent "human" canonical name.
       if (row.canonicalName !== null) {
-        await learnFromHuman(tx, {
+        await learnFromHuman(tx, scope.householdId, {
           ...dictionaryKeyFor(row),
           canonicalName: row.canonicalName,
           category: categoryId,
@@ -495,7 +514,7 @@ async function applyCorrect(
 
       // Keyed by the item, so what is learned is exactly what the next
       // receipt carrying this line will look up.
-      await learnFromHuman(tx, {
+      await learnFromHuman(tx, scope.householdId, {
         ...dictionaryKeyFor(row),
         canonicalName: correction.canonicalName,
         category: categoryId,
@@ -537,6 +556,12 @@ export async function applyCorrection(
   gw: ReconciliationGateway,
   db: FinanceDb,
 ): Promise<CorrectionResult> {
+  // A decision about nothing is refused before anything is written: an
+  // unknown item type would otherwise fall through every ownership check.
+  if (!QUEUE_ITEM_TYPES.has(item.type)) {
+    throw new CorrectionError('invalid_item_type', `"${String(item.type)}" is not a queue item type`);
+  }
+
   const decisionId = randomUUID();
   const payloadJson = action.type === 'correct'
     ? JSON.stringify(action.correction)

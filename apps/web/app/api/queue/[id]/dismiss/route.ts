@@ -2,17 +2,16 @@ import { LibsqlError } from '@libsql/client';
 import { createDb } from '../../../../../../../modules/finance/db/client';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
 import { applyCorrection, CorrectionError } from '../../../../../../../modules/finance/core/corrections/apply';
-import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
 import { VALID_ITEM_TYPES, isValidItemType } from '../_lib/validation';
-import { requireMutationToken } from '../../../../lib/auth/token';
+import { requireWriter } from '../../../../lib/auth/writer';
 import { reconcileAfterWrite } from '../../../../../lib/reconcile';
 
 export async function POST(
   request: Request,
   context: { params: { id: string } | Promise<{ id: string }> },
 ): Promise<Response> {
-  const denied = requireMutationToken(request);
-  if (denied) return denied;
+  const writer = await requireWriter(request);
+  if (writer instanceof Response) return writer;
 
   const params = context.params instanceof Promise
     ? await context.params
@@ -29,7 +28,7 @@ export async function POST(
     return new Response('Bad Request: invalid itemType', { status: 400 });
   }
 
-  const scope = { householdId: DEMO_HOUSEHOLD_ID };
+  const scope = { householdId: writer.householdId };
   const item = { id: itemId, type: body.itemType as (typeof VALID_ITEM_TYPES)[number], reason: '' };
   const db = createDb();
   const gw = gatewayFor({

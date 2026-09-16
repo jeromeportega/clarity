@@ -1,12 +1,16 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FinanceDb } from '../../db/client';
-import { receiptItems, orderItems, transactions } from '../../db/schema';
+import { accounts, orderItems, orders, receiptItems, receipts, transactions } from '../../db/schema';
+import type { HouseholdScope } from '../scope';
 import type { BoundingBox, EvidenceResult } from './types';
 
 /**
- * Resolve the evidence source for a given item ID.
+ * Resolve the evidence source for a given item ID, within one household.
  *
- * Runs all three lookups in parallel, then returns the first match.
+ * Runs all three lookups in parallel, then returns the first match. Every
+ * lookup is scoped through the household — receipt items via their receipt,
+ * order items via their order, transactions via their account — so an id
+ * from another household is simply not found.
  * Returns a discriminated EvidenceRef, or { kind: 'not_found' } for unknown IDs.
  *
  * receipt_region evidence degrades gracefully: when receipt_items.bbox is NULL,
@@ -15,20 +19,24 @@ import type { BoundingBox, EvidenceResult } from './types';
 export async function resolveEvidence(
   itemId: string,
   db: FinanceDb,
+  scope: HouseholdScope,
 ): Promise<EvidenceResult> {
   const [riRows, oiRows, txRows] = await Promise.all([
     db
       .select({ receiptId: receiptItems.receiptId, bbox: receiptItems.bbox })
       .from(receiptItems)
-      .where(eq(receiptItems.id, itemId)),
+      .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+      .where(and(eq(receiptItems.id, itemId), eq(receipts.householdId, scope.householdId))),
     db
       .select({ orderId: orderItems.orderId })
       .from(orderItems)
-      .where(eq(orderItems.id, itemId)),
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(eq(orderItems.id, itemId), eq(orders.householdId, scope.householdId))),
     db
       .select({ id: transactions.id })
       .from(transactions)
-      .where(eq(transactions.id, itemId)),
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(and(eq(transactions.id, itemId), eq(accounts.householdId, scope.householdId))),
   ]);
 
   if (riRows.length > 0) {

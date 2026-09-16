@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import { requireMutationToken } from '../../lib/auth/token';
+import { requireWriter } from '../../lib/auth/writer';
 import { reconcileHousehold } from '../../../../../modules/finance/core/reconcile/run';
 import { createDb, type FinanceDb } from '../../../../../modules/finance/db/client';
 import { households } from '../../../../../modules/finance/db/schema';
@@ -28,8 +28,8 @@ function getDb(): FinanceDb {
  * comes from the caller, not the body.
  */
 export async function POST(request: Request): Promise<Response> {
-  const denied = requireMutationToken(request);
-  if (denied) return denied;
+  const writer = await requireWriter(request);
+  if (writer instanceof Response) return writer;
 
   let body: { householdId?: unknown };
   try {
@@ -41,6 +41,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'householdId is required' }, { status: 400 });
   }
 
+  // A signed-in person may only re-run their own household; the operator's
+  // token may name any household that exists.
+  if (writer.via === 'session' && body.householdId !== writer.householdId) {
+    return new Response('Forbidden', { status: 403 });
+  }
   const db = getDb();
   const known = await db.select({ id: households.id }).from(households).where(eq(households.id, body.householdId)).limit(1);
   if (!known[0]) {

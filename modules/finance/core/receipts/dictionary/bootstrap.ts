@@ -131,6 +131,7 @@ export async function learnFromDigitalReceipts(
         ) ?? 'other');
 
     rows.set(`${store}${KEY_SEP}${key}`, {
+      householdId: opts.householdId,
       store,
       skuOrAbbrev: key,
       canonicalName,
@@ -148,7 +149,7 @@ export async function learnFromDigitalReceipts(
       .insert(skuDictionary)
       .values(values.slice(i, i + CHUNK))
       .onConflictDoUpdate({
-        target: [skuDictionary.store, skuDictionary.skuOrAbbrev],
+        target: [skuDictionary.householdId, skuDictionary.store, skuDictionary.skuOrAbbrev],
         set: {
           canonicalName: sql`excluded.canonical_name`,
           category: sql`excluded.category`,
@@ -180,15 +181,15 @@ export async function renormalizeDictionaryKeys(db: Db): Promise<{ examined: num
   const all = await db.select().from(skuDictionary);
 
   // Group every row (moving or not) by the key it belongs under.
-  const groups = new Map<string, { store: string; skuOrAbbrev: string; rows: Row[] }>();
+  const groups = new Map<string, { householdId: string; store: string; skuOrAbbrev: string; rows: Row[] }>();
   let moving = 0;
   for (const row of all) {
     const store = normalizeStore(row.store);
     const skuOrAbbrev = normalizeSkuOrAbbrev(row.skuOrAbbrev);
     if (store === '' || skuOrAbbrev === '') continue;
     if (store !== row.store || skuOrAbbrev !== row.skuOrAbbrev) moving += 1;
-    const k = `${store}${KEY_SEP}${skuOrAbbrev}`;
-    const g = groups.get(k) ?? { store, skuOrAbbrev, rows: [] };
+    const k = `${row.householdId}${KEY_SEP}${store}${KEY_SEP}${skuOrAbbrev}`;
+    const g = groups.get(k) ?? { householdId: row.householdId, store, skuOrAbbrev, rows: [] };
     g.rows.push(row);
     groups.set(k, g);
   }
@@ -203,13 +204,22 @@ export async function renormalizeDictionaryKeys(db: Db): Promise<{ examined: num
       for (const r of movers) {
         await tx
           .delete(skuDictionary)
-          .where(and(eq(skuDictionary.store, r.store), eq(skuDictionary.skuOrAbbrev, r.skuOrAbbrev)));
+          .where(
+            and(
+              eq(skuDictionary.householdId, r.householdId),
+              eq(skuDictionary.store, r.store),
+              eq(skuDictionary.skuOrAbbrev, r.skuOrAbbrev),
+            ),
+          );
       }
-      const { store: _s, skuOrAbbrev: _k, ...fields } = winner;
+      const { householdId: _h, store: _s, skuOrAbbrev: _k, ...fields } = winner;
       await tx
         .insert(skuDictionary)
-        .values({ ...fields, store: g.store, skuOrAbbrev: g.skuOrAbbrev })
-        .onConflictDoUpdate({ target: [skuDictionary.store, skuDictionary.skuOrAbbrev], set: fields });
+        .values({ ...fields, householdId: g.householdId, store: g.store, skuOrAbbrev: g.skuOrAbbrev })
+        .onConflictDoUpdate({
+          target: [skuDictionary.householdId, skuDictionary.store, skuDictionary.skuOrAbbrev],
+          set: fields,
+        });
     }
   });
 

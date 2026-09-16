@@ -1,3 +1,4 @@
+import { resolveReadScope } from '../../../../../lib/public-mode';
 import { fetchEvidence } from '../../../../../lib/truespend';
 
 // Every API route serves live household data; never prerender.
@@ -7,9 +8,8 @@ export async function GET(
   _request: Request,
   context: { params: { itemId: string } | Promise<{ itemId: string }> },
 ): Promise<Response> {
-  if (!process.env.PUBLIC_DEMO_MODE) {
-    return new Response('Forbidden', { status: 403 });
-  }
+  const scope = await resolveReadScope();
+  if (!scope) return new Response('Forbidden', { status: 403 });
 
   const params = context.params instanceof Promise
     ? await context.params
@@ -20,7 +20,7 @@ export async function GET(
     return new Response('Bad Request', { status: 400 });
   }
 
-  const evidence = await fetchEvidence(itemId);
+  const evidence = await fetchEvidence(itemId, scope);
 
   if (evidence.kind === 'not_found') {
     return new Response('Not Found', { status: 404 });

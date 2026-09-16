@@ -50,6 +50,20 @@
       "when": 1789522586096,
       "tag": "0006_matches_anchor_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789532049358,
+      "tag": "0007_users_and_household_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789533302248,
+      "tag": "0008_sku_dictionary_per_household",
+      "breakpoints": true
     }
   ]
 }

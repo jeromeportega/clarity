@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { readScopeOrRedirect } from '../../../../lib/public-mode';
 import { fetchEvidence } from '../../../../lib/truespend';
 import type { EvidenceRef } from '../../../../../../modules/finance/core/evidence/types';
 
@@ -9,12 +10,10 @@ interface EvidencePageProps {
 }
 
 export default async function EvidencePage({ params }: EvidencePageProps) {
-  if (!process.env.PUBLIC_DEMO_MODE) {
-    notFound();
-  }
+  const scope = await readScopeOrRedirect();
 
   const { itemId } = params instanceof Promise ? await params : params;
-  const evidence = await fetchEvidence(itemId);
+  const evidence = await fetchEvidence(itemId, scope);
 
   if (evidence.kind === 'not_found') {
     notFound();

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
@@ -5,6 +6,12 @@ import { defineConfig } from 'vitest/config';
 // apps/web uses the `@/` alias (→ apps/web/), so tests that import route
 // handlers or pages must resolve it the same way Next does.
 const WEB_ALIAS = { '@': fileURLToPath(new URL('./apps/web', import.meta.url)) };
+
+// In a git worktree, node_modules is a symlink into the main checkout — outside
+// this project root — and Vite refuses to serve files from outside its allow
+// list. Resolve the real directory so inlined deps (see below) load anywhere.
+const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url));
+const NODE_MODULES = realpathSync(fileURLToPath(new URL('./node_modules', import.meta.url)));
 
 // Two projects:
 //   unit — the offline gate. Every co-located *.test.ts under modules/** and
@@ -19,9 +26,14 @@ export default defineConfig({
     projects: [
       {
         resolve: { alias: WEB_ALIAS },
+        server: { fs: { allow: [PROJECT_ROOT, NODE_MODULES] } },
         test: {
           name: 'unit',
           environment: 'node',
+          // @clerk/nextjs ships an ESM build with extensionless relative
+          // imports that bundlers resolve but Node's loader does not; let Vite
+          // transform it instead of handing it to Node as an external dep.
+          server: { deps: { inline: [/[\\/]@clerk[\\/]/] } },
           include: [
             'modules/**/*.{test,spec}.ts',
             'tests/**/*.{test,spec}.ts',

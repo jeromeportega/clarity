@@ -77,9 +77,13 @@ describe('receipts page never serializes the mutation token', () => {
     vi.unstubAllEnvs();
   });
 
-  it('rendered HTML contains neither the token nor a mutationToken prop', () => {
-    const html = renderToStaticMarkup(React.createElement(ReceiptsPage));
+  it('rendered HTML contains neither the token nor a mutationToken prop', async () => {
+    // The page is an async server component (it resolves the read scope);
+    // without sign-in configured and outside demo mode it renders uploads
+    // disabled — and, whatever it renders, never the secret.
+    const html = renderToStaticMarkup(await ReceiptsPage());
     expect(html).not.toContain(CANARY);
     expect(html).not.toMatch(/mutationToken/);
+    expect(html).toContain('Receipt uploads are temporarily disabled');
   });
 });

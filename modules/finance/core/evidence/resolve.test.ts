@@ -66,6 +66,8 @@ async function createEvidenceTestDb(): Promise<{ db: FinanceDb; cleanup: () => v
 // ---------------------------------------------------------------------------
 
 const HOUSEHOLD_ID = 'test-household-00000000-0000-0000-0000-000000000001';
+const SCOPE = { householdId: HOUSEHOLD_ID };
+const OTHER_SCOPE = { householdId: 'some-other-household' };
 
 async function seedHousehold(db: FinanceDb): Promise<void> {
   await db.insert(households).values({ id: HOUSEHOLD_ID, name: 'Test Household' });
@@ -124,7 +126,7 @@ describe('resolveEvidence', () => {
       bbox: JSON.stringify(bbox),
     });
 
-    const result = await resolveEvidence(itemId, db);
+    const result = await resolveEvidence(itemId, db, SCOPE);
 
     expect(result.kind).toBe('receipt_region');
     if (result.kind !== 'receipt_region') throw new Error('wrong kind');
@@ -152,7 +154,7 @@ describe('resolveEvidence', () => {
       // bbox deliberately omitted — NULL in DB
     });
 
-    const result = await resolveEvidence(itemId, db);
+    const result = await resolveEvidence(itemId, db, SCOPE);
 
     expect(result.kind).toBe('receipt_region');
     if (result.kind !== 'receipt_region') throw new Error('wrong kind');
@@ -187,7 +189,7 @@ describe('resolveEvidence', () => {
       sourceRowHash: 'test-hash-001',
     });
 
-    const result = await resolveEvidence(itemId, db);
+    const result = await resolveEvidence(itemId, db, SCOPE);
 
     expect(result.kind).toBe('amazon_order_row');
     if (result.kind !== 'amazon_order_row') throw new Error('wrong kind');
@@ -218,7 +220,7 @@ describe('resolveEvidence', () => {
       dedupKey: `dedup-${randomUUID()}`,
     });
 
-    const result = await resolveEvidence(txnId, db);
+    const result = await resolveEvidence(txnId, db, SCOPE);
 
     expect(result.kind).toBe('bank_line');
     if (result.kind !== 'bank_line') throw new Error('wrong kind');
@@ -230,7 +232,7 @@ describe('resolveEvidence', () => {
   // -------------------------------------------------------------------------
 
   it('unknown itemId: returns not_found without crashing', async () => {
-    const result = await resolveEvidence('nonexistent-id-xyz', db);
+    const result = await resolveEvidence('nonexistent-id-xyz', db, SCOPE);
 
     expect(result.kind).toBe('not_found');
     if (result.kind !== 'not_found') throw new Error('wrong kind');
@@ -238,7 +240,28 @@ describe('resolveEvidence', () => {
   });
 
   it('empty string itemId: returns not_found without crashing', async () => {
-    const result = await resolveEvidence('', db);
+    const result = await resolveEvidence('', db, SCOPE);
     expect(result.kind).toBe('not_found');
+  });
+
+  it('an item that belongs to another household is not found — evidence never crosses households', async () => {
+    const receiptId = randomUUID();
+    await seedReceipt(db, receiptId);
+    const riId = randomUUID();
+    await db.insert(receiptItems).values({
+      id: riId, receiptId, lineNo: 1, rawDescription: 'Organic Apples', quantity: 1, linePriceCents: -399, needsReview: false,
+    });
+    const acctId = randomUUID();
+    await db.insert(accounts).values({ id: acctId, householdId: HOUSEHOLD_ID, name: 'Checking' });
+    const txnId = randomUUID();
+    await db.insert(transactions).values({
+      id: txnId, accountId: acctId, postedDate: '2025-01-15', amountCents: -399, direction: 'debit',
+      normalizedMerchant: 'TEST STORE', sourceRowHash: `h-${txnId}`, dedupKey: `d-${txnId}`,
+    });
+
+    expect(await resolveEvidence(riId, db, OTHER_SCOPE)).toEqual({ kind: 'not_found', itemId: riId });
+    expect(await resolveEvidence(txnId, db, OTHER_SCOPE)).toEqual({ kind: 'not_found', itemId: txnId });
+    expect((await resolveEvidence(riId, db, SCOPE)).kind).toBe('receipt_region');
+    expect((await resolveEvidence(txnId, db, SCOPE)).kind).toBe('bank_line');
   });
 });

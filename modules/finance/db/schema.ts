@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -49,6 +50,36 @@ export const households = sqliteTable('households', {
   name: text('name').notNull(),
   createdAt: createdAt(),
 });
+
+/**
+ * users / household_members — who may act on a household. `users.id` is the
+ * identity provider's subject (Clerk user id); a person belongs to one or more
+ * households through `household_members`, and every read and write in the app
+ * resolves its household from that membership, never from the request.
+ */
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email'),
+  displayName: text('display_name'),
+  createdAt: createdAt(),
+});
+
+export const householdMembers = sqliteTable(
+  'household_members',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    role: text('role', { enum: ['owner', 'member'] }).notNull().default('member'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.householdId] }),
+  }),
+);
 
 export const accounts = sqliteTable('accounts', {
   id: text('id').primaryKey(),

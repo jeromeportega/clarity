@@ -1,10 +1,12 @@
-import { fetchQueue, resolveHouseholdScope } from '@/lib/queue';
+import { fetchQueue } from '@/lib/queue';
+import { readScopeOrRedirect } from '@/lib/public-mode';
+import { QueueActions } from './components/corrections/QueueActions';
 import { QueueView } from './components/queue/QueueView';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const scope = resolveHouseholdScope();
+  const scope = await readScopeOrRedirect();
   const items = await fetchQueue(scope);
 
   return (
@@ -13,8 +15,12 @@ export default async function Home() {
       <p className="mb-6 text-sm text-muted-foreground">
         Items needing judgment — low-confidence SKU resolutions, ambiguous matches,
         unmatched transactions, and flagged receipts.
+        {scope.readonly ? ' This is the public demo: decisions are disabled.' : ''}
       </p>
-      <QueueView items={items} />
+      <QueueView
+        items={items}
+        renderActions={scope.readonly ? undefined : (item) => <QueueActions item={item} />}
+      />
     </main>
   );
 }
