@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { categories, receiptItems, receipts, schema } from './h1-schema';
 import type {
@@ -12,42 +12,51 @@ import type {
 
 type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
 
+export interface LibSqlReceiptStoreOptions {
+  clock?: () => number;
+  id?: () => string;
+  /**
+   * Scope the idempotency lookup to one household. Two households may hold the
+   * same photo (the unique index is on (household_id, image_hash)); without a
+   * scope a lookup could return another household's receipt.
+   */
+  householdId?: string;
+}
+
 // Drizzle-ORM-over-libSQL/Turso implementation of ReceiptStore, reading and
-// writing H1's `receipts` / `receipt_items` / `categories` tables. Assumes the
-// schema already exists (H1's migrations, or `applyStubH1Schema` in tests).
+// writing the `receipts` / `receipt_items` / `categories` tables. Assumes the
+// schema already exists (the migrations, or `applyStubH1Schema` in tests).
 //
-// H1's ids are app-generated UUID text PKs and `created_at` is an ISO-8601 text
-// timestamp (ADR-001); the store generates both on insert.
+// Ids are app-generated UUID text PKs and `created_at` is an ISO-8601 text
+// timestamp; the store generates both on insert.
 export class LibSqlReceiptStore implements ReceiptStore {
   private readonly now: () => number;
   private readonly newId: () => string;
+  private readonly householdId: string | undefined;
 
+  // Any Drizzle-over-libSQL handle works: only the table-level query builder is
+  // used (never `db.query`), so the app's schema-less `FinanceDb` and a
+  // schema-typed test handle are both accepted.
   constructor(
-    private readonly db: LibSQLDatabase<typeof schema>,
-    opts: { clock?: () => number; id?: () => string } = {},
+    private readonly db: LibSQLDatabase<Record<string, unknown>> | LibSQLDatabase<typeof schema>,
+    opts: LibSqlReceiptStoreOptions = {},
   ) {
     this.now = opts.clock ?? Date.now;
     this.newId = opts.id ?? randomUUID;
+    this.householdId = opts.householdId;
   }
 
   async findReceiptByImageHash(hash: string): Promise<ReceiptRecord | null> {
-    const rows = await this.db
-      .select()
-      .from(receipts)
-      .where(eq(receipts.imageHash, hash))
-      .limit(1);
-    const row = rows[0];
-    return row ? toReceiptRecord(row) : null;
+    return this.findByHash(this.householdId, hash);
   }
 
   async insertReceipt(r: NewReceipt): Promise<ReceiptRecord> {
     const createdAt = new Date(this.now()).toISOString();
-    // H1/H2 contract reconciliation: H1 made `store`, `purchased_at` and
-    // `total_cents` NOT NULL, while the H2 application contract models them as
-    // nullable (the FR-6 unreadable-receipt path produces nulls — that path only
-    // ever targets the in-memory StubReceiptStore, never this real H1-backed
-    // store). A readable receipt always carries these, so we coerce the
-    // never-null-in-practice values to H1-acceptable defaults at the boundary.
+    // `store`, `purchased_at` and `total_cents` are NOT NULL in the table while
+    // the pipeline models them as nullable (the unreadable-receipt path produces
+    // nulls). Such a receipt is persisted as a placeholder — '' / '' / 0 — and
+    // is always flagged `needs_review` by the pipeline, so it surfaces in the
+    // queue rather than being lost.
     const rows = await this.db
       .insert(receipts)
       .values({
@@ -58,8 +67,18 @@ export class LibSqlReceiptStore implements ReceiptStore {
         totalCents: r.totalCents ?? 0,
         createdAt,
       })
+      // ux_receipts_household_hash: a concurrent insert of the same photo for
+      // the same household loses the race and gets the existing row back.
+      .onConflictDoNothing()
       .returning();
-    return toReceiptRecord(rows[0]);
+    const inserted = rows[0];
+    if (inserted) return toReceiptRecord(inserted);
+
+    const existing = await this.findByHash(r.householdId, r.imageHash);
+    if (!existing) {
+      throw new Error('receipt insert conflicted but the existing row could not be found');
+    }
+    return existing;
   }
 
   async insertReceiptItems(items: NewReceiptItem[]): Promise<ReceiptItemRecord[]> {
@@ -79,9 +98,18 @@ export class LibSqlReceiptStore implements ReceiptStore {
       .orderBy(sql`rowid`); // insertion order == seed order
     return rows.map((r) => r.id);
   }
+
+  private async findByHash(householdId: string | undefined, hash: string): Promise<ReceiptRecord | null> {
+    const where = householdId
+      ? and(eq(receipts.householdId, householdId), eq(receipts.imageHash, hash))
+      : eq(receipts.imageHash, hash);
+    const rows = await this.db.select().from(receipts).where(where).limit(1);
+    const row = rows[0];
+    return row ? toReceiptRecord(row) : null;
+  }
 }
 
-// Explicit row -> record mappers keep the H1-columns-only mapping visible and
+// Explicit row -> record mappers keep the columns-only mapping visible and
 // decouple the public records from Drizzle's inferred row types.
 function toReceiptRecord(row: Row<typeof receipts>): ReceiptRecord {
   return {
@@ -94,9 +122,9 @@ function toReceiptRecord(row: Row<typeof receipts>): ReceiptRecord {
     taxCents: row.taxCents,
     totalCents: row.totalCents,
     paymentLast4: row.paymentLast4,
-    // H1's `image_hash` column is nullable; the H2 idempotency contract treats
-    // it as required (every H2-written receipt carries the SHA-256 of its
-    // bytes), so a stored row always has a hash. Coerce the H1 nullability away.
+    // `image_hash` is nullable in the table; the pipeline's idempotency contract
+    // treats it as required (every pipeline-written receipt carries a hash), so
+    // a stored row always has one. Coerce the nullability away.
     imageHash: row.imageHash ?? '',
     needsReview: row.needsReview,
     createdAt: row.createdAt,

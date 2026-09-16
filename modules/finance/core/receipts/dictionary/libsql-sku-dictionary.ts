@@ -8,7 +8,9 @@ import type { DictionaryEntry, SkuDictionary } from './sku-dictionary';
 // writing H2's own `sku_dictionary` table. Assumes the table already exists
 // (`applySkuDictionarySchema` in tests).
 export class LibSqlSkuDictionary implements SkuDictionary {
-  constructor(private readonly db: LibSQLDatabase<typeof schema>) {}
+  // Any Drizzle-over-libSQL handle: only the table-level builder is used, so
+  // the app's schema-less `FinanceDb` and a schema-typed test handle both fit.
+  constructor(private readonly db: LibSQLDatabase<Record<string, unknown>> | LibSQLDatabase<typeof schema>) {}
 
   async lookup(store: string, skuOrAbbrev: string): Promise<DictionaryEntry | null> {
     const rows = await this.db

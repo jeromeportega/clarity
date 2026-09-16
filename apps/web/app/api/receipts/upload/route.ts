@@ -2,47 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import Anthropic from '@anthropic-ai/sdk';
-
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
+import { buildReceiptPipelineDeps } from '../../../../lib/receipt-pipeline';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
-import { StubSkuDictionary } from '../../../../../../modules/finance/core/receipts/dictionary/stub-sku-dictionary';
-import {
-  AnthropicSkuResolver,
-  LlmSkuResolver,
-} from '../../../../../../modules/finance/core/receipts/resolver/llm-resolver';
-import { RecordedSkuResolver } from '../../../../../../modules/finance/core/receipts/resolver/recorded-resolver';
-import { StubReceiptStore } from '../../../../../../modules/finance/core/receipts/store/stub-receipt-store';
-import { LiveAnthropicVisionProvider } from '../../../../../../modules/finance/core/receipts/vision/live-anthropic-vision-provider';
-import { RecordedVisionProvider } from '../../../../../../modules/finance/core/receipts/vision/recorded-vision-provider';
-import type { ReceiptPipelineDeps } from '../../../../../../modules/finance/core/receipts/process-receipt';
 import {
   DEFAULT_MAX_UPLOAD_BYTES,
   handleReceiptUpload,
   isAcceptedUploadMime,
 } from '../../../../../../modules/finance/core/receipts/upload';
+import { createDb, type FinanceDb } from '../../../../../../modules/finance/db/client';
 
-// Wire the H2 dependency bundle. Uses recorded (offline) seams when no
-// ANTHROPIC_API_KEY is present (dev/test); live providers when the key is set.
-function buildDeps(): ReceiptPipelineDeps {
-  const dictionary = new StubSkuDictionary();
-  const store = new StubReceiptStore();
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const client = apiKey ? new Anthropic({ apiKey }) : null;
-  const vision = client
-    ? new LiveAnthropicVisionProvider({ client })
-    : new RecordedVisionProvider();
-  const llmResolver = client ? new AnthropicSkuResolver({ client }) : new RecordedSkuResolver();
-  const resolver = new LlmSkuResolver({ dictionary, llm: llmResolver });
-  return {
-    vision,
-    resolver,
-    dictionary,
-    store,
-    householdId: DEMO_HOUSEHOLD_ID,
-    source: 'photo',
-  };
+// Module-level singleton — avoids opening a new connection per request.
+let _db: FinanceDb | undefined;
+function getDb(): FinanceDb {
+  _db ??= createDb();
+  return _db;
 }
 
 const MIME_EXT: Record<string, string> = {
@@ -101,7 +76,8 @@ export async function POST(request: Request): Promise<Response> {
 
   let outcome: Awaited<ReturnType<typeof handleReceiptUpload>>;
   try {
-    outcome = await handleReceiptUpload(bytes, mimeType, buildDeps());
+    // Real persistence: receipt, line items and learned SKUs land in the DB.
+    outcome = await handleReceiptUpload(bytes, mimeType, buildReceiptPipelineDeps(getDb(), DEMO_HOUSEHOLD_ID));
   } catch {
     return Response.json({ error: 'Processing failed' }, { status: 500 });
   }
