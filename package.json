@@ -20,7 +20,7 @@
     "dictionary:bootstrap": "tsx scripts/dictionary-bootstrap.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",

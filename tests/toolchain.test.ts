@@ -101,3 +101,23 @@ describe('.gitignore (FR-4)', () => {
     expect(addCommits[addCommits.length - 1]).toBe(rootCommit);
   });
 });
+
+// The AI SDK (`ai`) needs Node 22+. CI and the declared engines must not fall
+// behind the runtime the code actually requires, or the gate would test on a
+// Node the app cannot run on.
+describe('Node version floor follows the AI SDK', () => {
+  const required = 22;
+
+  it('package.json engines requires at least the SDK minimum', () => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { engines?: { node?: string } };
+    const floor = Number(/>=\s*(\d+)/.exec(pkg.engines?.node ?? '')?.[1]);
+    expect(floor).toBeGreaterThanOrEqual(required);
+  });
+
+  it('the CI workflow runs on at least that Node', () => {
+    const workflow = readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+    const versions = [...workflow.matchAll(/node-version:\s*['"]?(\d+)/g)].map((m) => Number(m[1]));
+    expect(versions.length).toBeGreaterThan(0);
+    for (const v of versions) expect(v).toBeGreaterThanOrEqual(required);
+  });
+});
