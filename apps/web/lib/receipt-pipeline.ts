@@ -44,7 +44,7 @@ export function buildReceiptPipelineDeps(
 
   const vision = overrides.vision ?? (client ? new LiveAnthropicVisionProvider({ client }) : new RecordedVisionProvider());
   const llm = overrides.llm ?? (client ? new AnthropicSkuResolver({ client }) : new RecordedSkuResolver());
-  const dictionary = overrides.dictionary ?? new LibSqlSkuDictionary(db);
+  const dictionary = overrides.dictionary ?? new LibSqlSkuDictionary(db, { householdId });
   const store = overrides.store ?? new LibSqlReceiptStore(db, { householdId });
   // Invariant: the store's idempotency scope and the household stamped on
   // every row must agree, or one household's photo could be filed under

@@ -5,12 +5,24 @@ import { skuDictionary } from './schema';
 import type { DictionaryEntry, SkuDictionary } from './sku-dictionary';
 
 // Drizzle-ORM-over-libSQL/Turso implementation of SkuDictionary, reading and
-// writing H2's own `sku_dictionary` table. Assumes the table already exists
-// (`applySkuDictionarySchema` in tests).
+// writing H2's own `sku_dictionary` table for ONE household. Assumes the table
+// already exists (`applySkuDictionarySchema` in tests).
 export class LibSqlSkuDictionary implements SkuDictionary {
+  private readonly householdId: string;
+
   // Any Drizzle-over-libSQL handle: only the table-level builder is used, so
   // the app's schema-less `FinanceDb` and a schema-typed test handle both fit.
-  constructor(private readonly db: LibSQLDatabase<Record<string, unknown>>) {}
+  constructor(
+    private readonly db: LibSQLDatabase<Record<string, unknown>>,
+    opts: { householdId: string },
+  ) {
+    this.householdId = opts.householdId;
+  }
+
+  /** The household every lookup and write is scoped to. */
+  get scopedHouseholdId(): string {
+    return this.householdId;
+  }
 
   async lookup(store: string, skuOrAbbrev: string): Promise<DictionaryEntry | null> {
     const rows = await this.db
@@ -18,6 +30,7 @@ export class LibSqlSkuDictionary implements SkuDictionary {
       .from(skuDictionary)
       .where(
         and(
+          eq(skuDictionary.householdId, this.householdId),
           eq(skuDictionary.store, normalizeStore(store)),
           eq(skuDictionary.skuOrAbbrev, normalizeSkuOrAbbrev(skuOrAbbrev)),
         ),
@@ -29,6 +42,7 @@ export class LibSqlSkuDictionary implements SkuDictionary {
 
   async upsert(entry: DictionaryEntry): Promise<void> {
     const row = {
+      householdId: this.householdId,
       store: normalizeStore(entry.store),
       skuOrAbbrev: normalizeSkuOrAbbrev(entry.skuOrAbbrev),
       canonicalName: entry.canonicalName,
@@ -45,7 +59,7 @@ export class LibSqlSkuDictionary implements SkuDictionary {
       .insert(skuDictionary)
       .values(row)
       .onConflictDoUpdate({
-        target: [skuDictionary.store, skuDictionary.skuOrAbbrev],
+        target: [skuDictionary.householdId, skuDictionary.store, skuDictionary.skuOrAbbrev],
         set: {
           canonicalName: row.canonicalName,
           category: row.category,

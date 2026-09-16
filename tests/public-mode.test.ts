@@ -21,6 +21,7 @@ import { DEMO_HOUSEHOLD_ID } from '../modules/finance/core/scope';
 function configureClerk(): void {
   vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_x');
   vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_x');
+  vi.stubEnv('CLARITY_OPERATOR_EMAILS', 'Sam@Example.com, other@example.com');
 }
 
 describe('resolveReadScope', () => {
@@ -35,7 +36,7 @@ describe('resolveReadScope', () => {
   });
 
   describe('PUBLIC_DEMO_MODE=1', () => {
-    it('returns DEMO_HOUSEHOLD_ID, read-only, without consulting the identity provider', async () => {
+    it('returns DEMO_HOUSEHOLD_ID, read-only, without consulting the identity provider — Clerk keys are ignored', async () => {
       vi.stubEnv('PUBLIC_DEMO_MODE', '1');
       configureClerk();
       clerk.auth.mockResolvedValue({ userId: 'user_1' });
@@ -43,6 +44,8 @@ describe('resolveReadScope', () => {
       const scope = await resolveReadScope();
       expect(scope).toEqual({ householdId: DEMO_HOUSEHOLD_ID, readonly: true });
       expect(clerk.auth).not.toHaveBeenCalled();
+      expect(isClerkConfigured()).toBe(false);
+      expect(await getPrincipal()).toBeNull();
     });
   });
 
@@ -63,7 +66,27 @@ describe('resolveReadScope', () => {
 
       const scope = await resolveReadScope();
       expect(scope).toEqual({ householdId: 'hh-mine' });
-      expect(membership.resolveMembership).toHaveBeenCalledWith({}, { userId: 'user_1', email: 'sam@example.com', displayName: 'Sam' });
+      // Allowlisted (case-insensitively), so a first sign-in may be provisioned.
+      expect(membership.resolveMembership).toHaveBeenCalledWith({}, { userId: 'user_1', email: 'sam@example.com', displayName: 'Sam' }, { provision: true });
+    });
+
+    it('a stranger may sign in but is not provisioned: no household, no scope', async () => {
+      clerk.auth.mockResolvedValue({ userId: 'user_2' });
+      clerk.currentUser.mockResolvedValue({ primaryEmailAddress: { emailAddress: 'stranger@example.com' }, emailAddresses: [], fullName: null, firstName: null });
+      membership.resolveMembership.mockResolvedValue(null);
+
+      expect(await resolveReadScope()).toBeNull();
+      expect(membership.resolveMembership).toHaveBeenCalledWith({}, expect.objectContaining({ userId: 'user_2' }), { provision: false });
+    });
+
+    it('with no operator allowlist at all, nobody is provisioned', async () => {
+      vi.stubEnv('CLARITY_OPERATOR_EMAILS', '');
+      clerk.auth.mockResolvedValue({ userId: 'user_1' });
+      clerk.currentUser.mockResolvedValue({ primaryEmailAddress: { emailAddress: 'sam@example.com' }, emailAddresses: [], fullName: 'Sam', firstName: 'Sam' });
+      membership.resolveMembership.mockResolvedValue(null);
+
+      expect(await resolveReadScope()).toBeNull();
+      expect(membership.resolveMembership).toHaveBeenCalledWith({}, expect.anything(), { provision: false });
     });
 
     it('nobody signed in → null (the caller redirects or answers 403)', async () => {

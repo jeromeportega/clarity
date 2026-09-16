@@ -24,7 +24,7 @@ export async function SiteNav() {
           <Link href="/receipts" className="text-muted-foreground hover:text-foreground">Receipts</Link>
         </nav>
         <div className="flex items-center gap-3 text-sm">
-          {demo && !principal && (
+          {demo && (
             <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">public demo · read-only</span>
           )}
           {principal ? (

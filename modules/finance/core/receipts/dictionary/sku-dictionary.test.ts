@@ -43,7 +43,7 @@ interface Harness {
 const factories: ReadonlyArray<readonly [string, () => Promise<Harness>]> = [
   [
     'StubSkuDictionary',
-    async () => ({ dict: new StubSkuDictionary(), cleanup: () => {} }),
+    async () => ({ dict: new StubSkuDictionary({ householdId: 'hh-test' }), cleanup: () => {} }),
   ],
   [
     'LibSqlSkuDictionary',
@@ -51,7 +51,7 @@ const factories: ReadonlyArray<readonly [string, () => Promise<Harness>]> = [
       const client = createClient({ url: ':memory:' });
       await applySkuDictionarySchema(client);
       const db = drizzle(client, { schema });
-      return { dict: new LibSqlSkuDictionary(db), cleanup: () => client.close() };
+      return { dict: new LibSqlSkuDictionary(db, { householdId: 'hh-test' }), cleanup: () => client.close() };
     },
   ],
 ];
@@ -183,11 +183,11 @@ describe.each(factories)('SkuDictionary contract — %s', (_name, make) => {
 
 describe('SkuDictionary — stub and libSQL are behaviorally interchangeable', () => {
   it('produce identical observable entries for the same upsert -> lookup', async () => {
-    const stub = new StubSkuDictionary();
+    const stub = new StubSkuDictionary({ householdId: 'hh-test' });
 
     const client = createClient({ url: ':memory:' });
     await applySkuDictionarySchema(client);
-    const libsql = new LibSqlSkuDictionary(drizzle(client, { schema }));
+    const libsql = new LibSqlSkuDictionary(drizzle(client, { schema }), { householdId: 'hh-test' });
 
     const entry = sampleEntry({ store: '  costco ', skuOrAbbrev: ' ks-evoo ' });
     await stub.upsert(entry);
@@ -206,5 +206,25 @@ describe('SkuDictionary — stub and libSQL are behaviorally interchangeable', (
 describe('confidence threshold default (plumbing only)', () => {
   it('ReceiptConfig.confidenceThreshold defaults to 0.80', () => {
     expect(DEFAULT_RECEIPT_CONFIG.confidenceThreshold).toBe(0.8);
+  });
+});
+
+describe('LibSqlSkuDictionary — one household cannot see another', () => {
+  it('an entry learned by one household is invisible to the next, and each keeps its own row for the same key', async () => {
+    const client = createClient({ url: ':memory:' });
+    await applySkuDictionarySchema(client);
+    const db = drizzle(client, { schema });
+    const a = new LibSqlSkuDictionary(db, { householdId: 'hh-a' });
+    const b = new LibSqlSkuDictionary(db, { householdId: 'hh-b' });
+    try {
+      await a.upsert(sampleEntry({ canonicalName: 'What A learned', source: 'human' }));
+      expect(await b.lookup('COSTCO', 'KS-EVOO')).toBeNull();
+
+      await b.upsert(sampleEntry({ canonicalName: 'What B learned', source: 'human' }));
+      expect((await a.lookup('COSTCO', 'KS-EVOO'))!.canonicalName).toBe('What A learned');
+      expect((await b.lookup('COSTCO', 'KS-EVOO'))!.canonicalName).toBe('What B learned');
+    } finally {
+      client.close();
+    }
   });
 });

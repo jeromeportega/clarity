@@ -1,15 +1,12 @@
-import { redirect } from 'next/navigation';
-
 import { fetchQueue } from '@/lib/queue';
-import { resolveReadScope } from '@/lib/public-mode';
+import { readScopeOrRedirect } from '@/lib/public-mode';
 import { QueueActions } from './components/corrections/QueueActions';
 import { QueueView } from './components/queue/QueueView';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const scope = await resolveReadScope();
-  if (!scope) redirect('/sign-in');
+  const scope = await readScopeOrRedirect();
   const items = await fetchQueue(scope);
 
   return (

@@ -93,17 +93,17 @@ describe('migration 0005_taxonomy_unification', () => {
       INSERT INTO receipt_items (id, receipt_id, line_no, raw_description, quantity, line_price_cents, category_id) VALUES ('i2', 'r1', 2, 'B', 1, 25, 'uuid-groceries');
       INSERT INTO receipt_items (id, receipt_id, line_no, raw_description, quantity, line_price_cents, category_id) VALUES ('i3', 'r1', 3, 'C', 1, 25, 'uuid-health');
       INSERT INTO receipt_items (id, receipt_id, line_no, raw_description, quantity, line_price_cents, category_id) VALUES ('i4', 'r1', 4, 'D', 1, 0, NULL);
-      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
-        VALUES ('COSTCO', 'X', 'Thing', 'transport', 1, 1, 'auto', 0);
-      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
-        VALUES ('COSTCO', 'Y', 'Thing 2', 'Health & Medical', 1, 1, 'human', 0);
-      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
-        VALUES ('COSTCO', 'Z', 'Thing 3', 'groceries', 1, 1, 'auto', 0);
+      INSERT INTO sku_dictionary (household_id, store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('hh', 'COSTCO', 'X', 'Thing', 'transport', 1, 1, 'auto', 0);
+      INSERT INTO sku_dictionary (household_id, store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('hh', 'COSTCO', 'Y', 'Thing 2', 'Health & Medical', 1, 1, 'human', 0);
+      INSERT INTO sku_dictionary (household_id, store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('hh', 'COSTCO', 'Z', 'Thing 3', 'groceries', 1, 1, 'auto', 0);
       -- Auto write-backs stored whatever listCategories() returned: the legacy random ids.
-      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
-        VALUES ('COSTCO', 'W', 'Thing 4', 'uuid-transport', 1, 1, 'auto', 0);
-      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
-        VALUES ('COSTCO', 'V', 'Thing 5', 'uuid-health', 1, 1, 'auto', 0);
+      INSERT INTO sku_dictionary (household_id, store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('hh', 'COSTCO', 'W', 'Thing 4', 'uuid-transport', 1, 1, 'auto', 0);
+      INSERT INTO sku_dictionary (household_id, store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('hh', 'COSTCO', 'V', 'Thing 5', 'uuid-health', 1, 1, 'auto', 0);
     `);
 
     await apply(client, migrationFiles().find((f) => f.includes('0005_'))!);

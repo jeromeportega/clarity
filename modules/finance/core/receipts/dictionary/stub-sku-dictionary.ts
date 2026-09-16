@@ -6,6 +6,13 @@ import type { DictionaryEntry, SkuDictionary } from './sku-dictionary';
 // keys are normalized internally and upsert enforces human-wins precedence only.
 export class StubSkuDictionary implements SkuDictionary {
   private readonly rows = new Map<string, DictionaryEntry>();
+  readonly scopedHouseholdId: string;
+
+  // One instance is one household's dictionary; the id is kept for parity with
+  // the libSQL implementation (composition roots check the two agree).
+  constructor(opts: { householdId?: string } = {}) {
+    this.scopedHouseholdId = opts.householdId ?? 'stub-household';
+  }
 
   async lookup(store: string, skuOrAbbrev: string): Promise<DictionaryEntry | null> {
     const found = this.rows.get(keyOf(store, skuOrAbbrev));
