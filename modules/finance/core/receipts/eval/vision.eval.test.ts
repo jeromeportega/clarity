@@ -12,12 +12,15 @@ import {
   MIN_EVAL_RECEIPTS,
   discoverReceipts,
   evalKeyPresent,
+  evalTimeoutMs,
   expectedPathFor,
   gradeReceipt,
   meetsThreshold,
   mimeTypeForFile,
   resolveEvalDir,
+  resolveEvalLimit,
   resolveEvalRatio,
+  sampleEvenly,
   type ExpectedReceipt,
   type GradedItem,
 } from './harness';
@@ -48,7 +51,14 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
   let deps: ReceiptPipelineDeps;
   const dir = resolveEvalDir();
   const ratio = resolveEvalRatio();
-  const receiptFiles = RUN ? discoverReceipts(dir) : [];
+  const limit = resolveEvalLimit();
+  // An evenly spaced sample when capped, so a smoke run spans the whole period.
+  const receiptFiles = RUN ? sampleEvenly(discoverReceipts(dir), limit) : [];
+  const expectedLineItems = receiptFiles.reduce((n, file) => {
+    const expected = JSON.parse(readFileSync(expectedPathFor(file), 'utf8')) as ExpectedReceipt;
+    return n + expected.items.length;
+  }, 0);
+  const timeoutMs = evalTimeoutMs(receiptFiles.length, expectedLineItems);
 
   beforeAll(() => {
     const client = new Anthropic(); // reads ANTHROPIC_API_KEY; guarded by RUN
@@ -68,6 +78,7 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
 
       let correct = 0;
       let total = 0;
+      const perReceipt: string[] = [];
       for (const file of receiptFiles) {
         const input: ReceiptImageInput = {
           bytes: new Uint8Array(readFileSync(file)),
@@ -85,7 +96,13 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         const score = gradeReceipt(graded, expected.items, ratio);
         correct += score.correct;
         total += score.total;
+        const totalOk = out.receipt.totalCents === expected.totalCents ? 'total ok' : `total ${out.receipt.totalCents} vs ${expected.totalCents}`;
+        // Filenames embed the full transaction id; print only its tail.
+        const label = (file.split('/').pop() ?? file).replace(/(\d{6})\d{8,}/, '…$1');
+        perReceipt.push(`${label}: ${score.correct}/${score.total} items, ${totalOk}${out.status === 'ok' ? '' : ` [${out.status}]`}`);
       }
+      // Per-receipt diagnostics for the operator; the assertion stays a single threshold.
+      console.log(`vision:eval — ${correct}/${total} line items resolved (${((100 * correct) / Math.max(total, 1)).toFixed(1)}%)\n${perReceipt.join('\n')}`);
 
       // A single threshold assertion over the whole sample — never per-item.
       expect(total).toBeGreaterThan(0);
@@ -94,6 +111,6 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         `correctly resolved ${correct}/${total} line items (need ≥${EVAL_PASS_FRACTION})`,
       ).toBe(true);
     },
-    180_000,
+    timeoutMs,
   );
 });

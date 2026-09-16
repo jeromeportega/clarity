@@ -170,7 +170,7 @@
   },
   {
     "channel": "warehouse",
-    "documentType": "WarehouseReceiptDetail",
+    "documentType": "FuelReceipts",
     "instantSavings": 0,
     "itemArray": [
       {

@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_RECEIPT_CONFIG } from '../config';
-import { isCorrectlyResolved } from '../resolver/similarity';
+import { isCorrectlyResolved, similarityRatio } from '../resolver/similarity';
 import type { Resolution } from '../resolver/sku-resolver';
 import { isSupportedMimeType, type SupportedMimeType } from '../vision/vision-provider';
 
@@ -31,11 +31,14 @@ export const DEFAULT_EVAL_DIR = join(
   'eval',
 );
 
-// The expected record sitting beside each receipt file (epic contract §9).
+// The expected record sitting beside each receipt file. `category` may be null
+// when the ground truth carries no category (e.g. a retailer's own digital
+// receipt export, which names products but does not classify them); such items
+// are graded on the canonical name alone.
 export interface ExpectedItem {
   sku: string | null;
   name: string;
-  category: string;
+  category: string | null;
 }
 export interface ExpectedReceipt {
   store: string | null;
@@ -113,36 +116,77 @@ function asResolution(item: GradedItem): Resolution {
   };
 }
 
-// Match an expected item to a resolved one: prefer an exact SKU match (order is
-// not guaranteed when SKUs are present), else fall back to positional order.
-function pickActual(actual: GradedItem[], expected: ExpectedItem, index: number): GradedItem | undefined {
+// Match an expected item to a not-yet-claimed resolved one: an exact SKU match
+// wins; otherwise the unclaimed item whose canonical name is most similar.
+// Never positional — the extracted list may carry rows the reference does not
+// (a separate instant-savings line, a fee line the ground truth excludes), and
+// a positional fallback would shift every later match by one.
+function pickActual(actual: GradedItem[], claimed: Set<number>, expected: ExpectedItem): number | undefined {
   if (expected.sku) {
-    const bySku = actual.find((a) => a.sku !== null && a.sku === expected.sku);
-    if (bySku) return bySku;
+    const bySku = actual.findIndex((a, i) => !claimed.has(i) && a.sku !== null && a.sku === expected.sku);
+    if (bySku >= 0) return bySku;
   }
-  return actual[index];
+  let best: number | undefined;
+  let bestScore = -1;
+  actual.forEach((a, i) => {
+    if (claimed.has(i)) return;
+    const score = similarityRatio(a.canonicalName ?? '', expected.name);
+    if (score > bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  });
+  return best;
 }
 
 // Count how many EXPECTED items were correctly resolved (canonical-name Dice
-// ratio >= `ratio` AND exact category equality, via `isCorrectlyResolved`). The
-// denominator is the expected count, so a missed/extra actual item lowers the
-// score rather than being silently ignored.
+// ratio >= `ratio` AND exact category equality, via `isCorrectlyResolved`; when
+// the expected category is null, the name alone decides). Each actual item can
+// satisfy at most one expected item. The denominator is the expected count, so
+// a missed/extra actual item lowers the score rather than being silently ignored.
 export function gradeReceipt(
   actual: GradedItem[],
   expected: ExpectedItem[],
   ratio: number,
 ): { correct: number; total: number } {
   let correct = 0;
-  for (let i = 0; i < expected.length; i++) {
-    const match = pickActual(actual, expected[i], i);
-    if (
-      match &&
-      isCorrectlyResolved(asResolution(match), { name: expected[i].name, category: expected[i].category }, ratio)
-    ) {
+  const claimed = new Set<number>();
+  for (const exp of expected) {
+    const idx = pickActual(actual, claimed, exp);
+    if (idx === undefined) continue;
+    claimed.add(idx);
+    if (isCorrectlyResolved(asResolution(actual[idx]!), { name: exp.name, category: exp.category }, ratio)) {
       correct++;
     }
   }
   return { correct, total: expected.length };
+}
+
+// Optional cap on how many receipts a live run grades (RECEIPT_EVAL_LIMIT), for
+// cheap smoke runs over a large real-data set. Unset or invalid ⇒ no cap.
+export function resolveEvalLimit(env: NodeJS.ProcessEnv = process.env): number | null {
+  const raw = env.RECEIPT_EVAL_LIMIT?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+// A deterministic, evenly spaced sample of a sorted list. Files sort by date
+// (and gas receipts after warehouse ones on the same day), so taking the first
+// N would always grade the oldest, warehouse-only receipts; spreading the
+// picks across the list covers the whole period and both layouts.
+export function sampleEvenly<T>(items: readonly T[], limit: number | null): T[] {
+  if (limit === null || limit >= items.length) return [...items];
+  if (limit <= 0) return [];
+  const step = items.length / limit;
+  const out: T[] = [];
+  for (let i = 0; i < limit; i++) out.push(items[Math.floor(i * step)]!);
+  return out;
+}
+
+// One vision call per receipt plus one resolver call per line item, with room
+// for retries: budget the whole-sample timeout from both counts.
+export function evalTimeoutMs(receipts: number, lineItems: number): number {
+  return Math.max(180_000, receipts * 15_000 + lineItems * 5_000);
 }
 
 // The single threshold assertion's predicate: the correctly-resolved fraction

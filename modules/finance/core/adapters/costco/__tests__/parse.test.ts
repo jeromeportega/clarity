@@ -95,7 +95,8 @@ describe('parseCostcoReceipts — the sanitized fixture', () => {
     expect(refund.needsReview).toBe(false);
   });
 
-  it('a gas receipt uses the gas merchant string and gallon quantity / per-gallon unit price', () => {
+  it('a gas receipt (documentType FuelReceipts) uses the gas merchant string and gallon quantity / per-gallon unit price', () => {
+    expect((fixtureJson()[2] as { documentType: string }).documentType).toBe('FuelReceipts');
     expect(gas.store).toBe('COSTCO GAS');
     expect(gas.purchasedAt).toBe('2026-09-03');
     const fuel = gas.items[0]!;
@@ -281,6 +282,29 @@ describe('parseCostcoReceipts — input handling', () => {
     expect(parseCostcoReceipts(wrapped).receipts).toHaveLength(3);
     expect(parseCostcoReceipts(JSON.stringify({ receipts: base })).receipts).toHaveLength(3);
     expect(parseCostcoReceipts('{"foo":1}').errors[0]!.reason).toMatch(/expected an array/);
+  });
+
+  it('names a fuel line from its printed grade when the catalog name is only an echo', () => {
+    const g = clone(base[2]!);
+    g.itemArray = [
+      { itemNumber: '1', itemDescription01: 'REGULAR GAS', itemActualName: 'REGULAR GAS', fuelGradeDescription: 'Regular', fuelUnitQuantity: 9.032, fuelUomCode: 'GAL', itemUnitPriceAmount: 5.659, amount: 51.11, unit: 1 },
+    ];
+    g.subTotal = 51.11;
+    g.taxes = 0;
+    g.total = 51.11;
+    const { receipts } = parseCostcoReceipts(JSON.stringify([g]));
+    const fuel = receipts[0]!.items[0]!;
+    expect(fuel.canonicalName).toBe('Regular Gasoline');
+    expect(fuel.needsReview).toBe(false);
+    expect(fuel.quantity).toBeCloseTo(9.032);
+  });
+
+  it('rejects an unknown documentType but accepts both receipt kinds', () => {
+    const odd = sale();
+    odd.documentType = 'OnlineOrderDetail';
+    const { receipts, errors } = parseCostcoReceipts(JSON.stringify([odd]));
+    expect(receipts).toHaveLength(0);
+    expect(errors[0]!.reason).toMatch(/unsupported documentType/);
   });
 
   it('reports and skips a record without a barcode, keeping the rest', () => {

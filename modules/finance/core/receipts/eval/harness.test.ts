@@ -8,12 +8,15 @@ import {
   MIN_EVAL_RECEIPTS,
   discoverReceipts,
   evalKeyPresent,
+  evalTimeoutMs,
   expectedPathFor,
   gradeReceipt,
   meetsThreshold,
   mimeTypeForFile,
   resolveEvalDir,
+  resolveEvalLimit,
   resolveEvalRatio,
+  sampleEvenly,
   type ExpectedReceipt,
   type GradedItem,
 } from './harness';
@@ -133,6 +136,63 @@ describe('gradeReceipt (threshold grading, G-1 / NFR-5)', () => {
     ];
     expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 1, total: 2 });
   });
+
+  it('grades on the name alone when the expected category is null (ground truth without categories)', () => {
+    const actual = [{ sku: '1', canonicalName: 'Bounty Advanced Paper Towels, 12-count', category: 'household' }];
+    const expected = [{ sku: '1', name: 'Bounty Advanced Paper Towels 12 count', category: null }];
+    expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 1, total: 1 });
+    const wrongName = [{ sku: '1', canonicalName: 'Charmin Bath Tissue', category: 'household' }];
+    expect(gradeReceipt(wrongName, expected, 0.85)).toEqual({ correct: 0, total: 1 });
+  });
+
+  it('extra extracted rows (a savings line, a fee line) do not shift SKU-less matches', () => {
+    // Ground truth excludes the savings and CRV rows; extraction emits them.
+    const actual = [
+      groceries(null, 'Bounty Paper Towels'),
+      { sku: '388550', canonicalName: '/BOUNTY', category: 'other' },
+      groceries(null, 'Organic Bananas'),
+      { sku: '1254', canonicalName: 'California Redemption Value', category: 'other' },
+      groceries(null, 'Eggo Waffles'),
+    ];
+    const expected = [
+      { sku: null, name: 'Bounty Paper Towels', category: null },
+      { sku: null, name: 'Organic Bananas', category: null },
+      { sku: null, name: 'Eggo Waffles', category: null },
+    ];
+    expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 3, total: 3 });
+  });
+
+  it('each extracted row can satisfy at most one expected item', () => {
+    const actual = [groceries(null, 'Bananas')];
+    const expected = [
+      { sku: null, name: 'Bananas', category: 'groceries' },
+      { sku: null, name: 'Bananas', category: 'groceries' },
+    ];
+    expect(gradeReceipt(actual, expected, 0.85)).toEqual({ correct: 1, total: 2 });
+  });
+});
+
+describe('resolveEvalLimit / sampleEvenly / evalTimeoutMs', () => {
+  it('limit is null when unset or invalid, else the positive integer', () => {
+    expect(resolveEvalLimit({})).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: '0' })).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: 'ten' })).toBeNull();
+    expect(resolveEvalLimit({ RECEIPT_EVAL_LIMIT: '10' })).toBe(10);
+  });
+
+  it('sampleEvenly spreads picks across the list instead of taking the head', () => {
+    const files = Array.from({ length: 10 }, (_, i) => `f${i}`);
+    expect(sampleEvenly(files, null)).toEqual(files);
+    expect(sampleEvenly(files, 20)).toEqual(files);
+    expect(sampleEvenly(files, 5)).toEqual(['f0', 'f2', 'f4', 'f6', 'f8']);
+    expect(sampleEvenly(files, 3)).toEqual(['f0', 'f3', 'f6']);
+    expect(sampleEvenly(files, 0)).toEqual([]);
+  });
+
+  it('evalTimeoutMs grows with both receipts and line items, never below 3 minutes', () => {
+    expect(evalTimeoutMs(1, 1)).toBe(180_000);
+    expect(evalTimeoutMs(83, 460)).toBe(83 * 15_000 + 460 * 5_000);
+  });
 });
 
 describe('meetsThreshold — the single ≥80% assertion (NFR-5)', () => {
@@ -171,7 +231,7 @@ describe('committed eval sample (FR-18: ≥5 receipts process end-to-end)', () =
       expect(typeof expected.totalCents).toBe('number');
       for (const item of expected.items) {
         expect(typeof item.name).toBe('string');
-        expect(typeof item.category).toBe('string');
+        expect(item.category === null || typeof item.category === 'string').toBe(true);
       }
     }
   });
