@@ -12,6 +12,7 @@ import { emlAdapter } from '../core/adapters/eml.adapter';
 import { retailerApiAdapter } from '../core/adapters/retailer-api.adapter';
 import type { RawInput, SourceAdapter, SourceKind } from '../core/adapters/source-adapter';
 import { importSource, type ImportContext, type ImportResult } from '../core/ingest/pipeline';
+import { reconcileHousehold, type ReconcileRunSummary } from '../core/reconcile/run';
 import { learnFromDigitalReceipts, type LearnFromDigitalReceiptsSummary } from '../core/receipts/dictionary/bootstrap';
 import { createDb, type FinanceDb } from '../db/client';
 import { accounts } from '../db/schema';
@@ -101,9 +102,14 @@ export interface RunIngestOptions {
   db?: FinanceDb;
   adapters?: SourceAdapter[];
   baseDir?: string;
+  /** Reconcile the household after the import lands (default true), as the HTTP routes do. */
+  reconcile?: boolean;
 }
 
-export type RunIngestResult = ImportResult & { dictionary?: LearnFromDigitalReceiptsSummary | { error: string } };
+export type RunIngestResult = ImportResult & {
+  reconciliation?: ReconcileRunSummary | { error: string };
+  dictionary?: LearnFromDigitalReceiptsSummary | { error: string };
+};
 
 /**
  * Resolve the import context (the bank command derives `householdId` from the
@@ -142,13 +148,24 @@ export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult
   const adapters = opts.adapters ?? allAdapters;
   const ctx = await resolveContext(db, opts.command, opts.accountId);
   const result = await importSource(db, input, ctx, adapters);
-  if (opts.command !== 'costco' || result.inserted.receipts === 0) return result;
-  // Digital receipts name their lines: teach the dictionary, as the route does.
-  // The import is committed; a failure here is reported next to it.
+  let out: RunIngestResult = result;
+  if (opts.command === 'costco' && result.inserted.receipts > 0) {
+    // Digital receipts name their lines: teach the dictionary, as the route does.
+    // The import is committed; a failure here is reported next to it.
+    try {
+      out = { ...out, dictionary: await learnFromDigitalReceipts(db, { householdId: ctx.householdId }) };
+    } catch (err) {
+      out = { ...out, dictionary: { error: err instanceof Error ? err.message : String(err) } };
+    }
+  }
+  if (opts.reconcile === false) return out;
+  // Imported rows are only useful once matched — same as the HTTP routes. The
+  // import is committed by now, so a reconcile failure is reported next to it
+  // rather than thrown away with it; `npm run` exits non-zero via main().
   try {
-    return { ...result, dictionary: await learnFromDigitalReceipts(db, { householdId: ctx.householdId }) };
+    return { ...out, reconciliation: await reconcileHousehold(db, ctx.householdId) };
   } catch (err) {
-    return { ...result, dictionary: { error: err instanceof Error ? err.message : String(err) } };
+    return { ...out, reconciliation: { error: err instanceof Error ? err.message : String(err) } };
   }
 }
 
@@ -189,7 +206,8 @@ async function main(): Promise<void> {
     baseDir: env.CLARITY_INGEST_BASE_DIR ?? cwd(),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (result.dictionary && 'error' in result.dictionary) process.exitCode = 1;
+  const failed = (v: unknown): boolean => typeof v === 'object' && v !== null && 'error' in v;
+  if (failed(result.reconciliation) || failed(result.dictionary)) process.exitCode = 1;
 }
 
 if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {

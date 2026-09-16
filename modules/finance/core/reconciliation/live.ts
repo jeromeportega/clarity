@@ -1,6 +1,6 @@
-import { and, eq, isNotNull, isNull, like, ne } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, isNull, like, ne, sql } from 'drizzle-orm';
 
-import { createDb, type FinanceDb } from '../../db/client';
+import type { FinanceDb } from '../../db/client';
 import { accounts, categories, matches, receiptItems, receipts, transactions } from '../../db/schema';
 import type {
   ReconciliationGateway,
@@ -39,9 +39,22 @@ function spendSign(amountCents: number): number {
 }
 
 /**
+ * A receipt item is a counted dollar only when a `matched` / `manual` match row
+ * links it to a bank line. Correlated on the outer `receipt_items` row.
+ */
+export function linkedToBankLine(db: FinanceDb) {
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(matches)
+      .where(and(eq(matches.receiptItemId, receiptItems.id), inArray(matches.status, ['matched', 'manual']))),
+  );
+}
+
+/**
  * Live, DB-backed reconciliation gateway. All reads are scoped to the household
- * in `scope` and resolved through Drizzle against the env-configured DB
- * (`createDb()`), consistent with the rest of the server read path.
+ * in `scope` and resolved through Drizzle against the database the caller
+ * hands in — core never opens one.
  *
  * Status mapping (matches.status → MatchStatus):
  *   pending  → 'ambiguous'   matched → 'confirmed'
@@ -55,8 +68,8 @@ function spendSign(amountCents: number): number {
 export class LiveReconciliationGateway implements ReconciliationGateway {
   private readonly db: FinanceDb;
 
-  constructor(db?: FinanceDb) {
-    this.db = db ?? createDb();
+  constructor(db: FinanceDb) {
+    this.db = db;
   }
 
   async listMatches(scope: HouseholdScope): Promise<Match[]> {
@@ -66,6 +79,8 @@ export class LiveReconciliationGateway implements ReconciliationGateway {
         transactionId: matches.transactionId,
         orderItemId: matches.orderItemId,
         receiptItemId: matches.receiptItemId,
+        receiptId: matches.receiptId,
+        orderId: matches.orderId,
         status: matches.status,
         confidence: matches.confidence,
         method: matches.method,
@@ -84,6 +99,8 @@ export class LiveReconciliationGateway implements ReconciliationGateway {
         transactionId: row.transactionId,
         orderItemId: row.orderItemId,
         receiptItemId: row.receiptItemId,
+        receiptId: row.receiptId,
+        orderId: row.orderId,
         status,
         confidence: normalizeConfidence(row.confidence),
         method: row.method,
@@ -136,10 +153,15 @@ export class LiveReconciliationGateway implements ReconciliationGateway {
     const monthLike = month ? `${month}-%` : undefined;
 
     // Net spend per (category, month) is summed from categorized receipt line
-    // items — the single authoritative source of categorized spend. Counting
+    // items that are LINKED to a bank line (a `matched` or `manual` match row)
+    // — the bank anchor is what makes a dollar a counted dollar. A receipt the
+    // engine has not matched (its bank line not imported yet, or another
+    // receipt won the same bank line) contributes nothing until it is; two
+    // receipts for one charge can therefore never count twice. Counting
     // exclusively here (NOT also over the transaction/order joins used for
     // drill-down) keeps each dollar counted exactly once: a receipt line and the
-    // bank line it was matched to are the SAME spend, not two.
+    // bank line it was matched to are the SAME spend, not two. A line's amount
+    // is what was paid for it — its price net of the discount that applied.
     const buckets = new Map<string, SpendRollup>();
     const add = (category: string, ym: string, cents: number): void => {
       const key = `${category} ${ym}`;
@@ -152,11 +174,15 @@ export class LiveReconciliationGateway implements ReconciliationGateway {
         });
     };
 
-    const conds = [eq(receipts.householdId, scope.householdId), isNotNull(receiptItems.categoryId)];
+    const conds = [
+      eq(receipts.householdId, scope.householdId),
+      isNotNull(receiptItems.categoryId),
+      linkedToBankLine(this.db),
+    ];
     if (monthLike) conds.push(like(receipts.purchasedAt, monthLike));
     const rows = await this.db
       .select({
-        amountCents: receiptItems.linePriceCents,
+        amountCents: sql<number>`${receiptItems.linePriceCents} - ${receiptItems.discountCents}`,
         purchasedAt: receipts.purchasedAt,
         category: categories.name,
       })

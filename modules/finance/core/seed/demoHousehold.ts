@@ -269,8 +269,9 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
         transactionId: DEMO_TXN_1_ID,
         orderItemId: DEMO_OI_1_ID,
         receiptItemId: null,
+        orderId: DEMO_ORDER_1_ID,
         status: 'matched',
-        confidence: 0.97,
+        confidence: 97,
         method: 'exact_amount',
       },
       {
@@ -278,8 +279,9 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
         transactionId: DEMO_TXN_2_ID,
         orderItemId: null,
         receiptItemId: DEMO_RI_1_ID,
+        receiptId: DEMO_RECEIPT_1_ID,
         status: 'pending',
-        confidence: 0.68,
+        confidence: 68,
         method: 'fuzzy_merchant',
       },
       {
@@ -287,8 +289,9 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
         transactionId: DEMO_TXN_2_ID,
         orderItemId: DEMO_OI_2_ID,
         receiptItemId: null,
+        orderId: DEMO_ORDER_2_ID,
         status: 'pending',
-        confidence: 0.54,
+        confidence: 54,
         method: 'fuzzy_merchant',
       },
     ])

@@ -1,6 +1,7 @@
-import { and, eq, isNotNull, like } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, like, sql } from 'drizzle-orm';
 import type { FinanceDb } from '../../db/client';
 import { receiptItems, receipts, categories, orderItems, orders, matches, transactions, accounts } from '../../db/schema';
+import { linkedToBankLine } from '../reconciliation/live';
 import type { ReconciliationGateway } from '../reconciliation/types';
 import type { HouseholdScope } from '../scope';
 
@@ -96,7 +97,10 @@ async function queryReceiptItems(
   db: FinanceDb,
   monthFilter: string | undefined,
 ): Promise<TrueSpendItem[]> {
-  const conditions = [eq(receipts.householdId, scope.householdId)];
+  // Same rule as the live gateway's rollups: a receipt line is a counted dollar
+  // only when a match row links it to a bank line, and its amount is net of
+  // its discount — so the drill-down and the totals describe the same money.
+  const conditions = [eq(receipts.householdId, scope.householdId), linkedToBankLine(db)];
   if (monthFilter) conditions.push(like(receipts.purchasedAt, monthFilter));
 
   const rows = await db
@@ -104,7 +108,7 @@ async function queryReceiptItems(
       id: receiptItems.id,
       rawDescription: receiptItems.rawDescription,
       canonicalName: receiptItems.canonicalName,
-      linePriceCents: receiptItems.linePriceCents,
+      linePriceCents: sql<number>`${receiptItems.linePriceCents} - ${receiptItems.discountCents}`,
       categoryName: categories.name,
     })
     .from(receiptItems)
@@ -127,6 +131,7 @@ async function queryOrderItems(
 ): Promise<TrueSpendItem[]> {
   const conditions = [
     eq(orders.householdId, scope.householdId),
+    inArray(matches.status, ['matched', 'manual']),
     isNotNull(matches.receiptItemId),
     isNotNull(receiptItems.categoryId),
   ];
@@ -161,6 +166,7 @@ async function queryTransactionItems(
 ): Promise<TrueSpendItem[]> {
   const conditions = [
     eq(accounts.householdId, scope.householdId),
+    inArray(matches.status, ['matched', 'manual']),
     isNotNull(matches.receiptItemId),
     isNotNull(receiptItems.categoryId),
   ];
@@ -180,10 +186,15 @@ async function queryTransactionItems(
     .innerJoin(categories, eq(receiptItems.categoryId, categories.id))
     .where(and(...conditions));
 
-  return rows.map((row) => ({
-    id: row.id,
-    description: row.merchant,
-    amountCents: row.amountCents,
-    category: row.categoryName,
-  }));
+  // One row per (transaction, category): the join lands once per linked
+  // receipt line, and a transaction carries its whole amount, not a line's.
+  const seen = new Set<string>();
+  const out: TrueSpendItem[] = [];
+  for (const row of rows) {
+    const key = `${row.id}\u001f${row.categoryName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: row.id, description: row.merchant, amountCents: row.amountCents, category: row.categoryName });
+  }
+  return out;
 }

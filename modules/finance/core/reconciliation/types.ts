@@ -17,6 +17,9 @@ export interface Match {
   transactionId: string;
   orderItemId: string | null;
   receiptItemId: string | null;
+  /** The receipt / order this row links the transaction to (candidate rows carry only these). */
+  receiptId?: string | null;
+  orderId?: string | null;
   status: MatchStatus;
   /** normalised float [0, 1]; H3 DB stores integer pct → divide by 100 at the live read layer */
   confidence: number | null;

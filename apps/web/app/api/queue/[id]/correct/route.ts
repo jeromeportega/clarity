@@ -5,6 +5,7 @@ import { applyCorrection, CorrectionError, type CorrectionVariant } from '../../
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../../modules/finance/core/scope';
 import { VALID_ITEM_TYPES, isValidItemType, isValidCorrectionVariant } from '../_lib/validation';
 import { requireMutationToken } from '../../../../lib/auth/token';
+import { reconcileAfterWrite } from '../../../../../lib/reconcile';
 
 const MAX_FIELD_LEN = 128;
 
@@ -70,7 +71,7 @@ export async function POST(
   const gw = gatewayFor({
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     RECON_BACKEND: process.env.RECON_BACKEND as 'stub' | 'live' | undefined,
-  });
+  }, db);
 
   try {
     const result = await applyCorrection(
@@ -80,7 +81,16 @@ export async function POST(
       gw,
       db,
     );
-    return Response.json({ removedItemId: result.removedItemId });
+    // A decision about a match changes what the engine must honour: re-derive
+    // the household's matches now, so the queue and True Spend read the new
+    // truth. Item-level decisions (SKU, flagged receipt) change no match.
+    const reconciliation = item.type === 'ambiguous_match'
+      ? await reconcileAfterWrite(db, scope.householdId)
+      : undefined;
+    return Response.json({
+      removedItemId: result.removedItemId,
+      ...(reconciliation ? { reconciled: !('error' in reconciliation), reconciliation } : {}),
+    });
   } catch (err) {
     if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return new Response('Conflict: item already decided', { status: 409 });

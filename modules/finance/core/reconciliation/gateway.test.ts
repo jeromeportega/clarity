@@ -3,60 +3,50 @@ import { gatewayFor, type ReconciliationGateway } from './gateway';
 import { LiveReconciliationGateway } from './live';
 import { StubReconciliationGateway } from './stub';
 import type { HouseholdScope } from './types';
+import type { FinanceDb } from '../../db/client';
 import { DEMO_HOUSEHOLD_ID } from '../scope';
 
-// =============================================================================
-// All tests exercise the stub through the ReconciliationGateway interface only
-// — no concrete class imports, no H3 internals (per QA test plan).
-// =============================================================================
+// gatewayFor's factory branch, then the STUB's contract (determinism, shape,
+// scoping). The live gateway's behaviour is covered against a real database
+// in live.integration.test.ts; here it is only ever constructed, never queried,
+// so the handle below is a sentinel — no database is opened by this file.
+const FAKE_DB = { sentinel: 'never-queried' } as unknown as FinanceDb;
 
 const DEMO_SCOPE: HouseholdScope = { householdId: DEMO_HOUSEHOLD_ID };
 const OTHER_SCOPE: HouseholdScope = { householdId: 'other-household-x1' };
 
 function stubGateway(): ReconciliationGateway {
-  return gatewayFor({});
-}
-
-function liveGateway(): ReconciliationGateway {
-  return gatewayFor({ RECON_BACKEND: 'live' });
+  return gatewayFor({ RECON_BACKEND: 'stub' }, FAKE_DB);
 }
 
 // --- factory branch ----------------------------------------------------------
 
 describe('gatewayFor — factory branch', () => {
-  it('returns stub when PUBLIC_DEMO_MODE=1', async () => {
-    const gw = gatewayFor({ PUBLIC_DEMO_MODE: '1' });
-    const matches = await gw.listMatches(DEMO_SCOPE);
-    expect(matches.length).toBeGreaterThan(0);
+  it('returns the live, DB-backed gateway by default (RECON_BACKEND unset)', () => {
+    expect(gatewayFor({}, FAKE_DB)).toBeInstanceOf(LiveReconciliationGateway);
   });
 
-  it('returns stub when RECON_BACKEND is absent (default)', async () => {
-    const gw = gatewayFor({});
-    const matches = await gw.listMatches(DEMO_SCOPE);
-    expect(matches.length).toBeGreaterThan(0);
+  it('returns live when RECON_BACKEND=live', () => {
+    expect(gatewayFor({ RECON_BACKEND: 'live' }, FAKE_DB)).toBeInstanceOf(LiveReconciliationGateway);
   });
 
-  it('returns stub when RECON_BACKEND=stub', async () => {
-    const gw = gatewayFor({ RECON_BACKEND: 'stub' });
-    const matches = await gw.listMatches(DEMO_SCOPE);
-    expect(matches.length).toBeGreaterThan(0);
-  });
-
-  it('returns live when RECON_BACKEND=live (and PUBLIC_DEMO_MODE unset)', () => {
-    const gw = liveGateway();
-    expect(gw).toBeInstanceOf(LiveReconciliationGateway);
-  });
-
-  it('RECON_BACKEND=live selects the live backend even when PUBLIC_DEMO_MODE=1', () => {
-    // PUBLIC_DEMO_MODE controls SCOPE only, not stub-vs-live: a public demo can
-    // be live-backed. This is the corrected gatewayFor contract.
-    const gw = gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'live' });
-    expect(gw).toBeInstanceOf(LiveReconciliationGateway);
-  });
-
-  it('PUBLIC_DEMO_MODE=1 with RECON_BACKEND absent still uses the stub', () => {
-    const gw = gatewayFor({ PUBLIC_DEMO_MODE: '1' });
+  it('returns the stub only when RECON_BACKEND=stub', async () => {
+    const gw = gatewayFor({ RECON_BACKEND: 'stub' }, FAKE_DB);
     expect(gw).toBeInstanceOf(StubReconciliationGateway);
+    const matches = await gw.listMatches(DEMO_SCOPE);
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
+  it('PUBLIC_DEMO_MODE controls scope only, never the backend', () => {
+    // A public demo is live-backed by default and can still opt into the stub.
+    expect(gatewayFor({ PUBLIC_DEMO_MODE: '1' }, FAKE_DB)).toBeInstanceOf(LiveReconciliationGateway);
+    expect(gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'live' }, FAKE_DB)).toBeInstanceOf(LiveReconciliationGateway);
+    expect(gatewayFor({ PUBLIC_DEMO_MODE: '1', RECON_BACKEND: 'stub' }, FAKE_DB)).toBeInstanceOf(StubReconciliationGateway);
+  });
+
+  it('the live gateway reads through the handle it is given — core opens no database of its own', () => {
+    const gw = gatewayFor({}, FAKE_DB) as unknown as { db: unknown };
+    expect(gw.db).toBe(FAKE_DB);
   });
 });
 

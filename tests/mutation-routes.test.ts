@@ -57,11 +57,13 @@ const MUTATION_ROUTES = await discoverWriteRoutes();
 
 const KNOWN_WRITE_ROUTES = [
   'POST /api/ingest/bank',
+  'POST /api/ingest/costco',
   'POST /api/ingest/orders',
   'POST /api/queue/[id]/confirm',
   'POST /api/queue/[id]/correct',
   'POST /api/queue/[id]/dismiss',
   'POST /api/receipts/upload',
+  'POST /api/reconcile',
 ];
 
 const TEST_TOKEN = 'mutation-gate-test-secret-123';

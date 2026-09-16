@@ -22,7 +22,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FinanceDb } from '../../db/client';
-import { accounts, categories, households, orderItems, orders, receiptItems, receipts, transactions } from '../../db/schema';
+import { accounts, categories, households, orderItems, orders, receiptItems, receipts, transactions, matches } from '../../db/schema';
 import type {
   AmbiguousMatchGroup,
   HouseholdScope,
@@ -215,6 +215,18 @@ beforeAll(async () => {
     normalizedMerchant: 'WHOLE FOODS',
     sourceRowHash: `hash-${randomUUID()}`,
     dedupKey: `dedup-${randomUUID()}`,
+  });
+
+  // A receipt line is a counted dollar only once a match row links it to a
+  // bank line — the rule the drill-down shares with the live rollups.
+  await db.insert(matches).values({
+    id: `m-link-${randomUUID()}`,
+    transactionId: sharedTxnId,
+    receiptId: sharedReceiptId,
+    receiptItemId: sharedReceiptItemId,
+    status: 'matched',
+    confidence: 95,
+    method: 'receipt_bank',
   });
 });
 

@@ -9,6 +9,7 @@ import { createDb } from '../../../../../../modules/finance/db/client';
 import { DEMO_HOUSEHOLD_ID } from '../../../../../../modules/finance/core/scope';
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
+import { reconcileAfterWrite } from '../../../../lib/reconcile';
 import { learnFromDigitalReceipts } from '../../../../../../modules/finance/core/receipts/dictionary/bootstrap';
 
 /**
@@ -71,5 +72,7 @@ export async function POST(request: Request): Promise<Response> {
   // is committed by now, so a failure here is reported next to it, not thrown
   // away with it; a re-upload that landed nothing new has nothing to teach.
   const dictionary = await learnAfterImport(db, result.inserted.receipts);
-  return Response.json({ ...result, dictionary });
+  // Imported rows are only useful once matched: reconcile before answering.
+  const reconciliation = await reconcileAfterWrite(db, DEMO_HOUSEHOLD_ID);
+  return Response.json({ ...result, dictionary, reconciled: !('error' in reconciliation), reconciliation });
 }

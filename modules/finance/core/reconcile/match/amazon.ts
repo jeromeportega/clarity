@@ -1,7 +1,7 @@
 import type { BankLine, MatchRecord, OrderView } from '../model';
 import type { ReconcileConfig } from '../thresholds';
 import { findChargeSubset } from './subset-sum';
-import { daysBetween } from './utils';
+import { epochDay } from './utils';
 
 function isAmazonLine(b: BankLine): boolean {
   return b.direction === 'debit' && b.normalizedMerchant.toUpperCase().includes('AMAZON');
@@ -33,12 +33,25 @@ export function matchAmazonOrders(
   type Scored = { order: OrderView; lines: BankLine[]; confidence: number; rationale: string; type: MatchRecord['type'] };
   const candidates: Scored[] = [];
 
+  // Filter to AMAZON debits once and parse each date once; the per-order pool
+  // is then a numeric window over this list rather than a scan of every line.
+  const amazonLines = bank
+    .filter(isAmazonLine)
+    .map((line) => ({ line, day: epochDay(line.postedDate) }))
+    .filter((d): d is { line: BankLine; day: number } => d.day !== null);
+  const dayOf = new Map(amazonLines.map((d) => [d.line.id, d.day]));
+
   for (const o of orders) {
     const total = o.orderTotalCents;
     if (total == null || total <= 0) continue;
+    const orderDay = epochDay(o.orderDate);
+    if (orderDay === null) continue;
+    const daysFromOrder = (b: BankLine): number => Math.abs((dayOf.get(b.id) ?? Infinity) - orderDay);
 
     // Pool: AMAZON debits within the date window
-    const pool = bank.filter((b) => isAmazonLine(b) && daysBetween(b.postedDate, o.orderDate) <= cfg.orderDateWindowDays);
+    const pool = amazonLines
+      .filter((d) => Math.abs(d.day - orderDay) <= cfg.orderDateWindowDays)
+      .map((d) => d.line);
 
     // ── Direct match (single charge) ────────────────────────────────────────
     const directPool = pool.filter((b) => Math.abs(Math.abs(b.amountCents) - total) <= cfg.tipAdjustmentToleranceCents);
@@ -49,11 +62,11 @@ export function matchAmazonOrders(
         const diffA = Math.abs(Math.abs(a.amountCents) - total);
         const diffB = Math.abs(Math.abs(b.amountCents) - total);
         if (diffA !== diffB) return diffA < diffB ? a : b;
-        return daysBetween(a.postedDate, o.orderDate) <= daysBetween(b.postedDate, o.orderDate) ? a : b;
+        return daysFromOrder(a) <= daysFromOrder(b) ? a : b;
       });
 
       const amountDiff = Math.abs(Math.abs(best.amountCents) - total);
-      const dateDiff = daysBetween(best.postedDate, o.orderDate);
+      const dateDiff = daysFromOrder(best);
       const amountScore = cfg.tipAdjustmentToleranceCents === 0 ? 1 : 1 - amountDiff / cfg.tipAdjustmentToleranceCents;
       const dateScore = cfg.orderDateWindowDays === 0 ? 1 : 1 - dateDiff / cfg.orderDateWindowDays;
       const confidence = amountScore * 0.6 + dateScore * 0.4;
@@ -74,7 +87,7 @@ export function matchAmazonOrders(
     // ── Split-shipment via subset sum ────────────────────────────────────────
     const subset = findChargeSubset(pool, total, cfg);
     if (subset !== null && subset.length >= 2) {
-      const maxDateDiff = Math.max(...subset.map((b) => daysBetween(b.postedDate, o.orderDate)));
+      const maxDateDiff = Math.max(...subset.map(daysFromOrder));
       const dateScore = 1 - maxDateDiff / cfg.orderDateWindowDays;
       // Exact sum → full amount score; weight date more loosely for multi-shipment.
       const confidence = 0.85 * dateScore + 0.15;

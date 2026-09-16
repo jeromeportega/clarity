@@ -205,6 +205,12 @@ export const matches = sqliteTable('matches', {
     .references(() => transactions.id),
   orderItemId: text('order_item_id').references(() => orderItems.id),
   receiptItemId: text('receipt_item_id').references(() => receiptItems.id),
+  // The receipt / order this row links the transaction to. Item-level rows
+  // (matched) carry it alongside their item id; candidate rows (pending, and
+  // manual once a human picks one) carry ONLY this, so a decision remembers
+  // which receipt or order it was about.
+  receiptId: text('receipt_id').references(() => receipts.id),
+  orderId: text('order_id').references(() => orders.id),
   status: text('status', { enum: ['pending', 'matched', 'rejected', 'manual'] })
     .notNull()
     .default('pending'),

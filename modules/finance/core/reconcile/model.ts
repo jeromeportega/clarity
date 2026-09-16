@@ -71,12 +71,27 @@ export interface StoreCreditAccrual {
   orderItemId?: string;
 }
 
+/**
+ * A human's settled answer: this transaction is paid by this receipt (or this
+ * order). Loaded from `matches` rows with status `manual`; the engine treats
+ * it as ground truth — the pair is linked at confidence 1 whatever the scorer
+ * thinks, and every competing candidate for that transaction (or for that
+ * receipt / order) is dropped.
+ */
+export interface ConfirmedMatch {
+  transactionId: string;
+  receiptId?: string;
+  orderId?: string;
+}
+
 export interface ReconcileInputs {
   householdId: string;
   bankLines: BankLine[];
   orders: OrderView[];
   receipts: ReceiptView[];
   storeCreditAccruals: StoreCreditAccrual[];
+  /** Human decisions the engine must honour. Absent ⇒ none. */
+  confirmedMatches?: ConfirmedMatch[];
 }
 
 // ── Outputs ──
@@ -103,6 +118,8 @@ export interface MatchRecord {
   confidence: number; // [0,1]
   rationale: string; // FR-3
   status: 'auto_linked' | 'review'; // < confidenceThreshold ⇒ 'review' (FR-4)
+  /** Set when a human's ConfirmedMatch forced this link (confidence is then 1). */
+  confirmedBy?: 'human';
 }
 
 export interface ClassifiedItem {

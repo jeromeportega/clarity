@@ -10,6 +10,7 @@ import { createDb } from '../../../../../../modules/finance/db/client';
 import { accounts } from '../../../../../../modules/finance/db/schema';
 import { requireMutationToken } from '../../../lib/auth/token';
 import { rejectOversizedBody } from '../../../lib/http/body-limit';
+import { reconcileAfterWrite } from '../../../../lib/reconcile';
 
 /**
  * POST /api/ingest/bank — multipart/form-data { file: File, accountId: string }.
@@ -73,5 +74,7 @@ export async function POST(request: Request): Promise<Response> {
   };
 
   const result = await importSource(db, input, { householdId: account.householdId, accountId }, adapters);
-  return Response.json(result);
+  // New bank lines are only useful once matched: reconcile before answering.
+  const reconciliation = await reconcileAfterWrite(db, account.householdId);
+  return Response.json({ ...result, reconciled: !('error' in reconciliation), reconciliation });
 }
