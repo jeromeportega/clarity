@@ -35,18 +35,9 @@ export const STORE_CREDIT_KINDS = ['store_credit', 'gift_card', 'account_balance
  * it; the seed script populates these names). Defined here so schema and seed
  * agree on the taxonomy.
  */
-export const DEFAULT_CATEGORIES = [
-  'groceries',
-  'household',
-  'electronics',
-  'clothing',
-  'utilities',
-  'mortgage_rent',
-  'subscriptions',
-  'dining',
-  'transport',
-  'other',
-] as const;
+// The category taxonomy lives in ./taxonomy.ts (one list, slug ids); it is
+// seeded into `categories` by migration 0005 and the seed scripts.
+export { TAXONOMY, TAXONOMY_IDS, categoryIdFor } from './taxonomy';
 
 const createdAt = () =>
   text('created_at')
@@ -229,8 +220,8 @@ export const matches = sqliteTable('matches', {
 });
 
 /**
- * categories — taxonomy source of truth for H3 categorization. Schema only in
- * H1 (seeded by the seed script from DEFAULT_CATEGORIES). `parent_id` allows a
+ * categories — the taxonomy rows (`id` = slug, `name` = display), seeded from
+ * ./taxonomy.ts by migration 0005 and the seed scripts. `parent_id` allows a
  * hierarchy.
  */
 export const categories = sqliteTable(

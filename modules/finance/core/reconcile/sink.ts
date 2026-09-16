@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
-import { categories, matches, orderItems, orders, receiptItems, receipts } from '../../db/schema';
+import { categories, categoryIdFor, matches, orderItems, orders, receiptItems, receipts } from '../../db/schema';
 import type { MatchRecord, ReconciledLedger } from './model';
 
 export interface ReconcileSink {
@@ -102,7 +102,11 @@ export class DrizzleReconcileSink implements ReconcileSink {
 
     const toInsert = [...names].filter((n) => !map.has(n));
     if (toInsert.length > 0) {
-      const values = toInsert.map((name) => ({ id: randomUUID(), name }));
+      // Ids are the taxonomy's stable slugs (`db/taxonomy.ts`). The classifier
+      // clamps to the taxonomy, so an unknown name should never arrive; if one
+      // does it lands on 'other' rather than minting a 22nd category that
+      // would leak into listCategories() and the resolver's allowed list.
+      const values = toInsert.map((name) => ({ id: categoryIdFor(name) ?? 'other', name }));
       // ux_categories_name makes this idempotent across concurrent/repeat seeds.
       await db.insert(categories).values(values).onConflictDoNothing();
       // Re-read to pick up both our inserts and any rows a concurrent run added.

@@ -93,6 +93,15 @@ const KEYWORD_RULES: KeywordRule[] = [
     pattern: /\btuition\b|\buniversity\b|\bcollege\b|coursera|udemy|khan academy/i,
     category: 'Education',
   },
+  // Household — paper goods, cleaning, laundry, storage: what a warehouse-club
+  // receipt is mostly made of. Placed after the merchant-anchored rules and
+  // limited to compounds and unambiguous brands, because the rules run over
+  // merchant + description together ("Dawn's Cafe" must stay Dining).
+  {
+    pattern:
+      /paper towel|bath tissue|facial tissue|toilet paper|\bbounty\b|\bcharmin\b|\bcottonelle\b|\bkleenex\b|detergent|laundry|dryer sheet|fabric softener|\bdowny\b|dish soap|dishwasher pod|dishwasher tab|\bclorox\b|\blysol\b|disinfecting wipe|trash bag|garbage bag|\bziploc\b|\bhefty\b|aluminum foil|plastic wrap|\bswiffer\b|\bduracell\b|\benergizer\b|light ?bulb|air freshener|\bfebreze\b/i,
+    category: 'Household',
+  },
   // Shopping — general-purpose retailers (catch-all, must stay last)
   {
     pattern: /\bamazon\b|\btarget\b|walmart|ebay\b|etsy\b|best buy|costco|sam'?s club/i,

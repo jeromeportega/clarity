@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { QueueItem } from '../../../../../modules/finance/core/queue/types';
 import type { CorrectionVariant } from '../../../../../modules/finance/core/corrections/apply';
+import { TAXONOMY } from '../../../../../modules/finance/db/taxonomy';
 
 type CorrectionMode = 'pickCategoryId' | 'pickMatchCandidateId' | 'editResolution';
 
@@ -23,18 +24,8 @@ interface CorrectionDialogProps {
   onSubmit: (correction: CorrectionVariant) => Promise<void>;
 }
 
-const CATEGORY_OPTIONS = [
-  'groceries',
-  'household',
-  'electronics',
-  'clothing',
-  'utilities',
-  'mortgage_rent',
-  'subscriptions',
-  'dining',
-  'transport',
-  'other',
-] as const;
+// The one taxonomy: option value = category id, label = display name.
+const CATEGORY_OPTIONS = TAXONOMY;
 
 export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: CorrectionDialogProps) {
   const [mode, setMode] = React.useState<CorrectionMode>('editResolution');
@@ -51,7 +42,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
   const [store, setStore] = React.useState('');
   const [skuOrAbbrev, setSkuOrAbbrev] = React.useState('');
   const [canonicalName, setCanonicalName] = React.useState('');
-  const [category, setCategory] = React.useState('groceries');
+  const [category, setCategory] = React.useState<string>(TAXONOMY[0].id);
 
   // Reset all form state each time the dialog opens so stale input is never shown.
   React.useEffect(() => {
@@ -62,7 +53,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
       setStore('');
       setSkuOrAbbrev('');
       setCanonicalName('');
-      setCategory('groceries');
+      setCategory(TAXONOMY[0].id);
       setSubmitError(null);
     }
   }, [open]);
@@ -144,7 +135,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
               >
                 <option value="">— select —</option>
                 {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -213,7 +204,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
                   className="rounded border p-2 text-sm"
                 >
                   {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>
