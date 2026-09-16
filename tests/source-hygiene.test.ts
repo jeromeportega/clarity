@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SOURCE_EXTENSIONS = /\.(ts|tsx|js|jsx|mjs|cjs|json|md|sql|sh|yaml|yml)$/;
+const SOURCE_EXTENSIONS = /\.(ts|tsx|js|jsx|mjs|cjs|json|md|sql|sh|yaml|yml|css|csv|txt)$/;
 
 // Every C0 control character except tab (9), newline (10) and carriage return (13).
 const FORBIDDEN = new Set<number>();
