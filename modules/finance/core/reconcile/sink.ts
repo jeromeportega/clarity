@@ -3,8 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
-import { categories, matches, orderItems, orders, receiptItems, receipts } from '../../db/schema';
+import { categories, categoryIdFor, matches, orderItems, orders, receiptItems, receipts } from '../../db/schema';
 import type { MatchRecord, ReconciledLedger } from './model';
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'other';
+}
 
 export interface ReconcileSink {
   persist(householdId: string, ledger: ReconciledLedger): Promise<void>;
@@ -102,7 +106,9 @@ export class DrizzleReconcileSink implements ReconcileSink {
 
     const toInsert = [...names].filter((n) => !map.has(n));
     if (toInsert.length > 0) {
-      const values = toInsert.map((name) => ({ id: randomUUID(), name }));
+      // Ids are the taxonomy's stable slugs (`db/taxonomy.ts`); a name outside
+      // the taxonomy gets a slug of itself rather than a random id.
+      const values = toInsert.map((name) => ({ id: categoryIdFor(name) ?? slugify(name), name }));
       // ux_categories_name makes this idempotent across concurrent/repeat seeds.
       await db.insert(categories).values(values).onConflictDoNothing();
       // Re-read to pick up both our inserts and any rows a concurrent run added.

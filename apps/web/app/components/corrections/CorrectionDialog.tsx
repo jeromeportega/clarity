@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { QueueItem } from '../../../../../modules/finance/core/queue/types';
 import type { CorrectionVariant } from '../../../../../modules/finance/core/corrections/apply';
+import { TAXONOMY } from '../../../../../modules/finance/db/taxonomy';
 
 type CorrectionMode = 'pickCategoryId' | 'pickMatchCandidateId' | 'editResolution';
 
@@ -23,18 +24,8 @@ interface CorrectionDialogProps {
   onSubmit: (correction: CorrectionVariant) => Promise<void>;
 }
 
-const CATEGORY_OPTIONS = [
-  'groceries',
-  'household',
-  'electronics',
-  'clothing',
-  'utilities',
-  'mortgage_rent',
-  'subscriptions',
-  'dining',
-  'transport',
-  'other',
-] as const;
+// The one taxonomy: option value = category id, label = display name.
+const CATEGORY_OPTIONS = TAXONOMY;
 
 export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: CorrectionDialogProps) {
   const [mode, setMode] = React.useState<CorrectionMode>('editResolution');
@@ -144,7 +135,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
               >
                 <option value="">— select —</option>
                 {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -213,7 +204,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
                   className="rounded border p-2 text-sm"
                 >
                   {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </div>

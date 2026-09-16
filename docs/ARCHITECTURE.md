@@ -132,7 +132,7 @@ I/O ports:
 - `recurring.ts` — `detectRecurring` clusters events by merchant + amount (±$2) + roughly monthly cadence (±3 days). Exists and is tested; not called by `reconcile()`.
 - `LlmClassifier` — declared seam that throws unconditionally.
 
-**Taxonomy collision (known):** `modules/finance/db/schema.ts` also declares `DEFAULT_CATEGORIES` — 10 lowercase snake-case names (`groceries`, `mortgage_rent`, …) used by the seed and the correction dialog — while the engine and sink use the 20 Title-Case names. `categories.name` is globally unique, so both sets end up as distinct rows. The receipt resolver's allowed list is whatever `store.listCategories()` returns from the DB.
+**One taxonomy.** `modules/finance/db/taxonomy.ts` is the single list: 21 categories with a stable slug `id` (`groceries`, `health-medical`, …) and a display `name`. `categories.id` is the slug; `receipt_items.category_id`, `sku_dictionary.category`, the resolver's allowed list (`store.listCategories()` returns the ids) and corrections all carry ids; the classifier emits display names and the sink maps them with `categoryIdFor`. Migration 0005 seeds the rows into every database and re-pointed the two legacy lists (10 lowercase seed names, 20 Title-Case sink names, both under random ids) that used to coexist.
 
 ### 6. Review queue and corrections — `core/queue/`, `core/corrections/`
 
@@ -261,7 +261,6 @@ Seams that exist and are tested but are not connected on the live HTTP path, or 
 - **`recomputeRollups` is a no-op** in both gateways.
 - **Evidence image link is dead.** `resolveEvidence` builds `/api/receipts/image/<receiptId>`; that route does not exist.
 - **Classifier has no confidence signal**, so a misclassified item never reaches the queue; only low-confidence SKU resolutions and arithmetic failures do.
-- **Taxonomy collision** between `DEFAULT_CATEGORIES` (10, lowercase) and `H1_TAXONOMY` (20, Title Case) — see §5.
 - **Tenancy is a constant.** `DEMO_HOUSEHOLD_ID` (`core/scope.ts`; `scripts/seed.ts` re-exports the same value) is referenced directly in every mutation route, the server actions, the upload route, and the orders ingest; `resolveHouseholdScope` ignores the request. `matches`, `categories`, and `sku_dictionary` carry no `household_id`; `review_decisions.household_id` has no FK. Adding real users means adding `users`/membership tables, a tenancy column on those three tables, and replacing the constant at each call site.
 - **`/api/ingest/bank` derives the household from a client-supplied `accountId`** (marked `TODO(auth)` in the route). Acceptable while one shared secret guards one seeded household; an IDOR the moment users exist.
 - **Unreadable receipts persist as masked placeholders** (`''` store, `''` date, `0` total) because `receipts.store / purchased_at / total_cents` are `NOT NULL` (see Data model).

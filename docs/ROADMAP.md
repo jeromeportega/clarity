@@ -58,8 +58,9 @@ single-household loop is excellent.
   no receipt context; resolve a whole receipt in one call with store, date,
   department numbers, and neighboring items as context. Cheaper and more accurate.
 - **Bootstrap the dictionary** from Costco canonical names.
-- **One taxonomy.** Unify `DEFAULT_CATEGORIES` (10, lowercase) and
-  `H1_TAXONOMY` (20, Title Case); make it per-household.
+- ~~**One taxonomy.**~~ Done (`db/taxonomy.ts`, migration 0005; a Household
+  category and household-goods classifier rules added). Per-household
+  taxonomies remain a later option.
 - **Classifier confidence → queue.** The heuristic classifier silently emits
   `Other`; give it a confidence signal so misclassifications surface for review,
   and add the LLM classifier behind the existing seam for items the rules miss.

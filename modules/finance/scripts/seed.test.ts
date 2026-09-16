@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 process.env.TMPDIR = mkdtempSync(join(tmpdir(), 'clarity-seed-test-'));
 
 import { createTestDb, type FinanceDb } from '../db/client';
-import { DEFAULT_CATEGORIES, accounts, categories, households } from '../db/schema';
+import { TAXONOMY as DEFAULT_CATEGORIES, accounts, categories, households } from '../db/schema';
 import { DEMO_ACCOUNT_ID, DEMO_HOUSEHOLD_ID, seed } from './seed';
 
 let db: FinanceDb;

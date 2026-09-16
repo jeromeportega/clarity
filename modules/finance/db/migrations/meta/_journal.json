@@ -36,6 +36,13 @@
       "when": 1789350132038,
       "tag": "0004_receipts_household_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789517957207,
+      "tag": "0005_taxonomy_unification",
+      "breakpoints": true
     }
   ]
 }

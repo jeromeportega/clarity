@@ -24,17 +24,17 @@ import {
   categories,
   receiptItems,
   receipts,
-  DEFAULT_CATEGORIES,
+  TAXONOMY,
+  TAXONOMY_IDS,
 } from '../../../db/schema';
 
 export { categories, receiptItems, receipts };
 
 export const schema = { categories, receipts, receiptItems };
 
-// The category taxonomy seeded into a fresh test DB. H1's seed script populates
-// these names in production; `listCategories()` reads them back in insertion
-// order. This mirrors H1's DEFAULT_CATEGORIES (the source of truth).
-export const CATEGORY_SEED = DEFAULT_CATEGORIES;
+// The category ids `listCategories()` returns, in taxonomy order — the one
+// taxonomy (`db/taxonomy.ts`), seeded by migration 0005 and the seed scripts.
+export const CATEGORY_SEED = TAXONOMY_IDS;
 
 // Resolve H1's real migration SQL so a fresh (e.g. `:memory:`) libSQL database
 // can materialize the canonical schema for the offline contract tests.
@@ -70,9 +70,9 @@ export async function applyStubH1Schema(client: Client): Promise<void> {
     args: [TEST_HOUSEHOLD_ID, 'Test Household'],
   });
   await client.batch(
-    CATEGORY_SEED.map((id) => ({
+    TAXONOMY.map(({ id, name }) => ({
       sql: 'INSERT OR IGNORE INTO categories (id, name) VALUES (?, ?)',
-      args: [id, id],
+      args: [id, name],
     })),
     'write',
   );

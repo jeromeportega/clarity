@@ -12,6 +12,13 @@ const KEYWORD_RULES: KeywordRule[] = [
       /netflix|spotify|hulu|disney\+|disney plus|apple tv\+|amazon prime|paramount\+|peacock|hbo\b|showtime|youtube premium|tidal|deezer/i,
     category: 'Subscriptions',
   },
+  // Household — paper goods, cleaning, laundry, storage (item-description keywords;
+  // these are what a warehouse-club receipt is mostly made of)
+  {
+    pattern:
+      /paper towel|bath tissue|toilet paper|\btissue\b|\bbounty\b|\bcharmin\b|\bcottonelle\b|kleenex|detergent|laundry|dryer sheet|fabric softener|\btide\b|\bbounce\b|\bdowny\b|dish soap|dishwasher|\bcascade\b|\bdawn\b|\bclorox\b|\blysol\b|disinfect|trash bag|\bziploc\b|\bglad\b|\bhefty\b|aluminum foil|\breynolds\b|plastic wrap|\bswiffer\b|\bbattery\b|batteries|\bduracell\b|\benergizer\b|light ?bulb|air freshener|\bfebreze\b/i,
+    category: 'Household',
+  },
   // Groceries — named grocery chains
   {
     pattern:

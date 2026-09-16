@@ -1,10 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { argv } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { DEMO_HOUSEHOLD_ID } from '../core/scope';
 import { createDb, type FinanceDb } from '../db/client';
-import { DEFAULT_CATEGORIES, accounts, categories, households } from '../db/schema';
+import { TAXONOMY, accounts, categories, households } from '../db/schema';
 
 /**
  * Seed a single synthetic demo household. Real structure, fully fake data:
@@ -47,17 +46,16 @@ export async function seed(db: FinanceDb): Promise<SeedResult> {
     })
     .onConflictDoNothing();
 
-  for (const name of DEFAULT_CATEGORIES) {
-    await db
-      .insert(categories)
-      .values({ id: randomUUID(), name })
-      .onConflictDoNothing();
+  // The taxonomy rows are also created by migration 0005; this keeps a DB
+  // seeded before that migration (or a fresh one) consistent. Stable slug ids.
+  for (const { id, name } of TAXONOMY) {
+    await db.insert(categories).values({ id, name }).onConflictDoNothing();
   }
 
   return {
     householdId: DEMO_HOUSEHOLD_ID,
     accountId: DEMO_ACCOUNT_ID,
-    categories: DEFAULT_CATEGORIES.length,
+    categories: TAXONOMY.length,
   };
 }
 

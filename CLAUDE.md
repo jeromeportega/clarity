@@ -46,9 +46,10 @@ npm run e2e              # Playwright golden path — NEVER in npm test
   invariant; its tests are bank-anchored and must stay green.
 - **Tests first from acceptance criteria**, kept fast and offline. Anything
   that needs a network or an API key goes behind its own script, never `npm test`.
-- Two taxonomies currently coexist (`db/schema.ts` `DEFAULT_CATEGORIES` vs
-  `classify/taxonomy.ts` `H1_TAXONOMY`). Unifying them is on the roadmap; don't
-  add a third.
+- **One taxonomy**: `modules/finance/db/taxonomy.ts` (slug ids, display names).
+  `categories.id`, `receipt_items.category_id`, `sku_dictionary.category` and
+  corrections all carry the slug id; the classifier emits the display name and
+  the sink maps it with `categoryIdFor`. Never introduce a second list.
 
 ## Workflow
 
