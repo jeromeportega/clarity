@@ -76,6 +76,34 @@ describe('LocalFileImageStore', () => {
     expect(await store.get(key)).toEqual({ bytes: new Uint8Array([1, 1, 1]), mimeType: 'image/png' });
   });
 
+  it('concurrent writes of the same key with DIFFERENT content types leave the last one readable — never nothing', async () => {
+    const key = receiptImageKey('hh-1', 'race-mime');
+    await Promise.all([
+      store.put(key, new Uint8Array([1]), 'image/jpeg'),
+      store.put(key, new Uint8Array([2]), 'image/png'),
+      store.put(key, new Uint8Array([3]), 'application/pdf'),
+    ]);
+    expect(await store.get(key)).toEqual({ bytes: new Uint8Array([3]), mimeType: 'application/pdf' });
+    // …and a later write still goes through (the lock is released).
+    await store.put(key, new Uint8Array([4]), 'image/png');
+    expect(await store.get(key)).toEqual({ bytes: new Uint8Array([4]), mimeType: 'image/png' });
+  });
+
+  it('a failed write does not wedge later writes to the same key', async () => {
+    const key = receiptImageKey('hh-1', 'after-failure');
+    // Make the first write fail by putting a directory where its file must go.
+    const { mkdirSync, readdirSync } = await import('node:fs');
+    const obstacle = join(root, 'receipts', 'hh-1', 'after-failure.png');
+    mkdirSync(obstacle, { recursive: true });
+    await expect(store.put(key, new Uint8Array([1]), 'image/png')).rejects.toThrow();
+    // The failed write left no temp file behind…
+    expect(readdirSync(join(root, 'receipts', 'hh-1')).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    rmSync(obstacle, { recursive: true, force: true });
+    // …and the next write to the same key is not stuck behind it.
+    await store.put(key, new Uint8Array([2]), 'image/jpeg');
+    expect(await store.get(key)).toEqual({ bytes: new Uint8Array([2]), mimeType: 'image/jpeg' });
+  });
+
   it('never leaves the store root', async () => {
     await expect(store.put('receipts/../../etc/passwd', new Uint8Array([1]), 'text/plain')).rejects.toThrow(/unsafe image key/);
     await expect(store.get('receipts/x/..')).rejects.toThrow(/unsafe image key/);

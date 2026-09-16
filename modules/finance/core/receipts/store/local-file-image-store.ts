@@ -23,6 +23,15 @@ const ALL_EXTS = [...Object.keys(MIME_BY_EXT), FALLBACK_EXT];
 
 export class LocalFileImageStore implements ImageStore {
   private readonly root: string;
+  /**
+   * Writes to one key run one after another (within this process — the only
+   * writer a dev server or a test has). Without this, two racing writes of the
+   * same key with different content types would each rename their own file
+   * into place and then each delete the other's: both "succeed", nothing is
+   * left on disk. Serialised, the last write wins and its file is the one
+   * that survives.
+   */
+  private readonly inflight = new Map<string, Promise<void>>();
 
   constructor(root: string) {
     this.root = resolve(root);
@@ -30,11 +39,27 @@ export class LocalFileImageStore implements ImageStore {
 
   async put(key: string, bytes: Uint8Array, mimeType: string): Promise<void> {
     const base = this.pathFor(key);
+    const previous = this.inflight.get(base) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.write(base, bytes, mimeType));
+    this.inflight.set(base, run);
+    try {
+      await run;
+    } finally {
+      if (this.inflight.get(base) === run) this.inflight.delete(base);
+    }
+  }
+
+  private async write(base: string, bytes: Uint8Array, mimeType: string): Promise<void> {
     const ext = EXT_BY_MIME[mimeType] ?? FALLBACK_EXT;
     await mkdir(dirname(base), { recursive: true });
     const tmp = `${base}.${randomUUID()}.tmp`;
-    await writeFile(tmp, bytes);
-    await rename(tmp, `${base}.${ext}`);
+    try {
+      await writeFile(tmp, bytes);
+      await rename(tmp, `${base}.${ext}`);
+    } catch (err) {
+      await rm(tmp, { force: true });
+      throw err;
+    }
     // A re-upload with a different content type replaces the old file.
     await Promise.all(ALL_EXTS.filter((e) => e !== ext).map((e) => rm(`${base}.${e}`, { force: true })));
   }
