@@ -41,8 +41,9 @@ single-household loop is excellent.
 - ~~**Render the queue actions.**~~ Done for a signed-in person (`QueueActions`
   on the queue page, driving the server actions); the public demo stays
   read-only.
-- **Evidence image route.** `/api/receipts/image/[id]` is linked from evidence
-  but doesn't exist; store receipt images durably (not `/tmp`) and serve them.
+- ~~**Evidence image route.**~~ Done: uploads are stored in a private Vercel
+  Blob store (local disk without the token) keyed by household + image hash,
+  and `/api/receipts/image/[receiptId]` serves them after the household check.
 - ~~**Real login.**~~ Done with Clerk: `resolveReadScope` / `requireWriter`
   derive the household from the session in one place; a first sign-in
   provisions the person's household (`users`, `household_members`, migration
