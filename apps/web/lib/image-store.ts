@@ -41,8 +41,17 @@ let _store: ImageStore | undefined;
  * under the data directory (dev, tests, a fresh clone).
  */
 export function getImageStore(env: Record<string, string | undefined> = process.env): ImageStore {
-  _store ??= env.BLOB_READ_WRITE_TOKEN?.trim()
-    ? new VercelBlobImageStore()
-    : new LocalFileImageStore(join(env.CLARITY_DATA_DIR ?? join(process.cwd(), 'data'), 'receipt-images'));
+  if (!_store) {
+    if (env.BLOB_READ_WRITE_TOKEN?.trim()) {
+      _store = new VercelBlobImageStore();
+    } else {
+      if (env.VERCEL) {
+        // The local disk is not durable on Vercel: this is the "/tmp" bug
+        // coming back through a missing variable, so say so every time.
+        console.error('[image-store] BLOB_READ_WRITE_TOKEN is not set on this Vercel deployment: receipt images will NOT be durable.');
+      }
+      _store = new LocalFileImageStore(join(env.CLARITY_DATA_DIR ?? join(process.cwd(), 'data'), 'receipt-images'));
+    }
+  }
   return _store;
 }
