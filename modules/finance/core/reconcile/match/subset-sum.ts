@@ -26,9 +26,10 @@ export function findChargeSubset(
     if (start >= candidates.length) return null;
 
     for (let i = start; i < candidates.length; i++) {
-      const amt = Math.abs(candidates[i].amountCents);
+      const candidate = candidates[i]!;
+      const amt = Math.abs(candidate.amountCents);
       if (amt <= remaining) {
-        const result = dfs(i + 1, remaining - amt, [...chosen, candidates[i]]);
+        const result = dfs(i + 1, remaining - amt, [...chosen, candidate]);
         if (result !== null) return result;
       }
     }

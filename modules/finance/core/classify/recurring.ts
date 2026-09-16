@@ -53,15 +53,17 @@ export function detectRecurring(
 
     // Greedy subgrouping: new subgroup when amount jumps beyond tolerance
     const subgroups: LedgerEvent[][] = [];
-    let current: LedgerEvent[] = [byAmount[0]];
+    const first = byAmount[0];
+    if (!first) continue;
+    let current: LedgerEvent[] = [first];
     subgroups.push(current);
 
-    for (let i = 1; i < byAmount.length; i++) {
-      const anchor = current[0].signedSpendCents;
-      if (Math.abs(byAmount[i].signedSpendCents - anchor) <= cfg.recurringAmountToleranceCents) {
-        current.push(byAmount[i]);
+    for (const evt of byAmount.slice(1)) {
+      const anchor = current[0]!.signedSpendCents;
+      if (Math.abs(evt.signedSpendCents - anchor) <= cfg.recurringAmountToleranceCents) {
+        current.push(evt);
       } else {
-        current = [byAmount[i]];
+        current = [evt];
         subgroups.push(current);
       }
     }
@@ -78,7 +80,7 @@ export function detectRecurring(
       let allMonthly = true;
 
       for (let i = 1; i < sorted.length; i++) {
-        const diff = daysBetween(sorted[i - 1].occurredOn, sorted[i].occurredOn);
+        const diff = daysBetween(sorted[i - 1]!.occurredOn, sorted[i]!.occurredOn);
         if (Math.abs(diff - MONTHLY_DAYS) > cfg.recurringCadenceToleranceDays) {
           allMonthly = false;
           break;
@@ -91,7 +93,7 @@ export function detectRecurring(
       const avgCadence = Math.round(
         cadences.reduce((a, b) => a + b, 0) / cadences.length,
       );
-      const amountDollars = (Math.abs(sorted[0].signedSpendCents) / 100).toFixed(2);
+      const amountDollars = (Math.abs(sorted[0]!.signedSpendCents) / 100).toFixed(2);
 
       for (const evt of sorted) {
         const category = recurringCategory(evt, H1_TAXONOMY);

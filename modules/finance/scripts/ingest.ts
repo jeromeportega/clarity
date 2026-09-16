@@ -12,6 +12,7 @@ import { emlAdapter } from '../core/adapters/eml.adapter';
 import { retailerApiAdapter } from '../core/adapters/retailer-api.adapter';
 import type { RawInput, SourceAdapter, SourceKind } from '../core/adapters/source-adapter';
 import { importSource, type ImportContext, type ImportResult } from '../core/ingest/pipeline';
+import { learnFromDigitalReceipts, type LearnFromDigitalReceiptsSummary } from '../core/receipts/dictionary/bootstrap';
 import { createDb, type FinanceDb } from '../db/client';
 import { accounts } from '../db/schema';
 
@@ -102,6 +103,8 @@ export interface RunIngestOptions {
   baseDir?: string;
 }
 
+export type RunIngestResult = ImportResult & { dictionary?: LearnFromDigitalReceiptsSummary };
+
 /**
  * Resolve the import context (the bank command derives `householdId` from the
  * account named by `accountId`; orders and Costco receipts fall under the single
@@ -132,13 +135,17 @@ async function resolveContext(
   return { householdId: account.householdId, accountId };
 }
 
-export async function runIngest(opts: RunIngestOptions): Promise<ImportResult> {
+export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult> {
   const resolvedPath = resolveInputPath(opts.path, opts.baseDir);
   const input = buildRawInput(COMMAND_KIND[opts.command], resolvedPath);
   const db = opts.db ?? createDb();
   const adapters = opts.adapters ?? allAdapters;
   const ctx = await resolveContext(db, opts.command, opts.accountId);
-  return importSource(db, input, ctx, adapters);
+  const result = await importSource(db, input, ctx, adapters);
+  if (opts.command !== 'costco') return result;
+  // Digital receipts name their lines: teach the dictionary, as the route does.
+  const dictionary = await learnFromDigitalReceipts(db, { householdId: ctx.householdId });
+  return { ...result, dictionary };
 }
 
 export interface ParsedArgs {

@@ -19,6 +19,34 @@ describe('normalizeStore', () => {
     const once = normalizeStore("  Trader  Joe's ");
     expect(normalizeStore(once)).toBe(once);
   });
+
+  // One retailer, one key: a digital receipt says WHSE, the photo header says
+  // WHOLESALE, a bank line appends the store number. All three must hit the
+  // same dictionary row or nothing learned from one path helps the other.
+  it('canonicalises a retailer across the ways its name is printed', () => {
+    expect(normalizeStore('COSTCO WHSE')).toBe('COSTCO');
+    expect(normalizeStore('Costco Wholesale')).toBe('COSTCO');
+    expect(normalizeStore('COSTCO WHSE #1234')).toBe('COSTCO');
+    expect(normalizeStore('COSTCO WHOLESALE 0482')).toBe('COSTCO');
+    expect(normalizeStore('COSTCO')).toBe('COSTCO');
+  });
+
+  it('leaves identity-bearing words alone', () => {
+    expect(normalizeStore('COSTCO GAS')).toBe('COSTCO GAS');
+    expect(normalizeStore('WHOLE FOODS MARKET')).toBe('WHOLE FOODS MARKET');
+    expect(normalizeStore("SAM'S CLUB")).toBe("SAM'S CLUB");
+    expect(normalizeStore('7-ELEVEN')).toBe('7-ELEVEN');
+  });
+
+  it('never collapses a name to an empty key', () => {
+    expect(normalizeStore('WHOLESALE')).toBe('WHOLESALE');
+    expect(normalizeStore('#1234')).toBe('#1234');
+  });
+
+  it('canonicalisation is idempotent', () => {
+    const once = normalizeStore('Costco Wholesale #1234');
+    expect(normalizeStore(once)).toBe(once);
+  });
 });
 
 describe('normalizeSkuOrAbbrev', () => {
@@ -29,6 +57,13 @@ describe('normalizeSkuOrAbbrev', () => {
   it('is idempotent', () => {
     const once = normalizeSkuOrAbbrev('  ks   org  evoo ');
     expect(normalizeSkuOrAbbrev(once)).toBe(once);
+  });
+
+  it('drops Costco’s * emphasis markers so a digital line and its photo agree', () => {
+    expect(normalizeSkuOrAbbrev('***BOUNTY***')).toBe('BOUNTY');
+    expect(normalizeSkuOrAbbrev('***BOUNTY*** 669SF TALL PACK')).toBe('BOUNTY 669SF TALL PACK');
+    expect(normalizeSkuOrAbbrev('KS-EVOO')).toBe('KS-EVOO');
+    expect(normalizeSkuOrAbbrev('1919326')).toBe('1919326');
   });
 
   // The caller derives the raw key as `sku ?? description` ("key = SKU when

@@ -101,6 +101,10 @@ Accepted upload types: `image/jpeg`, `image/png`, `application/pdf`; cap 20 MiB 
 
 `SkuDictionary` (`dictionary/sku-dictionary.ts`): `lookup(store, key)` / `upsert(entry)`. `LibSqlSkuDictionary` backs the `sku_dictionary` table (PK `(store, sku_or_abbrev)`; a `source='human'` row always wins on upsert). `StubSkuDictionary` is an in-memory `Map`.
 
+**Keys are retailer-canonical.** `normalizeStore` (`dictionary/normalize.ts`) uppercases, collapses whitespace, then drops store numbers (`#1234`, bare digit runs) and generic corporate suffixes (`WHSE`, `WHOLESALE`, `INC`, `LLC`, `CORP`), so the digital receipt's `COSTCO WHSE`, the photo header's `COSTCO WHOLESALE` and a bank line's `COSTCO WHSE #1234` all reach one row. `normalizeSkuOrAbbrev` additionally strips Costco's `*` emphasis markers (`***BOUNTY***` → `BOUNTY`). Every producer and consumer (the resolver, the corrections, the bootstrap below) goes through these two functions; `renormalizeDictionaryKeys` re-keys existing rows after a rule change.
+
+**Digital receipts teach the dictionary** (`dictionary/bootstrap.ts#learnFromDigitalReceipts`). After every Costco import (the route and the CLI; `npm run dictionary:bootstrap` for existing data), each retailer-named line is upserted under the two keys the photo path can look up — the item number and the printed abbreviation — with the retailer's canonical name at `name_confidence = 1.0` and a heuristic-classifier **category guess at `0.5`**: the export carries no category, so the first photographed hit resolves the name for free but still asks the human for the category once, and their answer becomes the `human` row that never asks again. The bootstrap's `auto` rows overwrite an earlier `auto` row (an LLM's guess at the same line) but never a `human` one; re-running is idempotent.
+
 `resolver/similarity.ts` exports `similarityRatio` — Sørensen–Dice bigram similarity — shared by the eval harness and the reconciliation matchers.
 
 ### 4. Reconciliation — `modules/finance/core/reconcile/`
@@ -234,7 +238,7 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 | `POST /api/receipts/upload` | `x-reconcile-token` | multipart `file`; Content-Length cap before buffering, then MIME + 20 MiB per-file checks before the bytes are copied; `processReceipt`; raw bytes written to `/tmp/receipts/<uuid>.<ext>`. |
 | `POST /api/ingest/bank` | `x-reconcile-token` | multipart `file` + `accountId` (25 MiB cap); household derived from the account row — see gaps. |
 | `POST /api/ingest/orders` | `x-reconcile-token` | multipart `file` (25 MiB cap); imports into the demo household (`core/scope`). |
-| `POST /api/ingest/costco` | `x-reconcile-token` | multipart `file` = saved `WarehouseReceiptDetail` JSON (25 MiB cap); receipts + line items into the demo household. |
+| `POST /api/ingest/costco` | `x-reconcile-token` | multipart `file` = saved `WarehouseReceiptDetail` JSON (25 MiB cap); receipts + line items into the demo household, then `learnFromDigitalReceipts` (response carries `dictionary`). |
 
 Every write route calls `requireMutationToken` as its first statement; `tests/mutation-routes.test.ts` discovers every `route.ts` under `app/api` and asserts each exported write method returns 401 without the token, so an ungated write route fails CI.
 
