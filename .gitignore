@@ -2,6 +2,7 @@
 .claude/settings.json
 .mcp.json
 .cursor/mcp.json
+
 # --- Application ignores ---------------------------------------------------
 # Real financial data must NEVER be committable. These exclusions ship in the
 # first commit so no statement export, upload, or local DB can ever be staged.
