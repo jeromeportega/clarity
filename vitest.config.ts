@@ -20,7 +20,9 @@ const NODE_MODULES = realpathSync(fileURLToPath(new URL('./node_modules', import
 //          (`vitest run --project unit`).
 //   eval — the key-gated vision accuracy harness. Runs under
 //          `npm run vision:eval` (`vitest run --project eval`); each eval test
-//          self-skips without ANTHROPIC_API_KEY and is EXCLUDED from `npm test`.
+//          self-skips without a gateway credential (AI_GATEWAY_API_KEY or a
+//          pulled VERCEL_OIDC_TOKEN, read from .env.local / .env by its setup
+//          file) and is EXCLUDED from `npm test`.
 export default defineConfig({
   test: {
     projects: [
@@ -62,6 +64,7 @@ export default defineConfig({
         test: {
           name: 'eval',
           environment: 'node',
+          setupFiles: ['./modules/finance/core/receipts/eval/load-env.ts'],
           include: ['modules/finance/core/receipts/eval/**/*.eval.test.ts'],
         },
       },

@@ -54,10 +54,11 @@ export interface GradedItem {
   category: string | null;
 }
 
-// The eval suite runs only when an Anthropic key is present; otherwise it SKIPS
-// (never fails — ADR-006), keeping the default gate offline.
-export function evalKeyPresent(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY.trim());
+// The eval suite runs only when a live model call can be authenticated — an AI
+// Gateway API key, or the Vercel OIDC token `vercel env pull` writes; otherwise
+// it SKIPS (never fails — ADR-006), keeping the default gate offline.
+export function evalKeyPresent(env: Record<string, string | undefined> = process.env): boolean {
+  return Boolean(env.AI_GATEWAY_API_KEY?.trim() || env.VERCEL_OIDC_TOKEN?.trim());
 }
 
 // The receipt directory to grade: operator override, else the committed sample.
@@ -160,6 +161,31 @@ export function gradeReceipt(
     }
   }
   return { correct, total: expected.length };
+}
+
+// The misses behind a gradeReceipt score, for the operator's eyes: which
+// expected item was not resolved, and what the pipeline produced for it
+// (or nothing, when no line could be paired with it). Same pairing as the grade.
+export interface EvalMiss {
+  expected: ExpectedItem;
+  actual: GradedItem | null;
+}
+export function explainMisses(actual: GradedItem[], expected: ExpectedItem[], ratio: number): EvalMiss[] {
+  const misses: EvalMiss[] = [];
+  const claimed = new Set<number>();
+  for (const exp of expected) {
+    const idx = pickActual(actual, claimed, exp);
+    if (idx === undefined) {
+      misses.push({ expected: exp, actual: null });
+      continue;
+    }
+    claimed.add(idx);
+    const got = actual[idx]!;
+    if (!isCorrectlyResolved(asResolution(got), { name: exp.name, category: exp.category }, ratio)) {
+      misses.push({ expected: exp, actual: got });
+    }
+  }
+  return misses;
 }
 
 // Optional cap on how many receipts a live run grades (RECEIPT_EVAL_LIMIT), for

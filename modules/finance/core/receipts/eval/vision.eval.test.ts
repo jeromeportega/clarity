@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
-import Anthropic from '@anthropic-ai/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { StubSkuDictionary } from '../dictionary/stub-sku-dictionary';
 import { processReceipt, type ReceiptPipelineDeps } from '../process-receipt';
-import { AnthropicSkuResolver, LlmSkuResolver } from '../resolver/llm-resolver';
+import { resolverModelId, visionModelId } from '../model-ids';
+import { LlmSkuResolver, ModelSkuResolver } from '../resolver/llm-resolver';
 import { StubReceiptStore } from '../store/stub-receipt-store';
-import { LiveAnthropicVisionProvider } from '../vision/live-anthropic-vision-provider';
+import { LiveVisionProvider } from '../vision/live-vision-provider';
 import type { ReceiptImageInput } from '../vision/vision-provider';
 import {
   EVAL_PASS_FRACTION,
@@ -14,6 +14,7 @@ import {
   evalKeyPresent,
   evalTimeoutMs,
   expectedPathFor,
+  explainMisses,
   gradeReceipt,
   meetsThreshold,
   mimeTypeForFile,
@@ -27,12 +28,13 @@ import {
 
 // =============================================================================
 // FR-18 — the key-gated accuracy harness. Runs ONLY under `npm run vision:eval`
-// (the separate `eval` Vitest project), and only when ANTHROPIC_API_KEY is set.
+// (the separate `eval` Vitest project), and only when a live model call can be
+// authenticated (AI_GATEWAY_API_KEY, or the VERCEL_OIDC_TOKEN from `vercel env pull`).
 // With no key it SKIPS, never fails (ADR-006), so it never touches the default
 // `npm test` / E2E offline gate.
 //
 // It drives ≥5 sanitized real receipts end-to-end through the live pipeline
-// (LiveAnthropicVisionProvider + the live LLM resolver) and asserts, as a SINGLE
+// (LiveVisionProvider + the live LLM resolver, through the AI Gateway) and asserts, as a SINGLE
 // threshold over the whole sample, that ≥80% of expected line items resolved
 // correctly — Sørensen–Dice canonical-name similarity ≥ ratio AND exact category
 // equality. Never a per-item exact-string match (NFR-5).
@@ -61,11 +63,11 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
   const timeoutMs = evalTimeoutMs(receiptFiles.length, expectedLineItems);
 
   beforeAll(() => {
-    const client = new Anthropic(); // reads ANTHROPIC_API_KEY; guarded by RUN
+    // Gateway ids (overridable by env); the SDK authenticates from the environment — guarded by RUN.
     const dictionary = new StubSkuDictionary();
     deps = {
-      vision: new LiveAnthropicVisionProvider({ client }),
-      resolver: new LlmSkuResolver({ dictionary, llm: new AnthropicSkuResolver({ client }) }),
+      vision: new LiveVisionProvider({ model: visionModelId() }),
+      resolver: new LlmSkuResolver({ dictionary, llm: new ModelSkuResolver({ model: resolverModelId() }) }),
       dictionary,
       store: new StubReceiptStore(),
     };
@@ -100,6 +102,14 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         // Filenames embed the full transaction id; print only its tail.
         const label = (file.split('/').pop() ?? file).replace(/(\d{6})\d{8,}/, '…$1');
         perReceipt.push(`${label}: ${score.correct}/${score.total} items, ${totalOk}${out.status === 'ok' ? '' : ` [${out.status}]`}`);
+        // Each miss on its own line: what was expected, what came back — so a
+        // failing threshold says which names or categories to look at.
+        for (const miss of explainMisses(graded, expected.items, ratio)) {
+          const got = miss.actual
+            ? `"${miss.actual.canonicalName ?? ''}" [${miss.actual.category ?? '-'}]`
+            : 'no line paired';
+          perReceipt.push(`    miss: expected "${miss.expected.name}" [${miss.expected.category ?? '-'}] → got ${got}`);
+        }
       }
       // Per-receipt diagnostics for the operator; the assertion stays a single threshold.
       console.log(`vision:eval — ${correct}/${total} line items resolved (${((100 * correct) / Math.max(total, 1)).toFixed(1)}%)\n${perReceipt.join('\n')}`);

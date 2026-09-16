@@ -31,16 +31,20 @@ import {
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..');
 
 describe('evalKeyPresent — the skip gate (FR-18, ADR-006)', () => {
-  it('is false when ANTHROPIC_API_KEY is absent (eval SKIPS, never fails)', () => {
+  it('is false with no gateway credential at all (eval SKIPS, never fails)', () => {
     expect(evalKeyPresent({})).toBe(false);
   });
 
-  it('is false when the key is blank', () => {
-    expect(evalKeyPresent({ ANTHROPIC_API_KEY: '   ' })).toBe(false);
+  it('is false when the credentials are blank', () => {
+    expect(evalKeyPresent({ AI_GATEWAY_API_KEY: '   ', VERCEL_OIDC_TOKEN: '' })).toBe(false);
   });
 
-  it('is true when a key is set', () => {
-    expect(evalKeyPresent({ ANTHROPIC_API_KEY: 'sk-ant-xxx' })).toBe(true);
+  it('is true with an AI Gateway API key', () => {
+    expect(evalKeyPresent({ AI_GATEWAY_API_KEY: 'vck_xxx' })).toBe(true);
+  });
+
+  it('is true with a pulled Vercel OIDC token', () => {
+    expect(evalKeyPresent({ VERCEL_OIDC_TOKEN: 'eyJ.xxx' })).toBe(true);
   });
 });
 

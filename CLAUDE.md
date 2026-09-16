@@ -13,8 +13,8 @@ and the honest list of what is not yet wired) and `docs/ROADMAP.md`.
   shallow files; deeper routes need more `../`). `@/` resolves to `apps/web/`.
 - `modules/finance/core` — pure domain logic behind DI seams (adapters, vision
   provider, SKU resolver/dictionary, reconcile engine, classifier, queue,
-  corrections, rollups, evidence). **Never constructs an Anthropic client, DB
-  client, or framework object** — `core/__tests__/core-boundary.test.ts` and
+  corrections, rollups, evidence). **Never chooses a model, builds a model provider, constructs a DB
+  client, or a framework object** (models are injected as AI Gateway ids) — `core/__tests__/core-boundary.test.ts` and
   `receipts/framework-isolation.test.ts` enforce this.
 - `modules/finance/db` — Drizzle schema + migrations + `createDb()`
   (Turso when `TURSO_*` is set, otherwise a local file under `data/`).

@@ -21,7 +21,7 @@ const ARTIFACTS = ['vercel.json', 'deploy/deploy.sh', 'deploy/ENV.md', 'deploy/s
 const ENV_VAR_NAMES = [
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
+  'AI_GATEWAY_API_KEY',
   'RECONCILE_MUTATION_TOKEN',
   'PUBLIC_DEMO_MODE',
   'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',

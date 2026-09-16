@@ -5,9 +5,9 @@ import type { Cents } from '../money';
 //
 // `VisionProvider` is the only contract the pipeline knows about. The default
 // `npm test` gate wires `RecordedVisionProvider` (offline fixtures, no key);
-// `vision:eval` wires `LiveAnthropicVisionProvider`. The core never constructs
-// an Anthropic client — the caller injects whichever provider it wants
-// (NFR-1, G-3).
+// `vision:eval` wires `LiveVisionProvider` with a model from the AI Gateway.
+// The core never chooses a model or builds a provider — the caller injects
+// whichever vision provider it wants (NFR-1, G-3).
 // =============================================================================
 
 // The bytes Claude vision will read. PDF is accepted alongside JPEG/PNG because
