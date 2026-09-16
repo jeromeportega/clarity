@@ -71,6 +71,30 @@ describe('resolveMembership', () => {
     expect(await resolveMembership(db, { userId: 'user_gone', email: 'g@example.com' }, PROVISION)).toBeNull();
   });
 
+  it('a removed SOLE member does not re-join the now-empty household either', async () => {
+    const m = (await resolveMembership(db, { userId: 'user_solo', email: 's@example.com' }, PROVISION))!;
+    await db.delete(householdMembers).where(eq(householdMembers.userId, 'user_solo'));
+
+    expect(await resolveMembership(db, { userId: 'user_solo', email: 's@example.com' }, PROVISION)).toBeNull();
+    expect(await db.select().from(householdMembers).where(eq(householdMembers.householdId, m.householdId))).toHaveLength(0);
+    expect(await db.select().from(households)).toHaveLength(1);
+  });
+
+  it('an orphaned household under the person’s own id (no members, no user row) is not joined', async () => {
+    await db.insert(households).values({ id: 'hh_user_orphan', name: 'Left behind' });
+
+    expect(await resolveMembership(db, { userId: 'user_orphan', email: 'o@example.com' }, PROVISION)).toBeNull();
+    expect(await db.select().from(householdMembers)).toHaveLength(0);
+  });
+
+  it('a user row that started without an email picks one up on the next sign-in', async () => {
+    await resolveMembership(db, { userId: 'user_noemail' }, PROVISION);
+    expect((await db.select().from(users).where(eq(users.id, 'user_noemail')))[0]!.email).toBeNull();
+
+    await resolveMembership(db, { userId: 'user_noemail', email: 'late@example.com', displayName: 'Late' }, NO_PROVISION);
+    expect((await db.select().from(users).where(eq(users.id, 'user_noemail')))[0]).toMatchObject({ email: 'late@example.com', displayName: 'Late' });
+  });
+
   it('two people get two households', async () => {
     const a = (await resolveMembership(db, { userId: 'user_a', email: 'a@example.com' }, PROVISION))!;
     const b = (await resolveMembership(db, { userId: 'user_b', email: 'b@example.com' }, PROVISION))!;

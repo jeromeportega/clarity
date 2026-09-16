@@ -1,4 +1,4 @@
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
 import { householdMembers, households, users } from '../../db/schema';
@@ -48,12 +48,16 @@ export function ownHouseholdId(userId: string): string {
  *                             needs no seed, no invite, no admin step;
  *   otherwise               → null: signed in, but with no household here.
  *
- * Fails closed on the two ways an "own" household can already exist without
- * the person in it: a row someone else created under this id (never joined),
- * and a household the person was removed from (never re-joined). Only a row
- * that has no members at all — the other half of a concurrent first sign-in —
- * is joined. Every write is insert-or-ignore, so the function is idempotent
- * and safe under concurrent first sign-ins without holding a transaction.
+ * Fails closed whenever the "own" household already exists: provisioning
+ * creates a household or joins nothing. A row someone else created under this
+ * id is never joined; a household the person was removed from is never
+ * re-joined, whether or not anyone else is still in it; an orphaned row with
+ * no members at all stays closed too (an operator who wants it re-used adds
+ * the membership by hand). The other half of a concurrent first sign-in gets
+ * the membership the winning half recorded — and, in the brief window before
+ * it is recorded, null for that one request rather than a second household.
+ * Every write is insert-or-ignore, so the function is idempotent and safe
+ * under concurrent first sign-ins without holding a transaction.
  */
 export async function resolveMembership(
   db: FinanceDb,
@@ -79,13 +83,12 @@ export async function resolveMembership(
     .returning({ id: households.id });
 
   if (created.length === 0) {
-    // The row already existed. Ours to join only if nobody holds it yet (the
-    // other half of a race); anyone else's, or one we were removed from, stays closed.
-    const members = await db
-      .select({ userId: householdMembers.userId })
-      .from(householdMembers)
-      .where(eq(householdMembers.householdId, householdId));
-    if (members.length > 0 && !members.some((m) => m.userId === identity.userId)) return null;
+    // The row already existed: someone else's, one we were removed from, an
+    // orphan, or the other half of a race that has just recorded our
+    // membership. Only that last case yields a household — and only through
+    // the membership row, never by joining here.
+    const recorded = await findMembership(db, identity.userId);
+    return recorded ? { ...recorded, provisioned: false } : null;
   }
   await db
     .insert(householdMembers)
@@ -114,7 +117,7 @@ async function refreshProfile(db: FinanceDb, identity: Identity): Promise<void> 
   await db
     .update(users)
     .set({ email, displayName: identity.displayName ?? null })
-    .where(and(eq(users.id, identity.userId), ne(users.email, email)));
+    .where(and(eq(users.id, identity.userId), or(isNull(users.email), ne(users.email, email))));
 }
 
 function householdNameFor(identity: Identity): string {

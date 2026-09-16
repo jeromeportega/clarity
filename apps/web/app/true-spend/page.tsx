@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation';
 import { readScopeOrRedirect } from '../../lib/public-mode';
 import { fetchBreakdown } from '../../lib/truespend';
 import { TrueSpendView } from '../components/truespend/TrueSpendView';

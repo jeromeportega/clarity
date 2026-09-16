@@ -46,12 +46,15 @@ export function buildReceiptPipelineDeps(
   const llm = overrides.llm ?? (client ? new AnthropicSkuResolver({ client }) : new RecordedSkuResolver());
   const dictionary = overrides.dictionary ?? new LibSqlSkuDictionary(db, { householdId });
   const store = overrides.store ?? new LibSqlReceiptStore(db, { householdId });
-  // Invariant: the store's idempotency scope and the household stamped on
-  // every row must agree, or one household's photo could be filed under
-  // another's. Only an injected store can violate it.
-  const scoped = (store as { scopedHouseholdId?: string }).scopedHouseholdId;
-  if (scoped !== undefined && scoped !== householdId) {
-    throw new Error(`receipt store is scoped to household ${scoped} but the pipeline is for ${householdId}`);
+  // Invariant: the store's idempotency scope, the dictionary's scope and the
+  // household stamped on every row must agree, or one household's photo could
+  // be filed under — or resolved from — another's. Only injected ones can
+  // violate it.
+  for (const [what, dep] of [['receipt store', store], ['SKU dictionary', dictionary]] as const) {
+    const scoped = (dep as { scopedHouseholdId?: string }).scopedHouseholdId;
+    if (scoped !== undefined && scoped !== householdId) {
+      throw new Error(`${what} is scoped to household ${scoped} but the pipeline is for ${householdId}`);
+    }
   }
   const resolver = new LlmSkuResolver({ dictionary, llm });
 
