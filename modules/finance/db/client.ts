@@ -78,7 +78,11 @@ function applyMigrations(client: Client): void {
   for (const name of files) {
     const sqlText = readFileSync(join(MIGRATIONS_DIR, name), 'utf8');
     if (sqlText.trim().length === 0) continue;
-    void client.executeMultiple(sqlText).catch(() => {});
+    // Never swallow: a failing migration (DDL or, since 0005, data) must be
+    // loud, or every test DB silently runs against a half-migrated schema.
+    void client.executeMultiple(sqlText).catch((err: unknown) => {
+      console.error(`[db] test migration ${name} failed:`, err instanceof Error ? err.message : err);
+    });
   }
 }
 

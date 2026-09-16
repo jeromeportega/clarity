@@ -220,8 +220,8 @@ export const matches = sqliteTable('matches', {
 });
 
 /**
- * categories — taxonomy source of truth for H3 categorization. Schema only in
- * H1 (seeded by the seed script from DEFAULT_CATEGORIES). `parent_id` allows a
+ * categories — the taxonomy rows (`id` = slug, `name` = display), seeded from
+ * ./taxonomy.ts by migration 0005 and the seed scripts. `parent_id` allows a
  * hierarchy.
  */
 export const categories = sqliteTable(

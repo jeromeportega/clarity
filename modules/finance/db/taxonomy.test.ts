@@ -99,6 +99,11 @@ describe('migration 0005_taxonomy_unification', () => {
         VALUES ('COSTCO', 'Y', 'Thing 2', 'Health & Medical', 1, 1, 'human', 0);
       INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
         VALUES ('COSTCO', 'Z', 'Thing 3', 'groceries', 1, 1, 'auto', 0);
+      -- Auto write-backs stored whatever listCategories() returned: the legacy random ids.
+      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('COSTCO', 'W', 'Thing 4', 'uuid-transport', 1, 1, 'auto', 0);
+      INSERT INTO sku_dictionary (store, sku_or_abbrev, canonical_name, category, name_confidence, category_confidence, source, updated_at)
+        VALUES ('COSTCO', 'V', 'Thing 5', 'uuid-health', 1, 1, 'auto', 0);
     `);
 
     await apply(client, migrationFiles().find((f) => f.includes('0005_'))!);
@@ -117,7 +122,9 @@ describe('migration 0005_taxonomy_unification', () => {
 
     const dict = await client.execute('SELECT sku_or_abbrev, category FROM sku_dictionary ORDER BY sku_or_abbrev');
     expect(dict.rows.map((r) => [r.sku_or_abbrev, r.category])).toEqual([
-      ['X', 'transportation'],
+      ['V', 'health-medical'], // legacy id → resolved through the category row
+      ['W', 'transportation'],
+      ['X', 'transportation'], // legacy name
       ['Y', 'health-medical'],
       ['Z', 'groceries'],
     ]);

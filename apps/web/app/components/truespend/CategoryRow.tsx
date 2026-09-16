@@ -38,7 +38,7 @@ export function CategoryRow({ category }: CategoryRowProps) {
             >
               ▶
             </span>
-            {category.category.replace(/_/g, ' ')}
+            {category.category}
           </button>
         </td>
         <td className="py-3 px-4 text-right tabular-nums font-medium">

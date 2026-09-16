@@ -66,7 +66,36 @@ UPDATE `receipt_items` SET `category_id` = (
 )
 WHERE `category_id` IN (SELECT `id` FROM `categories` WHERE `name` LIKE '% (legacy)');
 --> statement-breakpoint
-UPDATE `sku_dictionary` SET `category` = CASE lower(`category`)
+-- sku_dictionary.category held whatever listCategories() returned — legacy
+-- random ids (auto write-backs) or, from the old correction dialog, names.
+-- Resolve ids through the (renamed) legacy category rows first, then names.
+UPDATE `sku_dictionary` SET `category` = COALESCE(
+  (SELECT CASE lower(replace(c.`name`, ' (legacy)', ''))
+    WHEN 'groceries' THEN 'groceries'
+    WHEN 'household' THEN 'household'
+    WHEN 'electronics' THEN 'electronics'
+    WHEN 'clothing' THEN 'clothing'
+    WHEN 'utilities' THEN 'utilities'
+    WHEN 'mortgage_rent' THEN 'housing'
+    WHEN 'subscriptions' THEN 'subscriptions'
+    WHEN 'dining' THEN 'dining'
+    WHEN 'transport' THEN 'transportation'
+    WHEN 'transportation' THEN 'transportation'
+    WHEN 'entertainment' THEN 'entertainment'
+    WHEN 'shopping' THEN 'shopping'
+    WHEN 'health & medical' THEN 'health-medical'
+    WHEN 'travel' THEN 'travel'
+    WHEN 'housing' THEN 'housing'
+    WHEN 'education' THEN 'education'
+    WHEN 'personal care' THEN 'personal-care'
+    WHEN 'books & media' THEN 'books-media'
+    WHEN 'pet care' THEN 'pet-care'
+    WHEN 'home improvement' THEN 'home-improvement'
+    WHEN 'insurance' THEN 'insurance'
+    WHEN 'transfers' THEN 'transfers'
+    ELSE 'other'
+  END FROM `categories` c WHERE c.`id` = `sku_dictionary`.`category`),
+  CASE lower(`category`)
     WHEN 'groceries' THEN 'groceries'
     WHEN 'household' THEN 'household'
     WHEN 'electronics' THEN 'electronics'
@@ -96,6 +125,7 @@ UPDATE `sku_dictionary` SET `category` = CASE lower(`category`)
     WHEN 'transfers' THEN 'transfers'
     ELSE 'other'
   END
+)
 WHERE `category` NOT IN (
   'groceries','household','dining','entertainment','subscriptions','shopping','health-medical','travel',
   'transportation','utilities','housing','education','personal-care','electronics','clothing','books-media',

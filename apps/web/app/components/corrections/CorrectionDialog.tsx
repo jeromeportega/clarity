@@ -42,7 +42,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
   const [store, setStore] = React.useState('');
   const [skuOrAbbrev, setSkuOrAbbrev] = React.useState('');
   const [canonicalName, setCanonicalName] = React.useState('');
-  const [category, setCategory] = React.useState('groceries');
+  const [category, setCategory] = React.useState<string>(TAXONOMY[0].id);
 
   // Reset all form state each time the dialog opens so stale input is never shown.
   React.useEffect(() => {
@@ -53,7 +53,7 @@ export function CorrectionDialog({ item, open, onOpenChange, onSubmit }: Correct
       setStore('');
       setSkuOrAbbrev('');
       setCanonicalName('');
-      setCategory('groceries');
+      setCategory(TAXONOMY[0].id);
       setSubmitError(null);
     }
   }, [open]);
