@@ -48,16 +48,16 @@ export function similarityRatio(a: string, b: string): number {
   return (2 * shared) / total;
 }
 
-// The eval harness's definition of a correct resolution (G-1): the canonical
-// name is similar enough (>= ratio) AND the category matches exactly. Category
-// is a closed taxonomy, so it must be an exact hit — no fuzzy credit.
+// The eval harness's definition of a correct resolution: the canonical name is
+// similar enough (>= ratio) AND the category matches exactly. Category is a
+// closed taxonomy, so it must be an exact hit — no fuzzy credit. When the
+// reference carries no category at all (`null` — e.g. a retailer export that
+// names products but does not classify them) the name alone decides.
 export function isCorrectlyResolved(
   actual: Resolution,
-  expected: { name: string; category: string },
+  expected: { name: string; category: string | null },
   ratio: number,
 ): boolean {
-  return (
-    similarityRatio(actual.canonicalName, expected.name) >= ratio &&
-    actual.category === expected.category
-  );
+  if (similarityRatio(actual.canonicalName, expected.name) < ratio) return false;
+  return expected.category === null || actual.category === expected.category;
 }

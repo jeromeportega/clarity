@@ -47,6 +47,9 @@ import type { ImportError } from '../source-adapter';
 
 export const COSTCO_DIGITAL_SOURCE = 'costco_digital';
 
+/** Record types Costco's receipt export carries; both share one shape. */
+export const SUPPORTED_DOCUMENT_TYPES: ReadonlySet<string> = new Set(['WarehouseReceiptDetail', 'FuelReceipts']);
+
 /** ±2¢ tolerance for `Σ line − Σ discount + tax ≈ total`. */
 const ARITHMETIC_TOLERANCE_CENTS = 2;
 
@@ -108,8 +111,10 @@ function parseReceipt(entry: unknown, index: number, errors: ImportError[]): Nor
     return null;
   }
 
+  // Warehouse receipts are `WarehouseReceiptDetail`; gas-station receipts in
+  // the same export are `FuelReceipts` (same shape, one fuel line).
   const documentType = str(entry.documentType);
-  if (documentType && documentType !== 'WarehouseReceiptDetail') {
+  if (documentType && !SUPPORTED_DOCUMENT_TYPES.has(documentType)) {
     errors.push({ rowRef, reason: `unsupported documentType '${documentType}'` });
     return null;
   }
@@ -194,7 +199,11 @@ function parseReceipt(entry: unknown, index: number, errors: ImportError[]): Nor
     const isFee = department === 0 || FEE_PATTERN.test(desc01);
     const isFuel = raw.fuelUomCode != null || raw.fuelGradeCode != null;
 
-    const canonicalName = isFee ? feeName(desc01) : catalogName(raw.itemActualName);
+    const canonicalName = isFee
+      ? feeName(desc01)
+      : isFuel
+        ? (catalogName(raw.itemActualName) ?? fuelName(raw.fuelGradeDescription, desc01))
+        : catalogName(raw.itemActualName);
 
     const rawQuantity = isFuel ? num(raw.fuelUnitQuantity) : num(raw.unit);
     const quantity = rawQuantity === null ? 1 : Math.abs(rawQuantity) || 1;
@@ -246,12 +255,31 @@ function parseReceipt(entry: unknown, index: number, errors: ImportError[]): Nor
 
 const FEE_PATTERN = /REDEMP\s*VAL|\bCRV\b|BOTTLE\s*DEP(?:OSIT)?\b|\bBAG\s*FEE\b/i;
 
+export const CRV_FEE_NAME = 'California Redemption Value (CRV)';
+export const BOTTLE_DEPOSIT_NAME = 'Bottle deposit';
+export const BAG_FEE_NAME = 'Bag fee';
+/** The canonical names this parser assigns to fee lines (not products). */
+export const FEE_NAMES: ReadonlySet<string> = new Set([CRV_FEE_NAME, BOTTLE_DEPOSIT_NAME, BAG_FEE_NAME]);
+
 /** Fixed names for recognized fee lines; anything else on a fee line is unnamed (never the catalog name). */
 function feeName(desc01: string): string | null {
-  if (/REDEMP\s*VAL|\bCRV\b/i.test(desc01)) return 'California Redemption Value (CRV)';
-  if (/BOTTLE\s*DEP(?:OSIT)?\b/i.test(desc01)) return 'Bottle deposit';
-  if (/\bBAG\s*FEE\b/i.test(desc01)) return 'Bag fee';
+  if (/REDEMP\s*VAL|\bCRV\b/i.test(desc01)) return CRV_FEE_NAME;
+  if (/BOTTLE\s*DEP(?:OSIT)?\b/i.test(desc01)) return BOTTLE_DEPOSIT_NAME;
+  if (/\bBAG\s*FEE\b/i.test(desc01)) return BAG_FEE_NAME;
   return null;
+}
+
+/**
+ * Fuel lines have no catalog entry ("REGULAR GAS" echoed back); the grade is
+ * printed separately ("Regular", "Premium", "Diesel"), which names the line
+ * deterministically — a gas receipt should never need a human to say what it
+ * was.
+ */
+function fuelName(grade: unknown, desc01: string): string | null {
+  const g = (str(grade) ?? '').trim() || desc01.replace(/\b(GAS|UNLEADED|FUEL)\b/gi, '').trim();
+  if (!g) return null;
+  const title = g.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return /diesel/i.test(title) ? `${title} Fuel` : `${title} Gasoline`;
 }
 
 /**
