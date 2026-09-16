@@ -162,8 +162,8 @@ describe('learnFromDigitalReceipts', () => {
 
   it('a retailer’s name replaces an earlier LLM guess but never a human’s answer', async () => {
     await db.insert(skuDictionary).values([
-      { store: 'COSTCO', skuOrAbbrev: '5555', canonicalName: 'Some LLM Guess', category: 'other', nameConfidence: 0.85, categoryConfidence: 0.85, source: 'auto', updatedAt: 1 },
-      { store: 'COSTCO', skuOrAbbrev: '6666', canonicalName: 'What The Human Said', category: 'household', nameConfidence: 1, categoryConfidence: 1, source: 'human', updatedAt: 1 },
+      { householdId: HH, store: 'COSTCO', skuOrAbbrev: '5555', canonicalName: 'Some LLM Guess', category: 'other', nameConfidence: 0.85, categoryConfidence: 0.85, source: 'auto', updatedAt: 1 },
+      { householdId: HH, store: 'COSTCO', skuOrAbbrev: '6666', canonicalName: 'What The Human Said', category: 'household', nameConfidence: 1, categoryConfidence: 1, source: 'human', updatedAt: 1 },
     ]);
     await seedReceipt('r', { purchasedAt: '2025-01-10' }, [
       { sku: '5555', raw: 'A', canonical: 'Retailer Name A' },
@@ -197,7 +197,7 @@ describe('learnFromDigitalReceipts', () => {
 
   it('re-keys rows written under a superseded normalization before learning', async () => {
     await db.insert(skuDictionary).values({
-      store: 'COSTCO WHSE', skuOrAbbrev: '7777', canonicalName: 'Human Said', category: 'groceries', nameConfidence: 1, categoryConfidence: 1, source: 'human', updatedAt: 5,
+      householdId: HH, store: 'COSTCO WHSE', skuOrAbbrev: '7777', canonicalName: 'Human Said', category: 'groceries', nameConfidence: 1, categoryConfidence: 1, source: 'human', updatedAt: 5,
     });
     await seedReceipt('r', { purchasedAt: '2025-01-10' }, [{ sku: '7777', raw: 'X', canonical: 'Retailer Name' }]);
 
@@ -223,7 +223,7 @@ describe('learnFromDigitalReceipts', () => {
         return { canonicalName: 'model guess', category: 'other', nameConfidence: 0.9, categoryConfidence: 0.9, source: 'auto' };
       },
     };
-    const resolver = new LlmSkuResolver({ dictionary: new LibSqlSkuDictionary(db), llm });
+    const resolver = new LlmSkuResolver({ dictionary: new LibSqlSkuDictionary(db, { householdId: HH }), llm });
     const categories = TAXONOMY_IDS;
 
     // Vision read the header as printed and caught the item number.
@@ -250,7 +250,7 @@ describe('renormalizeDictionaryKeys', () => {
   afterEach(() => cleanup());
 
   const row = (store: string, key: string, name: string, source: 'auto' | 'human', updatedAt: number) => ({
-    store, skuOrAbbrev: key, canonicalName: name, category: 'other', nameConfidence: 1, categoryConfidence: 1, source, updatedAt,
+    householdId: HH, store, skuOrAbbrev: key, canonicalName: name, category: 'other', nameConfidence: 1, categoryConfidence: 1, source, updatedAt,
   });
 
   it('moves rows written under a superseded key to the canonical one; human beats auto on collision', async () => {

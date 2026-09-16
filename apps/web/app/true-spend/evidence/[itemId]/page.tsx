@@ -1,5 +1,5 @@
-import { notFound, redirect } from 'next/navigation';
-import { resolveReadScope } from '../../../../lib/public-mode';
+import { notFound } from 'next/navigation';
+import { readScopeOrRedirect } from '../../../../lib/public-mode';
 import { fetchEvidence } from '../../../../lib/truespend';
 import type { EvidenceRef } from '../../../../../../modules/finance/core/evidence/types';
 
@@ -10,8 +10,7 @@ interface EvidencePageProps {
 }
 
 export default async function EvidencePage({ params }: EvidencePageProps) {
-  const scope = await resolveReadScope();
-  if (!scope) redirect('/sign-in');
+  const scope = await readScopeOrRedirect();
 
   const { itemId } = params instanceof Promise ? await params : params;
   const evidence = await fetchEvidence(itemId, scope);

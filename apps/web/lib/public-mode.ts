@@ -1,4 +1,6 @@
-import { getPrincipal } from '../app/lib/auth/session';
+import { redirect } from 'next/navigation';
+
+import { getPrincipal, getSession } from '../app/lib/auth/session';
 import { DEMO_HOUSEHOLD_ID } from '../../../modules/finance/core/scope';
 
 export interface ResolvedScope {
@@ -24,4 +26,15 @@ export async function resolveReadScope(): Promise<ResolvedScope | null> {
   }
   const principal = await getPrincipal();
   return principal ? { householdId: principal.householdId } : null;
+}
+
+/**
+ * For pages: the read scope, or the redirect that explains its absence —
+ * `/sign-in` for a stranger, `/no-access` for a signed-in person who has no
+ * household here (so the two never loop through each other).
+ */
+export async function readScopeOrRedirect(): Promise<ResolvedScope> {
+  const scope = await resolveReadScope();
+  if (scope) return scope;
+  redirect((await getSession()) ? '/no-access' : '/sign-in');
 }

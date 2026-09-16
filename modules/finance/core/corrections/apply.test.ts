@@ -657,7 +657,7 @@ describe('applyCorrection', () => {
     it('overwrites an existing auto sku_dictionary entry on conflict', async () => {
       const { itemId } = await seedReceiptItem({ needsReview: true, sku: 'KS-EVOO' });
       await db.insert(skuDictionary).values({
-        store: 'COSTCO',
+        householdId: HH, store: 'COSTCO',
         skuOrAbbrev: 'KS-EVOO',
         canonicalName: 'Old Name',
         category: 'groceries',
@@ -685,7 +685,7 @@ describe('applyCorrection', () => {
     it('overwrites an existing human entry (human-over-human always wins)', async () => {
       const { itemId } = await seedReceiptItem({ needsReview: true, store: 'WALMART', sku: 'GV-BREAD' });
       await db.insert(skuDictionary).values({
-        store: 'WALMART',
+        householdId: HH, store: 'WALMART',
         skuOrAbbrev: 'GV-BREAD',
         canonicalName: 'Great Value White Bread',
         category: 'groceries',

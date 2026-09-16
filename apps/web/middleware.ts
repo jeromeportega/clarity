@@ -3,15 +3,31 @@ import { NextResponse } from 'next/server';
 
 /**
  * Clerk's middleware attaches the session to every request so `auth()` works
- * in pages, route handlers and server actions. It is only mounted when Clerk
- * is configured; without the keys (tests, the public demo, a fresh clone)
- * every request passes through and there is simply no session. Pages and
- * routes decide for themselves what a missing session means (redirect to
- * sign-in, 403, or the read-only demo) — nothing is protected here.
+ * in pages, route handlers and server actions. It is mounted only when Clerk
+ * is configured and this is not the public demo; otherwise every request
+ * passes through and there is simply no session. Pages and routes decide for
+ * themselves what a missing session means (redirect to sign-in, 403, or the
+ * read-only demo) — nothing is protected here.
+ *
+ * `authorizedParties` pins accepted session tokens to this deployment's own
+ * origins (Clerk checks the token's `azp` only when this is set): the
+ * production domain, this deployment's URL, and anything in
+ * `CLERK_AUTHORIZED_PARTIES` (comma-separated, for custom domains).
  */
-const configured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() && process.env.CLERK_SECRET_KEY?.trim());
+const env = process.env;
+const configured =
+  env.PUBLIC_DEMO_MODE !== '1' &&
+  Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() && env.CLERK_SECRET_KEY?.trim());
 
-export default configured ? clerkMiddleware() : () => NextResponse.next();
+const authorizedParties = [
+  env.VERCEL_PROJECT_PRODUCTION_URL && `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`,
+  env.VERCEL_URL && `https://${env.VERCEL_URL}`,
+  ...(env.CLERK_AUTHORIZED_PARTIES ?? '').split(',').map((p) => p.trim()),
+].filter((p): p is string => Boolean(p));
+
+export default configured
+  ? clerkMiddleware(authorizedParties.length > 0 ? { authorizedParties } : undefined)
+  : () => NextResponse.next();
 
 export const config = {
   // Everything except Next internals and static assets.

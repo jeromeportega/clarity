@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation';
-import { resolveReadScope } from '../../lib/public-mode';
+import { readScopeOrRedirect } from '../../lib/public-mode';
 import { fetchBreakdown } from '../../lib/truespend';
 import { TrueSpendView } from '../components/truespend/TrueSpendView';
 
@@ -10,8 +9,7 @@ interface TrueSpendPageProps {
 }
 
 export default async function TrueSpendPage({ searchParams }: TrueSpendPageProps) {
-  const scope = await resolveReadScope();
-  if (!scope) redirect('/sign-in');
+  const scope = await readScopeOrRedirect();
 
   const params = searchParams instanceof Promise ? await searchParams : searchParams;
   const month = params.month;

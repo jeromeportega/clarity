@@ -19,6 +19,10 @@ import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite
 export const skuDictionary = sqliteTable(
   'sku_dictionary',
   {
+    // The dictionary is PER HOUSEHOLD: what one household's photos, digital
+    // receipts and corrections teach is visible to that household alone. A
+    // shared dictionary is a consent question, not a default.
+    householdId: text('household_id').notNull(),
     store: text('store').notNull(), // normalizeStore()
     skuOrAbbrev: text('sku_or_abbrev').notNull(), // normalizeSkuOrAbbrev()
     canonicalName: text('canonical_name').notNull(),
@@ -29,7 +33,7 @@ export const skuDictionary = sqliteTable(
     updatedAt: integer('updated_at').notNull(), // epoch ms
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.store, table.skuOrAbbrev] }),
+    pk: primaryKey({ columns: [table.householdId, table.store, table.skuOrAbbrev] }),
   }),
 );
 
@@ -41,6 +45,7 @@ export const schema = { skuDictionary };
 // level.
 export const SKU_DICTIONARY_DDL = `
 CREATE TABLE IF NOT EXISTS sku_dictionary (
+  household_id        TEXT NOT NULL,
   store               TEXT NOT NULL,
   sku_or_abbrev       TEXT NOT NULL,
   canonical_name      TEXT NOT NULL,
@@ -49,7 +54,7 @@ CREATE TABLE IF NOT EXISTS sku_dictionary (
   category_confidence REAL NOT NULL,
   source              TEXT NOT NULL CHECK (source IN ('auto','human')),
   updated_at          INTEGER NOT NULL,
-  PRIMARY KEY (store, sku_or_abbrev)
+  PRIMARY KEY (household_id, store, sku_or_abbrev)
 );
 `;
 
