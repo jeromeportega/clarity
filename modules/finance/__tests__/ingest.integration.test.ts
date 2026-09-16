@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
@@ -27,6 +27,7 @@ const PRIVATE_TMP = mkdtempSync(join(tmpdir(), 'clarity-ingest-itest-'));
 process.env.TMPDIR = PRIVATE_TMP;
 
 import { createTestDb, type FinanceDb } from '../db/client';
+import { skuDictionary } from '../core/receipts/dictionary/schema';
 import {
   AMAZON_ORDER_HISTORY_CSV,
   BANK_STATEMENT_CSV,
@@ -230,15 +231,34 @@ describe('POST /api/ingest/costco (real route)', () => {
 
     expect(await count('receipts')).toBe(3);
     expect(await count('receipt_items')).toBe(6);
+
+    // Every retailer-named, item-numbered line taught the dictionary under the
+    // key the photo path looks up: (canonical store, item number).
+    expect(body.dictionary).toMatchObject({ itemsSeen: expect.any(Number), keys: expect.any(Number) });
+    expect(body.dictionary.keys).toBeGreaterThanOrEqual(2);
+    const learned = await db.select().from(skuDictionary).where(eq(skuDictionary.skuOrAbbrev, '1919326'));
+    expect(learned).toHaveLength(1);
+    expect(learned[0]).toMatchObject({
+      store: 'COSTCO',
+      canonicalName: 'Bounty Advanced Paper Towels, 12-count',
+      nameConfidence: 1,
+      source: 'auto',
+    });
+    expect(learned[0]!.categoryConfidence).toBeLessThan(0.8);
+    // ALL-CAPS echoes of the receipt text are not names Costco supplied: never learned.
+    expect(await db.select().from(skuDictionary).where(eq(skuDictionary.skuOrAbbrev, '9999901'))).toEqual([]);
   });
 
-  it('is idempotent across requests', async () => {
+  it('is idempotent across requests, and a re-upload that landed nothing teaches nothing', async () => {
     await costcoPost(postRequest({ file: costcoFile() }));
+    const before = await count('sku_dictionary');
     const res = await costcoPost(postRequest({ file: costcoFile() }));
     const body = await res.json();
     expect(body.inserted.receipts).toBe(0);
     expect(body.skippedDuplicates).toBe(3);
+    expect(body.dictionary).toEqual({ skipped: true });
     expect(await count('receipts')).toBe(3);
+    expect(await count('sku_dictionary')).toBe(before);
   });
 
   it('returns 400 when the file part is missing', async () => {

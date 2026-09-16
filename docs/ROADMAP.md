@@ -59,11 +59,12 @@ single-household loop is excellent.
 - **Per-receipt batch resolution.** Today each line item is one model call with
   no receipt context; resolve a whole receipt in one call with store, date,
   department numbers, and neighboring items as context. Cheaper and more accurate.
-- ~~**Bootstrap the dictionary** from Costco canonical names.~~ Done: item
-  number and printed abbreviation both key the retailer's name at confidence
-  1.0 with a low-confidence heuristic category, so a photographed Costco line
-  resolves its name for free and asks the human for the category once. Store
-  keys are retailer-canonical (`COSTCO WHSE` / `COSTCO WHOLESALE #1234` → `COSTCO`).
+- ~~**Bootstrap the dictionary** from Costco canonical names.~~ Done: the item
+  number keys the retailer's name at confidence 1.0 with the household's own
+  category when a human has set one, else a low-confidence heuristic guess — so
+  a photographed Costco line resolves its name for free and asks the human for
+  the category once. Store keys are retailer-canonical (`COSTCO WHSE` /
+  `COSTCO WHOLESALE #1234` → `COSTCO`).
 - ~~**One taxonomy.**~~ Done (`db/taxonomy.ts`, migration 0005; a Household
   category and household-goods classifier rules added). Per-household
   taxonomies remain a later option.

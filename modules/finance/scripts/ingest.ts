@@ -103,7 +103,7 @@ export interface RunIngestOptions {
   baseDir?: string;
 }
 
-export type RunIngestResult = ImportResult & { dictionary?: LearnFromDigitalReceiptsSummary };
+export type RunIngestResult = ImportResult & { dictionary?: LearnFromDigitalReceiptsSummary | { error: string } };
 
 /**
  * Resolve the import context (the bank command derives `householdId` from the
@@ -142,10 +142,14 @@ export async function runIngest(opts: RunIngestOptions): Promise<RunIngestResult
   const adapters = opts.adapters ?? allAdapters;
   const ctx = await resolveContext(db, opts.command, opts.accountId);
   const result = await importSource(db, input, ctx, adapters);
-  if (opts.command !== 'costco') return result;
+  if (opts.command !== 'costco' || result.inserted.receipts === 0) return result;
   // Digital receipts name their lines: teach the dictionary, as the route does.
-  const dictionary = await learnFromDigitalReceipts(db, { householdId: ctx.householdId });
-  return { ...result, dictionary };
+  // The import is committed; a failure here is reported next to it.
+  try {
+    return { ...result, dictionary: await learnFromDigitalReceipts(db, { householdId: ctx.householdId }) };
+  } catch (err) {
+    return { ...result, dictionary: { error: err instanceof Error ? err.message : String(err) } };
+  }
 }
 
 export interface ParsedArgs {
@@ -185,6 +189,7 @@ async function main(): Promise<void> {
     baseDir: env.CLARITY_INGEST_BASE_DIR ?? cwd(),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (result.dictionary && 'error' in result.dictionary) process.exitCode = 1;
 }
 
 if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {

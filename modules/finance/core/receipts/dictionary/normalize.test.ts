@@ -38,14 +38,38 @@ describe('normalizeStore', () => {
     expect(normalizeStore('7-ELEVEN')).toBe('7-ELEVEN');
   });
 
+  it('only a TRAILING digit run is a store number — a leading or inner one is part of the name', () => {
+    expect(normalizeStore('99 RANCH MARKET')).toBe('99 RANCH MARKET');
+    expect(normalizeStore('7 ELEVEN')).toBe('7 ELEVEN');
+    expect(normalizeStore('365 BY WHOLE FOODS MARKET')).toBe('365 BY WHOLE FOODS MARKET');
+    expect(normalizeStore('99 CENTS ONLY')).toBe('99 CENTS ONLY');
+    expect(normalizeStore('TARGET T-2101 0482')).toBe('TARGET T-2101');
+    // Two different retailers never share a key.
+    expect(normalizeStore('99 RANCH MARKET')).not.toBe(normalizeStore('RANCH MARKET'));
+  });
+
+  it('drops punctuation left orphaned by a removed word', () => {
+    expect(normalizeStore('COSTCO WHOLESALE - ONLINE ORDER')).toBe('COSTCO ONLINE ORDER');
+  });
+
+  it('folds typographic apostrophes onto the ASCII one', () => {
+    expect(normalizeStore('SAM’S CLUB')).toBe("SAM'S CLUB");
+    expect(normalizeStore("Trader Joe‘s")).toBe("TRADER JOE'S");
+    expect(normalizeSkuOrAbbrev('KIRKLAND’S')).toBe("KIRKLAND'S");
+  });
+
   it('never collapses a name to an empty key', () => {
     expect(normalizeStore('WHOLESALE')).toBe('WHOLESALE');
     expect(normalizeStore('#1234')).toBe('#1234');
+    expect(normalizeStore('1234')).toBe('1234');
+    expect(normalizeStore('-')).toBe('-');
   });
 
-  it('canonicalisation is idempotent', () => {
-    const once = normalizeStore('Costco Wholesale #1234');
-    expect(normalizeStore(once)).toBe(once);
+  it('canonicalisation is idempotent, including through the all-noise fallback', () => {
+    for (const raw of ['Costco Wholesale #1234', 'WHOLESALE', '#1234', '-', 'COSTCO WHOLESALE - ONLINE ORDER', '99 RANCH MARKET 12', 'WHSE 1234']) {
+      const once = normalizeStore(raw);
+      expect(normalizeStore(once)).toBe(once);
+    }
   });
 });
 
@@ -59,11 +83,13 @@ describe('normalizeSkuOrAbbrev', () => {
     expect(normalizeSkuOrAbbrev(once)).toBe(once);
   });
 
-  it('drops Costco’s * emphasis markers so a digital line and its photo agree', () => {
+  it('treats Costco’s * emphasis markers as separators so a digital line and its photo agree', () => {
     expect(normalizeSkuOrAbbrev('***BOUNTY***')).toBe('BOUNTY');
     expect(normalizeSkuOrAbbrev('***BOUNTY*** 669SF TALL PACK')).toBe('BOUNTY 669SF TALL PACK');
+    expect(normalizeSkuOrAbbrev('KS*ORG')).toBe('KS ORG');
     expect(normalizeSkuOrAbbrev('KS-EVOO')).toBe('KS-EVOO');
     expect(normalizeSkuOrAbbrev('1919326')).toBe('1919326');
+    expect(normalizeSkuOrAbbrev('***')).toBe('');
   });
 
   // The caller derives the raw key as `sku ?? description` ("key = SKU when
