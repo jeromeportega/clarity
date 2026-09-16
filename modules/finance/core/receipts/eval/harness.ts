@@ -150,17 +150,8 @@ export function gradeReceipt(
   expected: ExpectedItem[],
   ratio: number,
 ): { correct: number; total: number } {
-  let correct = 0;
-  const claimed = new Set<number>();
-  for (const exp of expected) {
-    const idx = pickActual(actual, claimed, exp);
-    if (idx === undefined) continue;
-    claimed.add(idx);
-    if (isCorrectlyResolved(asResolution(actual[idx]!), { name: exp.name, category: exp.category }, ratio)) {
-      correct++;
-    }
-  }
-  return { correct, total: expected.length };
+  // One pairing, one verdict: the score is what is left after the misses.
+  return { correct: expected.length - explainMisses(actual, expected, ratio).length, total: expected.length };
 }
 
 // The misses behind a gradeReceipt score, for the operator's eyes: which

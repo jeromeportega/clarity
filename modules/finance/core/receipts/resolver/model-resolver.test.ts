@@ -61,8 +61,28 @@ describe('ModelSkuResolver (mock model, no network)', () => {
     expect(await new ModelSkuResolver({ model }).resolve(query)).toEqual({ ...answer, source: 'auto' });
   });
 
-  it('throws when the model answers without the tool call (the orchestrator decides what to do)', async () => {
-    const model = modelReturning([{ type: 'text', text: 'Probably olive oil.' }]);
+  it('asks for the product identity without pack size, count, weight or volume', async () => {
+    const model = modelReturning([{ type: 'tool-call', toolCallId: 'c1', toolName: RECORD_RESOLUTION_TOOL_NAME, input: JSON.stringify(answer) }]);
+    await new ModelSkuResolver({ model }).resolve(query);
+    const user = model.doGenerateCalls[0]!.prompt.find((m) => m.role === 'user')!;
+    const text = (user.content as Array<{ type: string; text?: string }>).map((p) => p.text ?? '').join('\n');
+    expect(text).toMatch(/WITHOUT pack size, count, weight or volume/);
+  });
+
+  it('throws when the tool call JSON does not parse (the orchestrator decides what to do)', async () => {
+    const model = modelReturning([{ type: 'tool-call', toolCallId: 'c1', toolName: RECORD_RESOLUTION_TOOL_NAME, input: '{"canonicalName": "Oli' }]);
     await expect(new ModelSkuResolver({ model }).resolve(query)).rejects.toThrow(/record_resolution/);
+  });
+
+  it('throws when the call fails validation: a string confidence, an empty name', async () => {
+    for (const bad of [{ ...answer, nameConfidence: '0.99' }, { ...answer, canonicalName: '   ' }]) {
+      const model = modelReturning([{ type: 'tool-call', toolCallId: 'c1', toolName: RECORD_RESOLUTION_TOOL_NAME, input: JSON.stringify(bad) }]);
+      await expect(new ModelSkuResolver({ model }).resolve(query), JSON.stringify(bad)).rejects.toThrow(/record_resolution/);
+    }
+  });
+
+  it('does NOT reject a category outside the allowed list — clamping it is the orchestrator\'s job', async () => {
+    const model = modelReturning([{ type: 'tool-call', toolCallId: 'c1', toolName: RECORD_RESOLUTION_TOOL_NAME, input: JSON.stringify({ ...answer, category: 'made-up' }) }]);
+    expect((await new ModelSkuResolver({ model }).resolve(query)).category).toBe('made-up');
   });
 });

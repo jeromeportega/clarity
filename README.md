@@ -54,7 +54,7 @@ for how to obtain each kind of input data. The plan is in
 ## Stack
 
 Next.js (App Router) + TypeScript · Tailwind CSS + shadcn/ui primitives +
-Geist · libSQL / Turso via Drizzle · Anthropic SDK · Vitest + Playwright ·
+Geist · libSQL / Turso via Drizzle · Vercel AI SDK through the AI Gateway · Vitest + Playwright ·
 deployed on Vercel.
 
 ## Repository layout
@@ -75,7 +75,7 @@ offline and deterministic (a boundary test enforces this).
 
 ## Getting started
 
-Requires Node ≥ 20.
+Requires Node ≥ 22.
 
 ```bash
 npm ci

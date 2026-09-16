@@ -175,6 +175,23 @@ describe('LiveVisionProvider — response parsing', () => {
     expect(r.lineItems).toEqual([]);
   });
 
+  it('treats a tool call whose JSON does not parse as unreadable — never a receipt built from a string', async () => {
+    const model = modelReturning([
+      { type: 'tool-call', toolCallId: 'call_1', toolName: EXTRACTION_TOOL_NAME, input: '{"readable": tru' },
+    ]);
+    const r = await new LiveVisionProvider({ model }).extract(jpegInput);
+    expect(r.readable).toBe(false);
+    expect(r.lineItems).toEqual([]);
+  });
+
+  it('treats a tool call that fails the schema (float dollars where integer cents belong) as unreadable', async () => {
+    const r = await new LiveVisionProvider({ model: toolCallModel({ ...sampleExtraction, total: 50.13 }) }).extract(jpegInput);
+    expect(r.readable).toBe(false);
+    expect(r.lineItems).toEqual([]);
+    const stringTax = await new LiveVisionProvider({ model: toolCallModel({ ...sampleExtraction, tax: '396' }) }).extract(jpegInput);
+    expect(stringTax.readable).toBe(false);
+  });
+
   it('forces zero items when the model reports readable:false even if it returns stray items', async () => {
     const contradictory = {
       ...sampleExtraction,

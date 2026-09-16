@@ -1,5 +1,6 @@
 import { generateText, jsonSchema, tool, ToolChoiceViolationError, type JSONSchema7, type LanguageModel } from 'ai';
 
+import { validateExtraction } from './extraction-schema';
 import {
   EXTRACTION_TOOL_INPUT_SCHEMA,
   EXTRACTION_TOOL_NAME,
@@ -30,13 +31,16 @@ export interface LiveVisionProviderOptions {
 
 /**
  * The structured tool the model must call. Forcing `toolChoice` to this tool
- * guarantees a typed object back instead of free-form prose. The schema is
- * shared with the request-shape tests, which pin its `required` list.
+ * guarantees a typed object back instead of free-form prose. The JSON Schema
+ * is what the model is shown (the request-shape tests pin its `required`
+ * list); `validateExtraction` is what the reply is checked against — the SDK
+ * only validates when a validator is given, so without it a float where
+ * integer cents belong would flow straight into the money path.
  */
 const EXTRACTION_TOOLS = {
   [EXTRACTION_TOOL_NAME]: tool({
     description: 'Record the structured contents of the receipt in the image. Call this exactly once.',
-    inputSchema: jsonSchema<Partial<ExtractedReceipt>>(EXTRACTION_TOOL_INPUT_SCHEMA as JSONSchema7),
+    inputSchema: jsonSchema<ExtractedReceipt>(EXTRACTION_TOOL_INPUT_SCHEMA as JSONSchema7, { validate: validateExtraction }),
   }),
 };
 
@@ -86,17 +90,20 @@ export class LiveVisionProvider implements VisionProvider {
     });
     if (!result) return unreadableReceipt();
 
+    // The SDK does not throw on a tool call whose JSON is malformed or fails
+    // validation: it hands back the call marked `invalid` (typed as a dynamic
+    // call) with the raw string as its input. Nothing in such a call is
+    // trusted — unreadable, zero items.
     const call = result.toolCalls.find((c) => c.toolName === EXTRACTION_TOOL_NAME);
-    if (!call) return unreadableReceipt();
-    return normalizeExtracted(call.input as Partial<ExtractedReceipt>);
+    if (!call || call.dynamic || call.invalid) return unreadableReceipt();
+    return normalizeExtracted(call.input);
   }
 }
 
-// The model output is a trust boundary: coerce it into a well-formed
-// `ExtractedReceipt` rather than assume every field is present. When the model
-// reports the image is unreadable, force the canonical zero-item shape so no
-// stray field leaks through.
-function normalizeExtracted(raw: Partial<ExtractedReceipt>): ExtractedReceipt {
+// Validated already; this applies the one rule the schema cannot express:
+// when the model reports the image is unreadable, force the canonical
+// zero-item shape so no stray field leaks through.
+function normalizeExtracted(raw: ExtractedReceipt): ExtractedReceipt {
   if (raw.readable !== true) return unreadableReceipt();
 
   return {

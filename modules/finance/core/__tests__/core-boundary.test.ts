@@ -16,9 +16,15 @@ import { describe, expect, it } from 'vitest';
 
 const CORE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** A module specifier is forbidden if it is, or is a subpath of, next / react / react-dom. */
+/**
+ * A module specifier is forbidden if it is, or is a subpath of, a framework
+ * (next / react / react-dom) or a concrete provider / credential holder the
+ * core must only ever receive by injection: the AI Gateway provider, the old
+ * Anthropic SDK, Clerk, Vercel Blob. Core may import `ai` itself — the
+ * model-agnostic calling convention — but never the thing that authenticates.
+ */
 function isForbiddenModule(spec: string): boolean {
-  return /^(?:next|react|react-dom)(?:\/.*)?$/.test(spec);
+  return /^(?:next|react|react-dom|@ai-sdk\/gateway|@anthropic-ai\/sdk|@clerk\/[^/]+|@vercel\/blob)(?:\/.*)?$/.test(spec);
 }
 
 /**
@@ -81,6 +87,10 @@ describe('core boundary (no Next.js / React under modules/finance/core)', () => 
   });
 
   it('does not flag legitimate non-framework imports', () => {
+    expect(findForbiddenImports(`import { gateway } from '@ai-sdk/gateway';`)).toContain('@ai-sdk/gateway');
+    expect(findForbiddenImports(`import Anthropic from '@anthropic-ai/sdk';`)).toContain('@anthropic-ai/sdk');
+    expect(findForbiddenImports(`import { auth } from '@clerk/nextjs/server';`)).toContain('@clerk/nextjs/server');
+    expect(findForbiddenImports(`import { generateText } from 'ai';`)).toEqual([]);
     expect(findForbiddenImports(`import { sql } from 'drizzle-orm';`)).toEqual([]);
     expect(findForbiddenImports(`import { createHash } from 'node:crypto';`)).toEqual([]);
     expect(findForbiddenImports(`import { foo } from '../model/normalized';`)).toEqual([]);

@@ -1,4 +1,5 @@
-import { generateText, jsonSchema, tool, type LanguageModel } from 'ai';
+import { generateText, jsonSchema, tool, type JSONSchema7, type LanguageModel } from 'ai';
+import { z } from 'zod';
 
 import { normalizeSkuOrAbbrev, normalizeStore } from '../dictionary/normalize';
 import type { SkuDictionary } from '../dictionary/sku-dictionary';
@@ -110,11 +111,21 @@ export interface ModelSkuResolverOpts {
   maxOutputTokens?: number;
 }
 
-interface RecordResolutionInput {
-  canonicalName: string;
-  category: string;
-  nameConfidence: number;
-  categoryConfidence: number;
+// What comes back is checked before it is used: a real name, finite numeric
+// confidences. The category is validated as a string only — clamping it to the
+// taxonomy is the orchestrator's job (LlmSkuResolver), and an off-list category
+// must degrade to "untrusted", not fail the upload.
+const RecordResolutionSchema = z.object({
+  canonicalName: z.string().trim().min(1),
+  category: z.string(),
+  nameConfidence: z.number(),
+  categoryConfidence: z.number(),
+});
+type RecordResolutionInput = z.infer<typeof RecordResolutionSchema>;
+
+function validateResolution(value: unknown): { success: true; value: RecordResolutionInput } | { success: false; error: Error } {
+  const r = RecordResolutionSchema.safeParse(value);
+  return r.success ? { success: true, value: r.data } : { success: false, error: r.error };
 }
 
 export const RECORD_RESOLUTION_TOOL_NAME = 'record_resolution';
@@ -159,18 +170,21 @@ export class ModelSkuResolver implements SkuResolver {
               },
             },
             required: ['canonicalName', 'category', 'nameConfidence', 'categoryConfidence'],
-          }),
+          } as JSONSchema7, { validate: validateResolution }),
         }),
       },
       toolChoice: { type: 'tool', toolName: RECORD_RESOLUTION_TOOL_NAME },
       prompt: buildPrompt(query),
     });
 
+    // A forced tool the model does not call is a thrown ToolChoiceViolationError;
+    // a call whose JSON is malformed or fails validation comes back marked
+    // `invalid` with the raw string as input. Neither is a resolution.
     const call = result.toolCalls.find((c) => c.toolName === RECORD_RESOLUTION_TOOL_NAME);
-    if (!call) {
-      throw new Error('SKU resolver: model did not return a record_resolution tool call');
+    if (!call || call.dynamic || call.invalid) {
+      throw new Error('SKU resolver: the record_resolution tool call was missing or malformed');
     }
-    const input = call.input as RecordResolutionInput;
+    const input = call.input;
     return {
       canonicalName: input.canonicalName,
       category: input.category,

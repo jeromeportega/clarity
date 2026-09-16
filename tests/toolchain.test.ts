@@ -106,7 +106,12 @@ describe('.gitignore (FR-4)', () => {
 // behind the runtime the code actually requires, or the gate would test on a
 // Node the app cannot run on.
 describe('Node version floor follows the AI SDK', () => {
-  const required = 22;
+  // Read from the installed package, so the floor moves when the SDK's does.
+  const sdk = JSON.parse(readFileSync(join(repoRoot, 'node_modules/ai/package.json'), 'utf8')) as { engines?: { node?: string } };
+  const required = Number(/>=\s*(\d+)/.exec(sdk.engines?.node ?? '')?.[1]);
+  it('the SDK declares a Node floor at all', () => {
+    expect(required).toBeGreaterThan(0);
+  });
 
   it('package.json engines requires at least the SDK minimum', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { engines?: { node?: string } };

@@ -28,6 +28,10 @@ const ENV_VAR_NAMES = [
   'CLERK_SECRET_KEY',
   'CLARITY_OPERATOR_EMAILS',
   'BLOB_READ_WRITE_TOKEN',
+  'VERCEL_OIDC_TOKEN',
+  'RECEIPT_AI',
+  'CLARITY_VISION_MODEL',
+  'CLARITY_RESOLVER_MODEL',
 ];
 
 // Patterns that indicate a secret value is committed (name=value assignments with

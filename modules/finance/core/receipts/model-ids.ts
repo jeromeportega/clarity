@@ -24,15 +24,18 @@ export function resolverModelId(env: Record<string, string | undefined> = proces
 }
 
 /**
- * Whether a live model call can be authenticated from this environment: an
- * AI Gateway API key (local scripts, CI, other hosts), a pulled Vercel OIDC
- * token (local dev after `vercel env pull`), or a Vercel deployment, where the
- * gateway authenticates with the deployment's own OIDC token. `RECEIPT_AI`
- * overrides the inference in either direction (`live` / `recorded`).
+ * Whether live model calls are on. `RECEIPT_AI=live|recorded` decides
+ * outright; otherwise a credential in the environment decides — an AI Gateway
+ * API key (local scripts, CI, other hosts) or a pulled Vercel OIDC token
+ * (local dev after `vercel env pull`). Merely running on Vercel is NOT enough:
+ * a deployment's OIDC token is delivered per request, not as an env var, and
+ * only when the project has OIDC federation on — so a deployment opts in with
+ * `RECEIPT_AI=live` (or an API key) rather than being billed by default; every
+ * preview and the public demo stay on recorded fixtures.
  */
 export function liveModelsAvailable(env: Record<string, string | undefined> = process.env): boolean {
   const forced = env.RECEIPT_AI?.trim().toLowerCase();
   if (forced === 'live') return true;
   if (forced === 'recorded') return false;
-  return Boolean(env.AI_GATEWAY_API_KEY?.trim() || env.VERCEL_OIDC_TOKEN?.trim() || env.VERCEL);
+  return Boolean(env.AI_GATEWAY_API_KEY?.trim() || env.VERCEL_OIDC_TOKEN?.trim());
 }
