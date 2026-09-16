@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull, like, ne } from 'drizzle-orm';
 
-import { createDb, type FinanceDb } from '../../db/client';
+import type { FinanceDb } from '../../db/client';
 import { accounts, categories, matches, receiptItems, receipts, transactions } from '../../db/schema';
 import type {
   ReconciliationGateway,
@@ -40,8 +40,8 @@ function spendSign(amountCents: number): number {
 
 /**
  * Live, DB-backed reconciliation gateway. All reads are scoped to the household
- * in `scope` and resolved through Drizzle against the env-configured DB
- * (`createDb()`), consistent with the rest of the server read path.
+ * in `scope` and resolved through Drizzle against the database the caller
+ * hands in — core never opens one.
  *
  * Status mapping (matches.status → MatchStatus):
  *   pending  → 'ambiguous'   matched → 'confirmed'
@@ -55,8 +55,8 @@ function spendSign(amountCents: number): number {
 export class LiveReconciliationGateway implements ReconciliationGateway {
   private readonly db: FinanceDb;
 
-  constructor(db?: FinanceDb) {
-    this.db = db ?? createDb();
+  constructor(db: FinanceDb) {
+    this.db = db;
   }
 
   async listMatches(scope: HouseholdScope): Promise<Match[]> {

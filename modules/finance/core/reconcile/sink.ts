@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
 import { categories, categoryIdFor, matches, orderItems, orders, receiptItems, receipts } from '../../db/schema';
@@ -49,11 +49,15 @@ function toDbConfidence(confidence: number): number {
  * Writes three things, all idempotent (safe to re-run):
  *   1. categories — upsert one row per H1-taxonomy category that appears on a
  *      classified item (the taxonomy source of truth `assembleBreakdown` joins).
- *   2. receipt_items.category_id — stamp each classified receipt item with its
- *      category so the true-spend item drill-down resolves.
+ *   2. receipt_items.category_id — stamp each classified receipt item that has
+ *      NO category yet. The heuristic classifier is the fallback of last
+ *      resort: it never overwrites the SKU resolver's answer or a human's
+ *      correction, so re-running reconciliation cannot undo either.
  *   3. matches — one item-level row per (transaction, order/receipt item) link,
  *      carrying status / confidence / method / rationale. Deterministic ids keyed
- *      on the engine match id + item id make re-runs onConflictDoNothing no-ops.
+ *      on the engine match id + item id make re-runs onConflictDoNothing no-ops,
+ *      and a transaction a human has already settled (a `manual` row) takes no
+ *      new candidates, so a re-run cannot re-open a decided question.
  */
 export class DrizzleReconcileSink implements ReconcileSink {
   constructor(private readonly _db: FinanceDb) {}
@@ -81,11 +85,30 @@ export class DrizzleReconcileSink implements ReconcileSink {
     await this.stampReceiptItemCategories(householdId, categoryByReceiptItem, categoryIdByName);
 
     // ── 3. Persist item-level matches ──────────────────────────────────────────
-    const rows = await this.buildMatchRows(householdId, ledger);
+    const rows = await this.withoutSettledTransactions(await this.buildMatchRows(householdId, ledger));
     if (rows.length > 0) {
       // onConflictDoNothing on the PK keeps re-runs idempotent.
       await db.insert(matches).values(rows).onConflictDoNothing();
     }
+  }
+
+  /**
+   * Drop candidate rows for any transaction a human has already settled: once
+   * a `manual` winner exists, a re-run must not add fresh `pending` siblings
+   * that would make the transaction ambiguous again.
+   */
+  private async withoutSettledTransactions(
+    rows: Array<typeof matches.$inferInsert>,
+  ): Promise<Array<typeof matches.$inferInsert>> {
+    if (rows.length === 0) return rows;
+    const transactionIds = [...new Set(rows.map((r) => r.transactionId))];
+    const settled = await this._db
+      .select({ transactionId: matches.transactionId })
+      .from(matches)
+      .where(and(inArray(matches.transactionId, transactionIds), eq(matches.status, 'manual')));
+    if (settled.length === 0) return rows;
+    const settledIds = new Set(settled.map((r) => r.transactionId));
+    return rows.filter((r) => !settledIds.has(r.transactionId));
   }
 
   /** Upsert categories by name; return a name→id map covering all requested names. */
@@ -120,7 +143,12 @@ export class DrizzleReconcileSink implements ReconcileSink {
     return map;
   }
 
-  /** Set receipt_items.category_id for classified receipt items in this household. */
+  /**
+   * Set receipt_items.category_id for classified receipt items in this
+   * household that do not have one yet. An existing category — the SKU
+   * resolver's (with its confidence) or a human's — always wins over the
+   * heuristic, so this only ever fills blanks.
+   */
   private async stampReceiptItemCategories(
     householdId: string,
     categoryByReceiptItem: Map<string, string>,
@@ -129,7 +157,8 @@ export class DrizzleReconcileSink implements ReconcileSink {
     if (categoryByReceiptItem.size === 0) return;
     const db = this._db;
 
-    // Only touch receipt items that belong to this household (defense-in-depth).
+    // Only touch receipt items that belong to this household (defense-in-depth)
+    // and are still uncategorised.
     const ownRows = await db
       .select({ id: receiptItems.id })
       .from(receiptItems)
@@ -137,6 +166,7 @@ export class DrizzleReconcileSink implements ReconcileSink {
       .where(
         and(
           eq(receipts.householdId, householdId),
+          isNull(receiptItems.categoryId),
           inArray(receiptItems.id, [...categoryByReceiptItem.keys()]),
         ),
       );
@@ -149,7 +179,7 @@ export class DrizzleReconcileSink implements ReconcileSink {
       await db
         .update(receiptItems)
         .set({ categoryId })
-        .where(eq(receiptItems.id, riId));
+        .where(and(eq(receiptItems.id, riId), isNull(receiptItems.categoryId)));
     }
   }
 
