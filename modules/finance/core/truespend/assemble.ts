@@ -186,10 +186,15 @@ async function queryTransactionItems(
     .innerJoin(categories, eq(receiptItems.categoryId, categories.id))
     .where(and(...conditions));
 
-  return rows.map((row) => ({
-    id: row.id,
-    description: row.merchant,
-    amountCents: row.amountCents,
-    category: row.categoryName,
-  }));
+  // One row per (transaction, category): the join lands once per linked
+  // receipt line, and a transaction carries its whole amount, not a line's.
+  const seen = new Set<string>();
+  const out: TrueSpendItem[] = [];
+  for (const row of rows) {
+    const key = `${row.id}\u001f${row.categoryName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: row.id, description: row.merchant, amountCents: row.amountCents, category: row.categoryName });
+  }
+  return out;
 }

@@ -52,7 +52,15 @@ export function resolveDbConfig(
 }
 
 function openClient(url: string, authToken?: string): Client {
-  return createClient(authToken ? { url, authToken } : { url });
+  const client = createClient(authToken ? { url, authToken } : { url });
+  // A second writer on the same file waits (up to 5 s) for the write lock
+  // instead of failing at once with SQLITE_BUSY. A file client runs its
+  // statements FIFO, so this lands before anything issued after it. Remote
+  // (Turso) clients manage locking server-side; the pragma is not sent there.
+  if (url.startsWith('file:')) {
+    void client.execute('PRAGMA busy_timeout = 5000').catch(() => undefined);
+  }
+  return client;
 }
 
 export function createDb(opts?: CreateDbOptions): FinanceDb {

@@ -382,7 +382,10 @@ async function syncEngineRows(tx: Tx, householdId: string, desired: MatchRow[]):
     await tx.delete(matches).where(inArray(matches.id, ids));
   }
   for (const rows of chunks(toInsert)) {
-    await tx.insert(matches).values(rows);
+    // A human row (manual / rejected) may sit at an id the engine re-derives —
+    // rows written by an earlier shape of this sink, say. The human's row wins;
+    // never let a primary-key collision abort the whole run.
+    await tx.insert(matches).values(rows).onConflictDoNothing();
   }
   for (const r of toUpdate) {
     await tx

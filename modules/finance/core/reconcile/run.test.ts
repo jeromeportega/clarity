@@ -19,7 +19,7 @@ import { assembleQueue } from '../queue/assemble';
 import { LiveReconciliationGateway } from '../reconciliation/live';
 import type { HouseholdScope } from '../scope';
 import { reconcileHousehold } from './run';
-import { ENGINE_MATCH_ID_PREFIX } from './sink';
+import { DrizzleReconcileSink, ENGINE_MATCH_ID_PREFIX, type ReconcileSink } from './sink';
 
 const HH = 'hh-run';
 const SCOPE: HouseholdScope = { householdId: HH };
@@ -277,6 +277,68 @@ describe('reconcileHousehold', () => {
     expect(summary.matched).toBe(1); // still just the real receipt
     expect(await matchRowsFor('txn-zero')).toEqual([]);
     expect(summary.unmatched.receipts).toBe(1);
+  });
+
+  describe('concurrency', () => {
+    it('two runs racing on one shared handle both succeed, and the handle keeps working afterwards', async () => {
+      await seedStandardPair();
+
+      const [a, b] = await Promise.all([reconcileHousehold(db, HH), reconcileHousehold(db, HH)]);
+      expect(a.matched).toBe(1);
+      expect(b.matched).toBe(1);
+      expect(await matchRowsFor(TXN)).toHaveLength(2);
+
+      // The handle is not poisoned: a later run still lands.
+      const c = await reconcileHousehold(db, HH);
+      expect(c).toEqual(a);
+    });
+
+    it('a burst of runs coalesces: every caller gets a result, and the last run sees the newest data', async () => {
+      await seedTransaction(TXN, -2599, '2025-03-02');
+      const first = reconcileHousehold(db, HH);
+      // Arrivals while the first run is in flight wait for it and then run once
+      // over whatever is in the database by then.
+      await seedReceipt(RECEIPT, 2599, '2025-03-02', [
+        { id: RI_HUMAN, name: 'Kirkland Paper Towels', cents: 1999, categoryId: 'household' },
+        { id: RI_BLANK, name: 'Organic Bananas', cents: 600 },
+      ]);
+      const [r1, r2, r3] = await Promise.all([first, reconcileHousehold(db, HH), reconcileHousehold(db, HH)]);
+
+      expect(r1.inputs.bankLines).toBe(1);
+      expect(r2).toEqual(r3);
+      expect(r3.inputs.receipts).toBe(1);
+      expect(r3.matched).toBe(1);
+      expect(await matchRowsFor(TXN)).toHaveLength(2);
+    });
+
+    it('a run that loses the database lock is retried whole and then succeeds', async () => {
+      await seedStandardPair();
+      const real = new DrizzleReconcileSink(db);
+      let attempts = 0;
+      const flaky: ReconcileSink = {
+        async persist(householdId, ledger) {
+          attempts += 1;
+          if (attempts === 1) throw Object.assign(new Error('SQLITE_BUSY: database is locked'), { code: 'SQLITE_BUSY' });
+          await real.persist(householdId, ledger);
+        },
+      };
+      const slept: number[] = [];
+
+      const summary = await reconcileHousehold(db, HH, { sink: flaky, retryDelaysMs: [1, 2], sleep: async (ms) => { slept.push(ms); } });
+
+      expect(summary.matched).toBe(1);
+      expect(attempts).toBe(2);
+      expect(slept).toEqual([1]);
+      expect(await matchRowsFor(TXN)).toHaveLength(2);
+    });
+
+    it('any other failure is not retried, and the household is free for the next run', async () => {
+      await seedStandardPair();
+      const broken: ReconcileSink = { async persist() { throw new Error('disk on fire'); } };
+
+      await expect(reconcileHousehold(db, HH, { sink: broken, retryDelaysMs: [1], sleep: async () => {} })).rejects.toThrow('disk on fire');
+      expect((await reconcileHousehold(db, HH)).matched).toBe(1);
+    });
   });
 
   it('a household with nothing to reconcile runs cleanly', async () => {
