@@ -62,6 +62,7 @@ const KNOWN_WRITE_ROUTES = [
   'POST /api/queue/[id]/confirm',
   'POST /api/queue/[id]/correct',
   'POST /api/queue/[id]/dismiss',
+  'POST /api/receipts/[receiptId]/reextract',
   'POST /api/receipts/upload',
   'POST /api/reconcile',
 ];

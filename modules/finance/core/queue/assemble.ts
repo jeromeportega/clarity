@@ -119,6 +119,7 @@ export async function assembleQueue(
           ? 'Flagged receipt: photo could not be read'
           : `Flagged receipt: arithmetic check failed (${row.store})`,
         amountCents: row.totalCents,
+        ...(placeholder ? { unreadable: true } : {}),
       });
     }
   }
