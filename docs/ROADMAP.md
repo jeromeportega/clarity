@@ -64,9 +64,9 @@ single-household loop is excellent.
 
 ## Phase 2 — Make the loop great
 
-- **Queue with context.** `QueueItem` is `{id, type, reason, amountCents?}`;
-  carry candidates, merchant, date, receipt thumbnail/crop, and "why we're
-  unsure" so each item is a one-tap decision. Replace free-text
+- **Queue with context.** ~~Receipt-borne items carry store, date, the model's
+  answer and a thumbnail~~ — done (`QueueItem.context`). Still open: match
+  candidates and "why we're unsure" on match items; replace free-text
   "match candidate ID" with a picker.
 - **Per-receipt batch resolution.** Today each line item is one model call with
   no receipt context; resolve a whole receipt in one call with store, date,
@@ -104,12 +104,57 @@ single-household loop is excellent.
 
 ## Follow-ups from the AI SDK pivot (PR #29)
 
-- **Re-extract.** An unreadable outcome is persisted and idempotent on the image
-  hash, so a one-off refusal or malformed answer is sticky until the row is
-  removed. Add an explicit "read again" action for zero-item `needs_review` receipts.
-- **Spend guardrails.** Set an AI Gateway budget for the private project
-  (`vercel ai-gateway budgets`), and record `usage` (incl. cached input tokens)
-  per upload so the prompt-cache breakpoint is measured, not assumed.
+- ~~**Re-extract.**~~ Done: "Read again" on unreadable receipts
+  (`POST /api/receipts/[receiptId]/reextract`); a failed re-read writes nothing.
+- **Spend guardrails.** ~~Budget~~ set: the private project has a $25/month AI
+  Gateway budget. Still open: record `usage` (incl. cached input tokens) per
+  upload so the prompt-cache breakpoint is measured, not assumed.
 - **Eval margin.** The fixture eval passes at exactly 80%; the misses are naming
   variants ("Costco Rotisserie Chicken", "HDMI Cable 6ft", "Men's T-Shirt").
   Grade on the real Costco export before tuning the prompt further.
+
+## Real-data eval (2026-09-17, Costco export)
+
+Command, run from the repo root with a pulled `VERCEL_OIDC_TOKEN` in `.env.local`:
+
+```bash
+RECEIPT_EVAL_NAME_MODE=identity RECEIPT_EVAL_DIR=data/costco/eval npm run vision:eval
+```
+
+What the numbers are, and are not:
+
+- **Item numbers read off the photo** is the metric the product depends on: a
+  read item number resolves from the household's dictionary (bootstrapped from
+  the digital export, then from human answers) with no model naming at all. It
+  is a multiset count over the receipt's numbers (a duplicated number needs as
+  many extracted lines); a number attached to the wrong line's text is caught
+  by the name grade, not here. The precision side is reported alongside
+  (extracted numbers matching no expected line).
+- **Naming** here is the model alone, with an **empty dictionary** — the
+  harness has no dictionary-primed mode yet — graded on the name only, because
+  Costco's export carries no categories (the fixture eval's "and exact
+  category" half is never exercised on this data). In `identity` mode the
+  appended pack-size segments are stripped from both sides first; a wrong
+  product is still wrong.
+- The 80% bar is asserted only for the committed fixture sample in `full`
+  mode, where it was calibrated. A real-data run prints the report and passes.
+- `RECEIPT_EVAL_LIMIT` takes a deterministic evenly spaced sample — fine for a
+  smoke, but a few large receipts dominate a small sample (in the 15-receipt
+  smoke, three receipts held 29 of 62 lines). Quote the full directory.
+
+Results are appended below as they are measured.
+
+- 2026-09-17, 15 of 78 receipts (62 lines, smoke, first normaliser): item
+  numbers read 60/62, totals 15/15, unaided naming 9/62.
+- 2026-09-18, **all 78 receipts (272 lines)**, harness at PR #32: item numbers
+  read on their own line **246/272 (90.4%)**; 76 extracted numbers matched no
+  expected line — many are the instant-savings and fee lines the ground truth
+  deliberately folds away, so this is an upper bound on mis-reads, not a
+  count of them; totals **77/78** (the miss is a return receipt read as
+  +$71.24 instead of −$71.24: returns need a sign rule); unaided naming
+  **81/272 (29.8%)**. Cost of the run: about $6 of gateway credit.
+- Findings to act on: (1) returns — a receipt whose lines are all refunds must
+  carry a negative total, and the reconciler must expect it; (2) the 26 unread
+  item numbers are worth a look by receipt (are they damaged prints, or a
+  layout the extraction prompt misreads?); (3) the dictionary-primed path is
+  what to measure next.

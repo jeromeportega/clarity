@@ -3,6 +3,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  countSkuReads,
+  identityName,
+  isGatedRun,
+  resolveEvalNameMode,
   DEFAULT_EVAL_DIR,
   EVAL_PASS_FRACTION,
   MIN_EVAL_RECEIPTS,
@@ -260,5 +264,121 @@ describe('vision:eval is a separate, isolated Vitest project (FR-18, G-3)', () =
   it('the eval project glob is scoped to eval/**/*.eval.test.ts and is not the unit glob', () => {
     expect(vitestConfig).toContain("name: 'eval'");
     expect(vitestConfig).toContain("'modules/finance/core/receipts/eval/**/*.eval.test.ts'");
+  });
+});
+
+describe('identityName — the product identity without its appended pack-size segments', () => {
+  it('strips the size segments a retailer catalogue appends', () => {
+    expect(identityName('Jimmy Dean Croissant Sausage Egg & Cheese, 4.5 oz, 12-count')).toBe('Jimmy Dean Croissant Sausage Egg & Cheese');
+    expect(identityName('Kirkland Signature Bath Tissue, 2-Ply, 380 Sheets, 30 Rolls')).toBe('Kirkland Signature Bath Tissue');
+    expect(identityName('Lysol Advanced Toilet Bowl Cleaner, 32 fl oz, 4-count')).toBe('Lysol Advanced Toilet Bowl Cleaner');
+    expect(identityName('Kirkland Signature Sliced Bacon, 4 lb (4 x 1 lb packs)')).toBe('Kirkland Signature Sliced Bacon');
+    expect(identityName('Q-Tips Cotton Swabs, 1750 count')).toBe('Q-Tips Cotton Swabs');
+    expect(identityName('Kirkland Signature Paper Towels, 2-Ply, 160 Sheets, 12 Individually Wrapped Rolls')).toBe('Kirkland Signature Paper Towels');
+    expect(identityName('Seville Classics Hyacinth & Rope Baskets, 3-piece Set')).toBe('Seville Classics Hyacinth & Rope Baskets');
+    expect(identityName('Nature Made Vitamin D3 2000 IU, 600 Softgels')).toBe('Nature Made Vitamin D3 2000 IU');
+    expect(identityName('Kirkland Signature Purified Drinking Water, 40 Bottles')).toBe('Kirkland Signature Purified Drinking Water');
+    expect(identityName('Huggies Natural Care Baby Wipes, 900 Wipes')).toBe('Huggies Natural Care Baby Wipes');
+    expect(identityName('Rotisserie Chicken  Per Lb')).toBe('Rotisserie Chicken');
+    expect(identityName('Kirkland Signature Ready to Drink Old Fashioned Tennessee 1L')).toBe('Kirkland Signature Ready to Drink Old Fashioned Tennessee');
+    expect(identityName('Salmon 1 lb each')).toBe('Salmon');
+  });
+
+  it('keeps a number that is part of the identity: dimensions, sizes, doses, model numbers', () => {
+    expect(identityName('Kirkland Signature 10-Gallon Wastebasket Liner, Clear, 500-count')).toBe('Kirkland Signature 10-Gallon Wastebasket Liner, Clear');
+    expect(identityName('Huggies Little Snugglers Plus Diapers Size 2, 174-count')).toBe('Huggies Little Snugglers Plus Diapers Size 2');
+    expect(identityName('HDMI Cable 6ft')).toBe('HDMI Cable 6ft');
+    expect(identityName('Samsung 65 inch Class QLED TV')).toBe('Samsung 65 inch Class QLED TV');
+    expect(identityName('Omega-3 1000 mg Fish Oil')).toBe('Omega-3 1000 mg Fish Oil');
+    expect(identityName('Kohler 47L Step Trash Can, Stainless Steel')).toBe('Kohler 47L Step Trash Can, Stainless Steel');
+    expect(identityName('2 in 1 Shampoo and Conditioner')).toBe('2 in 1 Shampoo and Conditioner');
+    expect(identityName('Rotisserie Chicken')).toBe('Rotisserie Chicken');
+    expect(identityName('Reversible Cotton Throw, Assorted Colors')).toBe('Reversible Cotton Throw, Assorted Colors');
+    expect(identityName('Glenfiddich 12 Years Single Malt Scotch Whiskey, Scotland, 750 ml')).toBe('Glenfiddich 12 Years Single Malt Scotch Whiskey, Scotland');
+  });
+
+  it('never collapses a name to nothing: an all-size name keeps its full form', () => {
+    expect(identityName('1.5 L')).toBe('1.5 L');
+    expect(identityName('12 ct')).toBe('12 ct');
+    expect(identityName('500-count')).toBe('500-count');
+    expect(identityName('2 x 1 lb')).toBe('2 x 1 lb');
+  });
+
+  it('a size in the middle of the head never eats the product noun', () => {
+    expect(identityName('Kirkland Signature 3 lb Ground Coffee')).toBe('Kirkland Signature 3 lb Ground Coffee');
+    expect(identityName('Ninja Foodi 8 Quart Pressure Cooker')).toBe('Ninja Foodi 8 Quart Pressure Cooker');
+    expect(identityName('Kirkland Signature Whole Cashews 2.5 lb bag')).toBe('Kirkland Signature Whole Cashews');
+  });
+
+  it('resolveEvalNameMode defaults to full and accepts identity; isGatedRun is the fixture in full mode only', () => {
+    expect(resolveEvalNameMode({})).toBe('full');
+    expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'IDENTITY' })).toBe('identity');
+    expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'garbage' })).toBe('full');
+    expect(isGatedRun(DEFAULT_EVAL_DIR, 'full')).toBe(true);
+    expect(isGatedRun(`${DEFAULT_EVAL_DIR}/`, 'full')).toBe(true);
+    expect(isGatedRun(DEFAULT_EVAL_DIR, 'identity')).toBe(false);
+    expect(isGatedRun('/somewhere/real', 'full')).toBe(false);
+  });
+
+  it('identity mode credits a size-less answer against a sized catalogue name; full mode does not; a wrong product is still wrong', () => {
+    const actual = [{ sku: '1', canonicalName: 'Kirkland Signature Bath Tissue', category: null }];
+    const expected = [{ sku: '1', name: 'Kirkland Signature Bath Tissue, 2-Ply, 380 Sheets, 30 Rolls', category: null }];
+    expect(gradeReceipt(actual, expected, 0.85, 'full')).toEqual({ correct: 0, total: 1 });
+    expect(gradeReceipt(actual, expected, 0.85, 'identity')).toEqual({ correct: 1, total: 1 });
+    const wrong = [{ sku: '1', canonicalName: 'Kirkland Signature Paper Towels', category: null }];
+    expect(gradeReceipt(wrong, expected, 0.85, 'identity')).toEqual({ correct: 0, total: 1 });
+    // Known limit of the Dice comparison, in BOTH modes: a size inside the head
+    // of the name ("10-Gallon" vs "30-Gallon") differs by two characters, and
+    // two long, otherwise identical names score above the ratio. The
+    // normaliser keeps such numbers (see the identityName tests) so the two
+    // modes agree here, but only a stricter comparator would separate them.
+  });
+
+  it('a null extracted name never scores against a name that collapses to nothing', () => {
+    expect(gradeReceipt([{ sku: '1', canonicalName: null, category: null }], [{ sku: '1', name: '12 ct', category: null }], 0.85, 'identity')).toEqual({ correct: 0, total: 1 });
+  });
+});
+
+describe('countSkuReads — item numbers judged on the paired line', () => {
+  const a = (sku: string | null, name: string): GradedItem => ({ sku, canonicalName: name, category: null });
+
+  it('counts expected item numbers read on their own line, over those that have one, and the unexpected numbers', () => {
+    const actual = [a('111', 'whatever'), a(null, 'no code'), a('333', 'x')];
+    const expected = [
+      { sku: '111', name: 'A', category: null },
+      { sku: '222', name: 'B', category: null },
+      { sku: null, name: 'C (no code on the receipt)', category: null },
+    ];
+    expect(countSkuReads(actual, expected)).toEqual({ read: 1, withSku: 2, unexpected: 1, extractedWithSku: 2 });
+    expect(countSkuReads([], expected)).toEqual({ read: 0, withSku: 2, unexpected: 0, extractedWithSku: 0 });
+  });
+
+  it('a number on the wrong line still counts as read — pairing is number-first; the NAME grade catches the mix-up', () => {
+    const expected = [
+      { sku: '111', name: 'Apples', category: null },
+      { sku: '222', name: 'Bananas', category: null },
+    ];
+    // The number of the OTHER product on each line: 222 sits on the Apples text, 111 on the Bananas text.
+    const swappedText = [a('222', 'Apples'), a('111', 'Bananas')];
+    expect(countSkuReads(swappedText, expected)).toEqual({ read: 2, withSku: 2, unexpected: 0, extractedWithSku: 2 });
+    // …and that same output fails the name grade on both lines, which is where the damage shows.
+    expect(gradeReceipt(swappedText, expected, 0.85)).toEqual({ correct: 0, total: 2 });
+    // Lines with no numbers read nothing.
+    expect(countSkuReads([a(null, 'Apples'), a(null, 'Bananas')], expected)).toEqual({ read: 0, withSku: 2, unexpected: 0, extractedWithSku: 0 });
+  });
+
+  it('a duplicated item number on the receipt needs two extracted lines, not one', () => {
+    const expected = [
+      { sku: '123', name: 'Milk', category: null },
+      { sku: '123', name: 'Milk', category: null },
+    ];
+    expect(countSkuReads([a('123', 'Milk')], expected)).toEqual({ read: 1, withSku: 2, unexpected: 0, extractedWithSku: 1 });
+  });
+
+  it('leading zeros and whitespace are not identity; fifty noise lines do not inflate reads', () => {
+    const expected = [{ sku: '100487', name: 'X', category: null }];
+    expect(countSkuReads([a(' 0100487 ', 'X')], expected)).toEqual({ read: 1, withSku: 1, unexpected: 0, extractedWithSku: 1 });
+    const noise = Array.from({ length: 50 }, (_, i) => a(`9${i}`, `noise ${i}`));
+    expect(countSkuReads([...noise, a('100487', 'X')], expected)).toEqual({ read: 1, withSku: 1, unexpected: 50, extractedWithSku: 51 });
   });
 });
