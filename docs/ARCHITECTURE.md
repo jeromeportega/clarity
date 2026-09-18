@@ -150,6 +150,8 @@ I/O ports:
 | `unmatched_txn` | `gateway.listUnmatchedTransactions()` |
 | `flagged_receipt` | `receipts.needs_review = 1` (arithmetic failure, or an unreadable photo — the placeholder rows carry `unreadable: true` and offer "Read again") |
 
+The two receipt-borne types also carry `context` (`QueueItemContext`): the receipt (store, date, `receiptId`), whether a photo can be shown (`hasImage`, true for `source = 'photo'`), and for `sku_resolution` the model's current answer (item number, canonical name, category, quantity); for `flagged_receipt` the line count. The queue row renders it under the reason with a thumbnail from `/api/receipts/image/[receiptId]` and a link to the evidence page, so a decision takes one glance.
+
 …then anti-joins against `review_decisions` on `(household_id, item_type, item_id)`; a decided item disappears from the queue.
 
 `applyCorrection(scope, item, action, gateway, db)` (`corrections/apply.ts`) runs **one transaction**: insert the terminal `review_decisions` row (`confirm | correct | dismiss`, correction serialized to `payload_json`) — written first, so a second decision on the same `(household, type, id)` trips `ux_review_decisions_item` and the routes turn that UNIQUE violation into a 409 — then apply the decision at its source, then call `gateway.recomputeRollups(scope, [item.id])`. Any failure rolls the whole thing back. The gateway call is a no-op in both backends (rollups are computed on read) and must stay one: the gateway holds its own connection, not the transaction, so a write there would neither roll back with the rest nor coexist with the lock the transaction holds.
