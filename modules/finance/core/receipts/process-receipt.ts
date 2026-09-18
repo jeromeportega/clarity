@@ -5,6 +5,8 @@ import { reconcile } from './reconcile';
 import type { Resolution, SkuResolver } from './resolver/sku-resolver';
 import type {
   NewReceiptItem,
+  NewReceiptItemDraft,
+  ReceiptExtractionFields,
   ReceiptItemRecord,
   ReceiptRecord,
   ReceiptStore,
@@ -19,9 +21,14 @@ import type { ReceiptImageInput, VisionProvider } from './vision/vision-provider
 //   imageHash → idempotency check → vision.extract → per-item resolver.resolve
 //   → reconcile → review flagging → store writes.
 //
-// The CALLER constructs `deps` — the core never builds an Anthropic client
-// (NFR-1, G-3). `npm test` wires recorded/stub seams; `vision:eval` wires the
-// live providers. Every amount stays integer cents until the storage boundary.
+// The CALLER constructs `deps` — the core never builds a model provider or a
+// client (NFR-1, G-3). `npm test` wires recorded/stub seams; `vision:eval`
+// wires the live providers. Every amount stays integer cents until the
+// storage boundary.
+//
+// `readReceipt` is the reusable middle of that sequence (extract → resolve →
+// reconcile → flag): `processReceipt` inserts what it produces for a new
+// photo, `reprocessReceipt` replaces what an earlier read produced.
 // =============================================================================
 
 export interface ReceiptPipelineDeps {
@@ -52,52 +59,40 @@ export interface ProcessReceiptResult {
   idempotent: boolean; // true => identical photo already processed (FR-2)
 }
 
+/** What one read of a photo says: the receipt's fields and its line items. */
+export interface ReceiptReading {
+  fields: ReceiptExtractionFields;
+  items: NewReceiptItemDraft[];
+  readable: boolean;
+}
+
 const DEFAULT_HOUSEHOLD_ID = 'default-household';
 const DEFAULT_SOURCE = 'photo';
 
-export async function processReceipt(
+// Unreadable / refusal (FR-6): a zero-item record flagged needs_review; never
+// fabricated items.
+const UNREADABLE_FIELDS: Readonly<ReceiptExtractionFields> = Object.freeze({
+  store: null,
+  purchasedAt: null,
+  subtotalCents: null,
+  taxCents: null,
+  totalCents: null,
+  paymentLast4: null,
+  needsReview: true,
+});
+
+/**
+ * extract → resolve → reconcile → flag, with no store writes: the part of the
+ * pipeline that is the same whether the photo is new or being read again.
+ */
+export async function readReceipt(
   input: ReceiptImageInput,
-  deps: ReceiptPipelineDeps,
+  deps: Pick<ReceiptPipelineDeps, 'vision' | 'resolver' | 'store'>,
   config?: Partial<ReceiptConfig>,
-): Promise<ProcessReceiptResult> {
+): Promise<ReceiptReading> {
   const cfg: ReceiptConfig = { ...DEFAULT_RECEIPT_CONFIG, ...config };
-  const householdId = deps.householdId ?? DEFAULT_HOUSEHOLD_ID;
-  const source = deps.source ?? DEFAULT_SOURCE;
-
-  const hash = imageHash(input.bytes);
-
-  // Idempotency (FR-2): an identical photo is a no-op that links the existing
-  // record. Keyed on the SHA-256 of the raw bytes, so a re-upload performs ZERO
-  // new writes.
-  const existing = await deps.store.findReceiptByImageHash(hash);
-  if (existing) {
-    return {
-      receipt: existing,
-      items: [],
-      status: existing.needsReview ? 'needs_review' : 'ok',
-      idempotent: true,
-    };
-  }
-
   const extracted = await deps.vision.extract(input);
-
-  // Unreadable / refusal (FR-6): persist a zero-item record flagged
-  // needs_review; never fabricate items.
-  if (!extracted.readable) {
-    const receipt = await deps.store.insertReceipt({
-      householdId,
-      source,
-      store: null,
-      purchasedAt: null,
-      subtotalCents: null,
-      taxCents: null,
-      totalCents: null,
-      paymentLast4: null,
-      imageHash: hash,
-      needsReview: true,
-    });
-    return { receipt, items: [], status: 'needs_review', idempotent: false };
-  }
+  if (!extracted.readable) return { fields: { ...UNREADABLE_FIELDS }, items: [], readable: false };
 
   // Resolution — exactly one resolve() per line item, in extraction order.
   const categories = await deps.store.listCategories();
@@ -131,28 +126,11 @@ export async function processReceipt(
   const needsReview = !recon.ok || itemNeedsReview.some(Boolean);
 
   // Merchandise subtotal (pre-tax, pre-fee), in cents.
-  const subtotalCents = extracted.lineItems.reduce(
-    (acc, li) => acc + li.linePrice - li.discount,
-    0,
-  );
+  const subtotalCents = extracted.lineItems.reduce((acc, li) => acc + li.linePrice - li.discount, 0);
 
-  const receipt = await deps.store.insertReceipt({
-    householdId,
-    source,
-    store: extracted.store,
-    purchasedAt: extracted.purchasedAt,
-    subtotalCents,
-    taxCents: extracted.tax,
-    totalCents: extracted.total,
-    paymentLast4: extracted.paymentHint?.last4 ?? null,
-    imageHash: hash,
-    needsReview,
-  });
-
-  const newItems: NewReceiptItem[] = extracted.lineItems.map((li, i) => {
+  const items: NewReceiptItemDraft[] = extracted.lineItems.map((li, i) => {
     const res = resolutions[i]!;
     return {
-      receiptId: receipt.id,
       lineNo: i + 1,
       sku: li.sku,
       rawDescription: li.rawDescription,
@@ -169,13 +147,60 @@ export async function processReceipt(
     };
   });
 
-  const items =
-    newItems.length > 0 ? await deps.store.insertReceiptItems(newItems) : [];
+  return {
+    fields: {
+      store: extracted.store,
+      purchasedAt: extracted.purchasedAt,
+      subtotalCents,
+      taxCents: extracted.tax,
+      totalCents: extracted.total,
+      paymentLast4: extracted.paymentHint?.last4 ?? null,
+      needsReview,
+    },
+    items,
+    readable: true,
+  };
+}
+
+export async function processReceipt(
+  input: ReceiptImageInput,
+  deps: ReceiptPipelineDeps,
+  config?: Partial<ReceiptConfig>,
+): Promise<ProcessReceiptResult> {
+  const householdId = deps.householdId ?? DEFAULT_HOUSEHOLD_ID;
+  const source = deps.source ?? DEFAULT_SOURCE;
+
+  const hash = imageHash(input.bytes);
+
+  // Idempotency (FR-2): an identical photo is a no-op that links the existing
+  // record. Keyed on the SHA-256 of the raw bytes, so a re-upload performs ZERO
+  // new writes.
+  const existing = await deps.store.findReceiptByImageHash(hash);
+  if (existing) {
+    return {
+      receipt: existing,
+      items: [],
+      status: existing.needsReview ? 'needs_review' : 'ok',
+      idempotent: true,
+    };
+  }
+
+  const reading = await readReceipt(input, deps, config);
+
+  const receipt = await deps.store.insertReceipt({
+    householdId,
+    source,
+    imageHash: hash,
+    ...reading.fields,
+  });
+
+  const newItems: NewReceiptItem[] = reading.items.map((item) => ({ ...item, receiptId: receipt.id }));
+  const items = newItems.length > 0 ? await deps.store.insertReceiptItems(newItems) : [];
 
   return {
     receipt,
     items,
-    status: needsReview ? 'needs_review' : 'ok',
+    status: reading.fields.needsReview ? 'needs_review' : 'ok',
     idempotent: false,
   };
 }

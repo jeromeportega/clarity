@@ -63,11 +63,3 @@ npm run e2e              # Playwright golden path — NEVER in npm test
 - Deploys are an operator step from an authenticated Vercel session
   (`deploy/deploy.sh` prints the command; `deploy/smoke.sh` verifies). Secrets
   live only in Vercel env / local `.env` — see `deploy/ENV.md` (names only).
-
-## Loom
-
-This repo also carries a `loom` policy (`.loom/policy.yaml`) for optional
-autonomous epic execution (`loom epic` → plan → `loom approve` → `loom run`).
-When the loom PreToolUse hook is installed it checks every Bash command against
-that policy (protected paths, forbidden git flags, command chaining). Work with
-the guardrails; never try to bypass them.

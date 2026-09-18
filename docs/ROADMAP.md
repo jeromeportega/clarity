@@ -23,8 +23,8 @@ single-household loop is excellent.
 - ~~**Persist uploads.**~~ Done: `apps/web/lib/receipt-pipeline.ts` wires the
   libSQL store (household-scoped, conflict-safe) and dictionary; receipts,
   items and learned SKUs survive the request and re-uploads are idempotent.
-  Unreadable receipts persist as flagged placeholders. Images still go to
-  `/tmp` — see the evidence-image item below.
+  Unreadable receipts persist as flagged placeholders that can be read again
+  from the queue; images live in the private Blob store (see below).
 - ~~**Reconcile at runtime.**~~ Done: `DrizzleReconcileSource.load` reads the
   household from the database, `reconcileHousehold` runs after every ingest and
   upload (and on demand via `POST /api/reconcile`), the sink never overwrites a

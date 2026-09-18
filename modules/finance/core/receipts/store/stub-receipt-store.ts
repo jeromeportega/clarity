@@ -2,6 +2,8 @@ import { CATEGORY_SEED } from './h1-schema';
 import type {
   NewReceipt,
   NewReceiptItem,
+  NewReceiptItemDraft,
+  ReceiptExtractionFields,
   ReceiptItemRecord,
   ReceiptRecord,
   ReceiptStore,
@@ -59,6 +61,38 @@ export class StubReceiptStore implements ReceiptStore {
     }));
     this.items.push(...records);
     return records.map((r) => ({ ...r }));
+  }
+
+  async getReceiptById(id: string): Promise<ReceiptRecord | null> {
+    const found = this.receipts.find(
+      (r) => r.id === id && (this.householdId === undefined || r.householdId === this.householdId),
+    );
+    return found ? { ...found } : null;
+  }
+
+  async listReceiptItems(receiptId: string): Promise<ReceiptItemRecord[]> {
+    return this.items
+      .filter((i) => i.receiptId === receiptId)
+      .sort((a, b) => a.lineNo - b.lineNo)
+      .map((i) => ({ ...i }));
+  }
+
+  async replaceReceiptExtraction(
+    receiptId: string,
+    fields: ReceiptExtractionFields,
+    items: NewReceiptItemDraft[],
+  ): Promise<{ receipt: ReceiptRecord; items: ReceiptItemRecord[] }> {
+    const idx = this.receipts.findIndex(
+      (r) => r.id === receiptId && (this.householdId === undefined || r.householdId === this.householdId),
+    );
+    if (idx === -1) throw new Error(`replaceReceiptExtraction: receipt ${receiptId} not found in scope`);
+    const updated: ReceiptRecord = { ...this.receipts[idx]!, ...fields };
+    this.receipts[idx] = updated;
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      if (this.items[i]!.receiptId === receiptId) this.items.splice(i, 1);
+    }
+    const inserted = await this.insertReceiptItems(items.map((item) => ({ ...item, receiptId })));
+    return { receipt: { ...updated }, items: inserted };
   }
 
   async listCategories(): Promise<readonly string[]> {

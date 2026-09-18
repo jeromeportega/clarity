@@ -16,4 +16,9 @@ export interface QueueItem {
   reason: string;
   /** Present where the source record carries a monetary amount; absent otherwise. */
   amountCents?: number;
+  /**
+   * `flagged_receipt` only: the photo could not be read (zero items, placeholder
+   * row). Such a receipt can be read again; others are decided in the queue.
+   */
+  unreadable?: boolean;
 }
