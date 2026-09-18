@@ -1,4 +1,6 @@
-import type Anthropic from '@anthropic-ai/sdk';
+import { generateText, jsonSchema, tool, type JSONSchema7, type LanguageModel } from 'ai';
+import { z } from 'zod';
+
 import { normalizeSkuOrAbbrev, normalizeStore } from '../dictionary/normalize';
 import type { SkuDictionary } from '../dictionary/sku-dictionary';
 import type { Resolution, ResolutionQuery, SkuResolver } from './sku-resolver';
@@ -97,49 +99,56 @@ export class LlmSkuResolver implements SkuResolver {
 // -----------------------------------------------------------------------------
 // The live generic LLM seam (the default path on a dictionary miss, FR-9).
 //
-// Receives an already-constructed Anthropic client — the core NEVER constructs
-// one (NFR-1, G-3); the eval harness wires it. Forces a single structured tool
-// call so name and category come back as separate fields with separate
-// confidences. Taxonomy clamping and dictionary write-back are the
-// orchestrator's job (LlmSkuResolver), not this seam's.
+// Receives an already-chosen model — an AI Gateway id or any AI SDK language
+// model. The core NEVER chooses a model, reads a key or builds a provider
+// (NFR-1, G-3); the composition root and the eval harness wire it. Forces a
+// single structured tool call so name and category come back as separate
+// fields with separate confidences. Taxonomy clamping and dictionary write-back
+// are the orchestrator's job (LlmSkuResolver), not this seam's.
 // -----------------------------------------------------------------------------
-export interface AnthropicSkuResolverOpts {
-  client: Anthropic;
-  model?: string;
-  maxTokens?: number;
+export interface ModelSkuResolverOpts {
+  model: LanguageModel;
+  maxOutputTokens?: number;
 }
 
-interface RecordResolutionInput {
-  canonicalName: string;
-  category: string;
-  nameConfidence: number;
-  categoryConfidence: number;
+// What comes back is checked before it is used: a real name, finite numeric
+// confidences. The category is validated as a string only — clamping it to the
+// taxonomy is the orchestrator's job (LlmSkuResolver), and an off-list category
+// must degrade to "untrusted", not fail the upload.
+const RecordResolutionSchema = z.object({
+  canonicalName: z.string().trim().min(1),
+  category: z.string(),
+  nameConfidence: z.number(),
+  categoryConfidence: z.number(),
+});
+type RecordResolutionInput = z.infer<typeof RecordResolutionSchema>;
+
+function validateResolution(value: unknown): { success: true; value: RecordResolutionInput } | { success: false; error: Error } {
+  const r = RecordResolutionSchema.safeParse(value);
+  return r.success ? { success: true, value: r.data } : { success: false, error: r.error };
 }
 
-const RECORD_RESOLUTION_TOOL_NAME = 'record_resolution';
+export const RECORD_RESOLUTION_TOOL_NAME = 'record_resolution';
 
-export class AnthropicSkuResolver implements SkuResolver {
-  private readonly client: Anthropic;
-  private readonly model: string;
-  private readonly maxTokens: number;
+export class ModelSkuResolver implements SkuResolver {
+  private readonly model: LanguageModel;
+  private readonly maxOutputTokens: number;
 
-  constructor(opts: AnthropicSkuResolverOpts) {
-    this.client = opts.client;
-    this.model = opts.model ?? 'claude-sonnet-4-6';
-    this.maxTokens = opts.maxTokens ?? 256;
+  constructor(opts: ModelSkuResolverOpts) {
+    this.model = opts.model;
+    this.maxOutputTokens = opts.maxOutputTokens ?? 256;
   }
 
   async resolve(query: ResolutionQuery): Promise<Resolution> {
-    const message = await this.client.messages.create({
+    const result = await generateText({
       model: this.model,
-      max_tokens: this.maxTokens,
-      tools: [
-        {
-          name: RECORD_RESOLUTION_TOOL_NAME,
+      maxOutputTokens: this.maxOutputTokens,
+      tools: {
+        [RECORD_RESOLUTION_TOOL_NAME]: tool({
           description:
             'Record the canonical product name and category for one receipt line item, ' +
             'with separate confidence scores for the name and the category.',
-          input_schema: {
+          inputSchema: jsonSchema<RecordResolutionInput>({
             type: 'object',
             properties: {
               canonicalName: {
@@ -161,14 +170,21 @@ export class AnthropicSkuResolver implements SkuResolver {
               },
             },
             required: ['canonicalName', 'category', 'nameConfidence', 'categoryConfidence'],
-          },
-        },
-      ],
-      tool_choice: { type: 'tool', name: RECORD_RESOLUTION_TOOL_NAME },
-      messages: [{ role: 'user', content: buildPrompt(query) }],
+          } as JSONSchema7, { validate: validateResolution }),
+        }),
+      },
+      toolChoice: { type: 'tool', toolName: RECORD_RESOLUTION_TOOL_NAME },
+      prompt: buildPrompt(query),
     });
 
-    const input = extractToolInput(message);
+    // A forced tool the model does not call is a thrown ToolChoiceViolationError;
+    // a call whose JSON is malformed or fails validation comes back marked
+    // `invalid` with the raw string as input. Neither is a resolution.
+    const call = result.toolCalls.find((c) => c.toolName === RECORD_RESOLUTION_TOOL_NAME);
+    if (!call || call.dynamic || call.invalid) {
+      throw new Error('SKU resolver: the record_resolution tool call was missing or malformed');
+    }
+    const input = call.input;
     return {
       canonicalName: input.canonicalName,
       category: input.category,
@@ -189,14 +205,9 @@ function buildPrompt(query: ResolutionQuery): string {
     `Allowed categories: ${query.categories.join(', ')}`,
     '',
     'Resolve the abbreviated description to a canonical product name and pick the ' +
-      'single best category from the allowed list. Call record_resolution with your answer.',
+      'single best category from the allowed list. The canonical name is the product\'s ' +
+      'identity — brand and product as a shopper would name it — WITHOUT pack size, ' +
+      'count, weight or volume (those are separate fields), unless the size is part ' +
+      'of the product\'s own name. Call record_resolution with your answer.',
   ].join('\n');
-}
-
-function extractToolInput(message: Anthropic.Message): RecordResolutionInput {
-  const block = message.content.find((b) => b.type === 'tool_use');
-  if (!block || block.type !== 'tool_use') {
-    throw new Error('Anthropic resolver: model did not return a record_resolution tool call');
-  }
-  return block.input as RecordResolutionInput;
 }

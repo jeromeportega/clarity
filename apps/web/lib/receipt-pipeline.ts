@@ -1,20 +1,19 @@
-import Anthropic from '@anthropic-ai/sdk';
-
 import { LibSqlSkuDictionary } from '../../../modules/finance/core/receipts/dictionary/libsql-sku-dictionary';
 import type { SkuDictionary } from '../../../modules/finance/core/receipts/dictionary/sku-dictionary';
 import type { ReceiptPipelineDeps } from '../../../modules/finance/core/receipts/process-receipt';
-import { AnthropicSkuResolver, LlmSkuResolver } from '../../../modules/finance/core/receipts/resolver/llm-resolver';
+import { liveModelsAvailable, resolverModelId, visionModelId } from '../../../modules/finance/core/receipts/model-ids';
+import { LlmSkuResolver, ModelSkuResolver } from '../../../modules/finance/core/receipts/resolver/llm-resolver';
 import { RecordedSkuResolver } from '../../../modules/finance/core/receipts/resolver/recorded-resolver';
 import type { SkuResolver } from '../../../modules/finance/core/receipts/resolver/sku-resolver';
 import { LibSqlReceiptStore } from '../../../modules/finance/core/receipts/store/libsql-receipt-store';
 import type { ReceiptStore } from '../../../modules/finance/core/receipts/store/receipt-store';
-import { LiveAnthropicVisionProvider } from '../../../modules/finance/core/receipts/vision/live-anthropic-vision-provider';
+import { LiveVisionProvider } from '../../../modules/finance/core/receipts/vision/live-vision-provider';
 import { RecordedVisionProvider } from '../../../modules/finance/core/receipts/vision/recorded-vision-provider';
 import type { VisionProvider } from '../../../modules/finance/core/receipts/vision/vision-provider';
 import type { FinanceDb } from '../../../modules/finance/db/client';
 
 export interface ReceiptPipelineOverrides {
-  /** Vision seam; defaults to live Anthropic when ANTHROPIC_API_KEY is set, else recorded fixtures. */
+  /** Vision seam; defaults to a live model through the AI Gateway when it can authenticate, else recorded fixtures. */
   vision?: VisionProvider;
   /** The generic LLM resolver the dictionary-first resolver falls back to; same default rule. */
   llm?: SkuResolver;
@@ -31,7 +30,7 @@ export interface ReceiptPipelineOverrides {
  * resolution — survives the request, so idempotency works across uploads and
  * the dictionary actually learns.
  *
- * The core never builds clients; this file (app layer) does.
+ * The core never chooses a model or builds a provider; this file (app layer) does.
  */
 export function buildReceiptPipelineDeps(
   db: FinanceDb,
@@ -39,11 +38,12 @@ export function buildReceiptPipelineDeps(
   overrides: ReceiptPipelineOverrides = {},
 ): ReceiptPipelineDeps {
   const env = overrides.env ?? process.env;
-  const apiKey = env.ANTHROPIC_API_KEY?.trim();
-  const client = apiKey ? new Anthropic({ apiKey }) : null;
+  // Live models go through the Vercel AI Gateway: an API key locally, the
+  // deployment's OIDC token on Vercel. Without either, recorded fixtures.
+  const live = liveModelsAvailable(env);
 
-  const vision = overrides.vision ?? (client ? new LiveAnthropicVisionProvider({ client }) : new RecordedVisionProvider());
-  const llm = overrides.llm ?? (client ? new AnthropicSkuResolver({ client }) : new RecordedSkuResolver());
+  const vision = overrides.vision ?? (live ? new LiveVisionProvider({ model: visionModelId(env) }) : new RecordedVisionProvider());
+  const llm = overrides.llm ?? (live ? new ModelSkuResolver({ model: resolverModelId(env) }) : new RecordedSkuResolver());
   const dictionary = overrides.dictionary ?? new LibSqlSkuDictionary(db, { householdId });
   const store = overrides.store ?? new LibSqlReceiptStore(db, { householdId });
   // Invariant: the store's idempotency scope, the dictionary's scope and the

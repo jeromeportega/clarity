@@ -13,9 +13,12 @@ and the honest list of what is not yet wired) and `docs/ROADMAP.md`.
   shallow files; deeper routes need more `../`). `@/` resolves to `apps/web/`.
 - `modules/finance/core` — pure domain logic behind DI seams (adapters, vision
   provider, SKU resolver/dictionary, reconcile engine, classifier, queue,
-  corrections, rollups, evidence). **Never constructs an Anthropic client, DB
-  client, or framework object** — `core/__tests__/core-boundary.test.ts` and
-  `receipts/framework-isolation.test.ts` enforce this.
+  corrections, rollups, evidence). **Never builds a model provider, reads a credential, constructs a DB
+  client, or imports a framework** — models arrive by injection as AI SDK
+  `LanguageModel`s (AI Gateway ids in practice; core holds the default ids in
+  `receipts/model-ids.ts` but constructs nothing). `core/__tests__/core-boundary.test.ts`
+  and `receipts/framework-isolation.test.ts` enforce the import side: no next/react,
+  no `@ai-sdk/gateway`, `@anthropic-ai/sdk`, `@clerk/*`, `@vercel/blob` in core.
 - `modules/finance/db` — Drizzle schema + migrations + `createDb()`
   (Turso when `TURSO_*` is set, otherwise a local file under `data/`).
 - `tests/` — cross-cutting: real route handlers against fresh libSQL, toolchain

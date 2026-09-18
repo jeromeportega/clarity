@@ -114,9 +114,12 @@ export async function readReceipt(
 
   // Per-item review flag (FR-14): an item is flagged when its weakest axis
   // (name or category) falls below the confidence threshold.
-  const itemNeedsReview = resolutions.map(
-    (r) => Math.min(r.nameConfidence, r.categoryConfidence) < cfg.confidenceThreshold,
-  );
+  // A confidence that is not a finite number (a resolver that lost a field)
+  // is the weakest possible signal, not a pass: `NaN < x` is false.
+  const itemNeedsReview = resolutions.map((r) => {
+    const weakest = Math.min(r.nameConfidence, r.categoryConfidence);
+    return !Number.isFinite(weakest) || weakest < cfg.confidenceThreshold;
+  });
 
   // Whole-receipt review: an arithmetic mismatch (FR-15) OR any below-threshold
   // item (FR-14) flags the entire receipt.

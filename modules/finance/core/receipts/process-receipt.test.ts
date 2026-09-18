@@ -286,6 +286,14 @@ describe('processReceipt — configurability (NFR-3)', () => {
 // --- wiring order -----------------------------------------------------------
 
 describe('processReceipt — wiring', () => {
+  it('a resolver that lost its confidences (NaN) is flagged for review, never silently passed', async () => {
+    const receipt = reconcilingReceipt();
+    const lost = new FakeResolver({}, resolution({ nameConfidence: Number.NaN, categoryConfidence: Number.NaN }));
+    const out = await processReceipt(bytes([7]), harness({ receipt, resolver: lost }).deps);
+    expect(out.status).toBe('needs_review');
+    expect(out.receipt.needsReview).toBe(true);
+  });
+
   it('invokes the resolver exactly once per line item, in order', async () => {
     const resolver = new FakeResolver();
     const receipt = extracted({

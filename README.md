@@ -54,7 +54,7 @@ for how to obtain each kind of input data. The plan is in
 ## Stack
 
 Next.js (App Router) + TypeScript · Tailwind CSS + shadcn/ui primitives +
-Geist · libSQL / Turso via Drizzle · Anthropic SDK · Vitest + Playwright ·
+Geist · libSQL / Turso via Drizzle · Vercel AI SDK through the AI Gateway · Vitest + Playwright ·
 deployed on Vercel.
 
 ## Repository layout
@@ -75,7 +75,7 @@ offline and deterministic (a boundary test enforces this).
 
 ## Getting started
 
-Requires Node ≥ 20.
+Requires Node ≥ 22.
 
 ```bash
 npm ci
@@ -95,7 +95,7 @@ Without `TURSO_DATABASE_URL` the app falls back to a local file database under
 |---|---|
 | `npm test` | Vitest unit + integration suite. Offline, deterministic, no API keys, throwaway libSQL DBs. This is the CI gate. |
 | `npm run typecheck` | `tsc --noEmit` over the db module and the tests plus everything they import (which transitively covers the app routes, pages, and core). |
-| `npm run vision:eval` | Receipt-extraction accuracy harness against fixture receipts. Needs `ANTHROPIC_API_KEY`. Asserts one threshold over the sample — ≥ 80 % of expected line items resolved correctly, where "correct" = Dice similarity ≥ 0.85 on the canonical name *and* exact category — never per-item exact match. Not part of `npm test`. |
+| `npm run vision:eval` | Receipt-extraction accuracy harness against fixture receipts, through the Vercel AI Gateway. Needs `AI_GATEWAY_API_KEY` or a pulled `VERCEL_OIDC_TOKEN` (`vercel env pull`). Asserts one threshold over the sample — ≥ 80 % of expected line items resolved correctly, where "correct" = Dice similarity ≥ 0.85 on the canonical name *and* exact category — never per-item exact match. Not part of `npm test`. |
 | `npm run e2e` | Playwright golden path (receipt → items → queue → rollup). Not part of `npm test`. |
 | `npm run seed:demo` | Seeds the demo household and runs reconciliation over it. |
 | `npm run db:generate` / `db:migrate` (in `modules/finance`) | Drizzle migrations. |

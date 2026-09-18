@@ -101,3 +101,15 @@ single-household loop is excellent.
 - Email forwarding for order confirmations (`.eml` adapter exists as a seam).
 - Additional retailers' digital receipts.
 - Second module of the home platform (chores, calendars) once finance is solid.
+
+## Follow-ups from the AI SDK pivot (PR #29)
+
+- **Re-extract.** An unreadable outcome is persisted and idempotent on the image
+  hash, so a one-off refusal or malformed answer is sticky until the row is
+  removed. Add an explicit "read again" action for zero-item `needs_review` receipts.
+- **Spend guardrails.** Set an AI Gateway budget for the private project
+  (`vercel ai-gateway budgets`), and record `usage` (incl. cached input tokens)
+  per upload so the prompt-cache breakpoint is measured, not assumed.
+- **Eval margin.** The fixture eval passes at exactly 80%; the misses are naming
+  variants ("Costco Rotisserie Chicken", "HDMI Cable 6ft", "Men's T-Shirt").
+  Grade on the real Costco export before tuning the prompt further.

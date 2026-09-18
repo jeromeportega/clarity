@@ -21,13 +21,17 @@ const ARTIFACTS = ['vercel.json', 'deploy/deploy.sh', 'deploy/ENV.md', 'deploy/s
 const ENV_VAR_NAMES = [
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
+  'AI_GATEWAY_API_KEY',
   'RECONCILE_MUTATION_TOKEN',
   'PUBLIC_DEMO_MODE',
   'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY',
   'CLERK_SECRET_KEY',
   'CLARITY_OPERATOR_EMAILS',
   'BLOB_READ_WRITE_TOKEN',
+  'VERCEL_OIDC_TOKEN',
+  'RECEIPT_AI',
+  'CLARITY_VISION_MODEL',
+  'CLARITY_RESOLVER_MODEL',
 ];
 
 // Patterns that indicate a secret value is committed (name=value assignments with

@@ -13,11 +13,12 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1",
     "@libsql/client": "^0.14.0",
+    "ai": "7.0.102",
     "csv-parse": "^5.5.6",
     "drizzle-orm": "^0.36.4",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "4.1.11"
   },
   "devDependencies": {
     "drizzle-kit": "^0.28.1"

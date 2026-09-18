@@ -84,7 +84,10 @@ export async function POST(request: Request): Promise<Response> {
   try {
     // Real persistence: receipt, line items and learned SKUs land in the DB.
     outcome = await handleReceiptUpload(bytes, mimeType, buildReceiptPipelineDeps(getDb(), writer.householdId));
-  } catch {
+  } catch (err) {
+    // Gateway auth, a wrong model id, quota, the DB: all land here. Log the
+    // cause — the client gets a generic 500, the operator gets the reason.
+    console.error('[receipts/upload] processing failed', err);
     return Response.json({ error: 'Processing failed' }, { status: 500 });
   }
 

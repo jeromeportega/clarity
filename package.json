@@ -20,12 +20,13 @@
     "dictionary:bootstrap": "tsx scripts/dictionary-bootstrap.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1",
     "@libsql/client": "^0.14.0",
-    "drizzle-orm": "^0.36.4"
+    "ai": "7.0.102",
+    "drizzle-orm": "^0.36.4",
+    "zod": "4.1.11"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

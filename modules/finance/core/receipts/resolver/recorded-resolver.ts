@@ -6,8 +6,8 @@ import type { Resolution, ResolutionQuery, SkuResolver } from './sku-resolver';
 
 // =============================================================================
 // The recorded generic LLM seam — replays a previously-captured Resolution from
-// a fixture instead of calling Anthropic, so `npm test` is fully offline (no
-// API key, no network). It plugs in wherever the live AnthropicSkuResolver would
+// a fixture instead of calling a model, so `npm test` is fully offline (no
+// API key, no network). It plugs in wherever the live ModelSkuResolver would
 // (e.g. as the `llm` of LlmSkuResolver), and is keyed identically to the eval
 // harness (epic contract §9):
 //
