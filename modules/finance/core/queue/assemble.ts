@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
 import { receiptItems, receipts, reviewDecisions } from '../../db/schema';
@@ -54,6 +54,14 @@ export async function assembleQueue(
       id: receiptItems.id,
       rawDescription: receiptItems.rawDescription,
       linePriceCents: receiptItems.linePriceCents,
+      sku: receiptItems.sku,
+      canonicalName: receiptItems.canonicalName,
+      categoryId: receiptItems.categoryId,
+      quantity: receiptItems.quantity,
+      receiptId: receipts.id,
+      store: receipts.store,
+      purchasedAt: receipts.purchasedAt,
+      source: receipts.source,
     })
     .from(receiptItems)
     .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
@@ -66,6 +74,16 @@ export async function assembleQueue(
         type: 'sku_resolution',
         reason: `Low-confidence SKU resolution: "${row.rawDescription}"`,
         amountCents: row.linePriceCents,
+        context: {
+          receiptId: row.receiptId,
+          store: row.store,
+          purchasedAt: row.purchasedAt,
+          hasImage: hasPhoto(row.source),
+          sku: row.sku,
+          canonicalName: row.canonicalName,
+          categoryId: row.categoryId,
+          quantity: row.quantity,
+        },
       });
     }
   }
@@ -102,10 +120,23 @@ export async function assembleQueue(
     .select({
       id: receipts.id,
       store: receipts.store,
+      purchasedAt: receipts.purchasedAt,
       totalCents: receipts.totalCents,
+      source: receipts.source,
     })
     .from(receipts)
     .where(and(eq(receipts.householdId, householdId), eq(receipts.needsReview, true)));
+
+  // How many lines each flagged receipt has (a placeholder has none) — scoped
+  // by household through the same join, never by a list of ids.
+  const lineCounts = new Map<string, number>();
+  const counts = await db
+    .select({ receiptId: receiptItems.receiptId, n: sql<number>`count(*)` })
+    .from(receiptItems)
+    .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+    .where(and(eq(receipts.householdId, householdId), eq(receipts.needsReview, true)))
+    .groupBy(receiptItems.receiptId);
+  for (const c of counts) lineCounts.set(c.receiptId, Number(c.n));
 
   for (const row of flaggedRows) {
     if (keep('flagged_receipt', row.id)) {
@@ -120,9 +151,22 @@ export async function assembleQueue(
           : `Flagged receipt: arithmetic check failed (${row.store})`,
         amountCents: row.totalCents,
         ...(placeholder ? { unreadable: true } : {}),
+        context: {
+          receiptId: row.id,
+          store: placeholder ? null : row.store,
+          purchasedAt: placeholder ? null : row.purchasedAt,
+          hasImage: hasPhoto(row.source),
+          itemCount: lineCounts.get(row.id) ?? 0,
+        },
       });
     }
   }
 
   return items;
+}
+
+// Only a photographed receipt has an image behind it; digital imports (the
+// Costco export) are keyed by their own transaction id and have none.
+function hasPhoto(source: string): boolean {
+  return source === 'photo';
 }

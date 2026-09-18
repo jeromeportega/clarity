@@ -157,7 +157,7 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
       {
         id: DEMO_RECEIPT_1_ID,
         householdId: DEMO_HOUSEHOLD_ID,
-        source: 'vision',
+        source: 'photo',
         store: 'Best Buy',
         purchasedAt: '2025-01-20',
         subtotalCents: 4699,
@@ -168,7 +168,7 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
       {
         id: DEMO_RECEIPT_2_ID,
         householdId: DEMO_HOUSEHOLD_ID,
-        source: 'vision',
+        source: 'photo',
         store: 'Corner Market',
         purchasedAt: '2025-01-14',
         subtotalCents: 1800,
