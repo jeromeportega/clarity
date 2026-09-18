@@ -158,23 +158,39 @@ describe('syncPlaidItem — changes after the first sync', () => {
     expect(await db.select().from(transactions)).toHaveLength(fixtureAdded.length);
   });
 
-  it('a pending transaction that posts keeps our row id — and the match hanging off it', async () => {
+  it('a pending transaction that posts keeps our row id — and, when the money is unchanged, the match hanging off it', async () => {
     const pending: PlaidTransaction = { ...sample, transactionId: 'pending-1', pending: true, amount: 40, date: '2026-09-15' };
     await syncPlaidItem(db, item, new FakePlaid(fixtureAccounts, [page({ added: [pending], nextCursor: 'c1' })]));
     const row = (await db.select().from(transactions).where(eq(transactions.externalId, 'pending-1')))[0]!;
     expect(row.pending).toBe(true);
     await db.insert(matches).values(manualMatch('m-1', row.id));
 
-    const posted: PlaidTransaction = { ...pending, transactionId: 'posted-1', pending: false, pendingTransactionId: 'pending-1', amount: 41.5, date: '2026-09-16' };
+    // Same money, later posting date — the norm when an authorization settles.
+    const posted: PlaidTransaction = { ...pending, transactionId: 'posted-1', pending: false, pendingTransactionId: 'pending-1', date: '2026-09-16' };
     const summary = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [
       page({ added: [posted], removed: [{ transactionId: 'pending-1', accountId: pending.accountId }], nextCursor: 'c2' }),
     ]));
-    expect(summary).toMatchObject({ pendingResolved: 1, added: 0, removed: 0 });
+    expect(summary).toMatchObject({ pendingResolved: 1, added: 0, removed: 0, matchesReset: 0 });
 
     const rows = await db.select().from(transactions).where(eq(transactions.accountId, row.accountId));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: row.id, externalId: 'posted-1', pendingExternalId: 'pending-1', pending: false, amountCents: -4150, postedDate: '2026-09-16' });
+    expect(rows[0]).toMatchObject({ id: row.id, externalId: 'posted-1', pendingExternalId: 'pending-1', pending: false, amountCents: -4000, postedDate: '2026-09-16' });
     expect(await db.select().from(matches).where(eq(matches.transactionId, row.id))).toHaveLength(1);
+  });
+
+  it('a pending transaction that posts for a different amount withdraws the human’s manual match, as `modified` does', async () => {
+    const pending: PlaidTransaction = { ...sample, transactionId: 'pending-3', pending: true, amount: 40, date: '2026-09-15' };
+    await syncPlaidItem(db, item, new FakePlaid(fixtureAccounts, [page({ added: [pending], nextCursor: 'c1' })]));
+    const row = (await db.select().from(transactions).where(eq(transactions.externalId, 'pending-3')))[0]!;
+    await db.insert(matches).values(manualMatch('m-tip', row.id));
+
+    const posted: PlaidTransaction = { ...pending, transactionId: 'posted-3', pending: false, pendingTransactionId: 'pending-3', amount: 48, date: '2026-09-16' };
+    const summary = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [
+      page({ added: [posted], removed: [{ transactionId: 'pending-3', accountId: pending.accountId }], nextCursor: 'c2' }),
+    ]));
+    expect(summary).toMatchObject({ pendingResolved: 1, matchesReset: 1 });
+    expect((await db.select().from(transactions).where(eq(transactions.id, row.id)))[0]).toMatchObject({ externalId: 'posted-3', amountCents: -4800 });
+    expect(await db.select().from(matches).where(eq(matches.id, 'm-tip'))).toHaveLength(0);
   });
 
   it('a removed transaction (no replacement) is deleted together with its matches', async () => {

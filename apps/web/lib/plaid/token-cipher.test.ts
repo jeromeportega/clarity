@@ -12,7 +12,7 @@ describe('Plaid token cipher', () => {
 
   it('round-trips a token and never stores it in the clear', () => {
     const stored = encryptToken('access-sandbox-abc', key, binding);
-    expect(stored.startsWith(`v1:${keyId(key)}:`)).toBe(true);
+    expect(stored.startsWith(`v2:${keyId(key)}:`)).toBe(true);
     expect(stored).not.toContain('access-sandbox');
     expect(decryptToken(stored, key, binding)).toBe('access-sandbox-abc');
   });
@@ -45,5 +45,14 @@ describe('Plaid token cipher', () => {
     expect(() => parseTokenKey('abc')).toThrow(/64 hex/);
     expect(() => parseTokenKey(undefined)).toThrow(/64 hex/);
     expect(() => decryptToken('v0:a:b:c:d', key, binding)).toThrow(/not in a form/);
+  });
+
+  it('a pre-release v1 row (no key id, no binding) fails closed with its own reason', () => {
+    expect(() => decryptToken('v1:bm9uY2U=:dGFn:Ym9keQ==', key, binding)).toThrow(/earlier build; reconnect/);
+  });
+
+  it('binds the ids unambiguously: shifting the separator between them is a different binding', () => {
+    const stored = encryptToken('access-sandbox-abc', key, { householdId: 'a:b', itemId: 'c' });
+    expect(() => decryptToken(stored, key, { householdId: 'a', itemId: 'b:c' })).toThrow(/does not belong/);
   });
 });

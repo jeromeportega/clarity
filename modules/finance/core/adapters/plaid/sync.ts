@@ -200,10 +200,15 @@ async function applyPage(tx: Tx, page: PlaidSyncPage, accountIds: Map<string, st
     if (await findByPendingExternalId(tx, accountId, n.externalId)) continue;
 
     // A posted transaction naming the pending one it replaces: fold in place.
+    // Pending lines are kept out of the queue and the reconciler, so no human
+    // can have matched one today; should that change, the same rule as
+    // `modified` applies — money that moved withdraws a `manual` match. The
+    // date is expected to move on posting and is not a reason on its own.
     if (n.pendingExternalId) {
       const pendingRow = await findByExternalId(tx, accountId, n.pendingExternalId);
       if (pendingRow) {
         await tx.update(transactions).set(rowFields(accountId, n)).where(eq(transactions.id, pendingRow.id));
+        if (pendingRow.amountCents !== n.amountCents) summary.matchesReset += await withdrawManualMatches(tx, pendingRow.id);
         replaced.add(n.pendingExternalId);
         summary.pendingResolved += 1;
         continue;
@@ -251,10 +256,12 @@ async function applyModification(
   const moneyOrDateChanged = present.amountCents !== n.amountCents || present.postedDate !== n.postedDate;
   await tx.update(transactions).set(rowFields(accountId, n)).where(eq(transactions.id, present.id));
   summary.modified += 1;
-  if (moneyOrDateChanged) {
-    const res = await tx.delete(matches).where(and(eq(matches.transactionId, present.id), eq(matches.status, 'manual')));
-    summary.matchesReset += rowsAffected(res);
-  }
+  if (moneyOrDateChanged) summary.matchesReset += await withdrawManualMatches(tx, present.id);
+}
+
+async function withdrawManualMatches(tx: Tx, transactionId: string): Promise<number> {
+  const res = await tx.delete(matches).where(and(eq(matches.transactionId, transactionId), eq(matches.status, 'manual')));
+  return rowsAffected(res);
 }
 
 function rowFields(accountId: string, n: NormalizedPlaidTransaction) {

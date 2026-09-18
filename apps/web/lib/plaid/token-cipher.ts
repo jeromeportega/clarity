@@ -8,12 +8,14 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
  * the household and the Plaid Item id are the additional authenticated data,
  * so a ciphertext copied into another household's row does not decrypt.
  *
- * Stored form: `v1:<key id>:<base64 nonce>:<base64 tag>:<base64 ciphertext>`.
+ * Stored form: `v2:<key id>:<base64 nonce>:<base64 tag>:<base64 ciphertext>`.
  * The key id (a hash prefix of the key, never the key) names which key wrote
  * the row, so a rotated `PLAID_TOKEN_KEY` fails with a sentence, not a
- * cryptic authentication error.
+ * cryptic authentication error. `v1` (no key id, no binding) was written only
+ * by pre-release sandbox builds; such a row fails closed with its own message.
  */
-const VERSION = 'v1';
+const VERSION = 'v2';
+const RETIRED_VERSIONS = new Set(['v1']);
 
 export interface TokenBinding {
   householdId: string;
@@ -34,7 +36,8 @@ export function keyId(key: Buffer): string {
 }
 
 function aad(binding: TokenBinding): Buffer {
-  return Buffer.from(`${binding.householdId}:${binding.itemId}`, 'utf8');
+  // JSON, not `a:b`, so no pair of ids can collide with another pair.
+  return Buffer.from(JSON.stringify([binding.householdId, binding.itemId]), 'utf8');
 }
 
 export function encryptToken(plain: string, key: Buffer, binding: TokenBinding): string {
@@ -48,6 +51,9 @@ export function encryptToken(plain: string, key: Buffer, binding: TokenBinding):
 
 export function decryptToken(stored: string, key: Buffer, binding: TokenBinding): string {
   const [version, kid, nonce64, tag64, body64] = stored.split(':');
+  if (version && RETIRED_VERSIONS.has(version)) {
+    throw new Error('stored Plaid token was written by an earlier build; reconnect the bank');
+  }
   if (version !== VERSION || !kid || !nonce64 || !tag64 || !body64) {
     throw new Error('stored Plaid token is not in a form this build can read');
   }

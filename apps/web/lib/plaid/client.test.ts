@@ -39,6 +39,14 @@ describe('toSafePlaidError — nothing from the request survives', () => {
     expect(JSON.stringify(err, Object.getOwnPropertyNames(err))).not.toContain(SECRET);
   });
 
+  it('an Error wrapping the axios error as `cause` loses the cause — nothing for console.error to unfold', () => {
+    const wrapped = new Error('wrapper', { cause: axiosLike({ error_type: 'API_ERROR', error_code: 'INTERNAL_SERVER_ERROR', error_message: 'x' }, 500) });
+    const err = toSafePlaidError(wrapped);
+    expect(err.message).toBe('wrapper');
+    expect((err as { cause?: unknown }).cause).toBeUndefined();
+    expect(JSON.stringify(err, Object.getOwnPropertyNames(err))).not.toContain(SECRET);
+  });
+
   it('scrubs a token-shaped string out of any message, and tolerates non-Error throwables', () => {
     expect(toSafePlaidError(new Error(`bad token ${TOKEN} in body`)).message).toBe('bad token <token> in body');
     expect(toSafePlaidError('nope').message).toBe('Plaid request failed');

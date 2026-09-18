@@ -58,7 +58,9 @@ export type ConnectSandboxResult =
  * sandbox — production Items come from Link and its exchange step. A second
  * connection to an institution the household already has is reported, not
  * duplicated (each Item would otherwise bring its own copy of every account
- * and line).
+ * and line). This is a check before insert, not a unique index: two people in
+ * one household can each hold a login at the same bank, so two Items per
+ * institution is legitimate in production and Link will need to allow it.
  */
 export async function connectSandboxBank(
   db: FinanceDb,
