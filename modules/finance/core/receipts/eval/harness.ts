@@ -17,6 +17,8 @@ import { isSupportedMimeType, type SupportedMimeType } from '../vision/vision-pr
 
 // The accuracy bar: at least 80% of expected line items must resolve correctly.
 // A single threshold over the whole sample — never a per-item exact-string match.
+// Calibrated on the committed fixture sample in `full` name mode; a run over any
+// other directory or mode is a measurement, not a gate (see `isGatedRun`).
 export const EVAL_PASS_FRACTION = 0.8;
 
 // At least this many sanitized receipts must run end-to-end under the harness.
@@ -77,35 +79,63 @@ export function resolveEvalRatio(env: NodeJS.ProcessEnv = process.env): number {
 
 // How canonical names are compared. `full`: the name as written on both sides
 // (a retailer's catalogue name carries pack size — "…, 4.5 oz, 12-count").
-// `identity`: pack size, count, weight and volume are stripped from BOTH sides
-// before comparing, which is what the resolver is asked to produce (the size
-// lives in its own fields) and what a dictionary keyed by item number needs.
+// `identity`: the pack-size segments a catalogue APPENDS to a name are stripped
+// from BOTH sides before comparing, which is what the resolver is asked to
+// produce (the size lives in its own fields) and what a dictionary keyed by
+// item number needs. Only appended segments go: a number inside the head of
+// the name ("10-Gallon Wastebasket Liner", "Diapers Size 2", "Omega-3 1000 mg",
+// "HDMI Cable 6ft", "65 inch TV") is the product's identity and stays.
 export type EvalNameMode = 'full' | 'identity';
 
 export function resolveEvalNameMode(env: NodeJS.ProcessEnv = process.env): EvalNameMode {
   return env.RECEIPT_EVAL_NAME_MODE?.trim().toLowerCase() === 'identity' ? 'identity' : 'full';
 }
 
-const UNITS = '(?:fl\\s*oz|oz|ounces?|lbs?|pounds?|g|kg|mg|ml|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?|ct|count|pk|packs?|pcs?|pieces?|rolls?|sheets?|bars?|pods?|tabs?|tablets?|capsules?|servings?|loads?|in|inch|inches|ft|feet|cm|mm|ply|pack)';
-// "4.5 oz", "12-count", "30 Rolls", "2-Ply", "0.7 oz Bars", "10-Gallon", "Size 2", "2 x 1 lb"
-// A number, optionally "x" another number, optionally up to two describing words
-// ("12 Individually Wrapped Rolls"), then a unit.
-const SIZE_TOKEN = new RegExp(`\\b\\d+(?:[.,/]\\d+)?\\s*(?:x\\s*\\d+(?:[.,/]\\d+)?\\s*)?-?\\s*(?:[a-z]+\\s+){0,2}?${UNITS}\\b\\.?`, 'gi');
-const SIZE_WORD = /\b(?:size)\s+\d+[a-z]?\b/gi;
+// The 80% bar means something only for the sample it was calibrated on, graded
+// the way it was calibrated. Anything else is a measurement run: report, never assert.
+export function isGatedRun(dir: string, mode: EvalNameMode): boolean {
+  return dir === DEFAULT_EVAL_DIR && mode === 'full';
+}
 
-/** The product identity in a name: everything but pack size, count, weight and volume. */
+// Pack, weight, volume and container nouns — never dimensions (in, ft, gal)
+// or doses (mg, mcg, IU), which name a different product rather than a
+// different pack.
+const UNITS =
+  '(?:fl\\s*oz|oz|ounces?|lbs?|pounds?|g|kg|ml|l|liters?|litres?|qt|quarts?|pt|pints?|' +
+  'ct|count|pk|packs?|pcs?|pieces?|rolls?|sheets?|bars?|pods?|tabs?|tablets?|capsules?|softgels?|gummies|' +
+  'servings?|loads?|ply|bottles?|cans?|wipes?|gloves?|bags?|pouches?|cups?|sticks?|units?|each|ea)';
+// A comma-separated segment that is a size and nothing else: "4.5 oz",
+// "12-count", "2 x 1 lb", "12 Individually Wrapped Rolls", "3-piece Set",
+// "1750 count", "150 Softgels" — optionally followed by a couple of words.
+const SIZE_SEGMENT = new RegExp(
+  `^\\d+(?:[.,/]\\d+)?\\s*(?:x\\s*\\d+(?:[.,/]\\d+)?\\s*)?-?\\s*(?:[a-z]+\\s+){0,2}?${UNITS}\\b\\.?(?:\\s+[a-z]+){0,2}$`,
+  'i',
+);
+// "Per Lb" / "per oz" / "per each" on weighed items, anywhere in the name.
+const PER_UNIT = /,?\s*\bper\s+(?:lb|lbs|oz|kg|g|each|ea)\b\.?/gi;
+// A parenthetical that is a size: "(4 x 1 lb packs)", "(2-pack)".
+const SIZE_PAREN = /\s*\(\s*\d[^)]*\)/g;
+// A trailing size on the head of the name, without a comma: "… Tennessee 1L",
+// "WD-40 11 oz", "Salmon 1 lb each" — the unit may be followed by a word or two.
+const TRAILING_SIZE = new RegExp(`\\s+\\d+(?:[.,/]\\d+)?\\s*-?\\s*${UNITS}\\b\\.?(?:\\s+[a-z]+){0,2}$`, 'i');
+
+/** The product identity in a catalogue name: the name without its appended pack-size segments. */
 export function identityName(name: string): string {
-  return name
-    .replace(SIZE_TOKEN, ' ')
-    .replace(SIZE_WORD, ' ')
-    // Empty comma segments left behind (", , ") and dangling separators.
+  const withoutParens = name.replace(SIZE_PAREN, ' ').replace(PER_UNIT, ' ');
+  const segments = withoutParens
     .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !/^[\d\s.\-x×/]+$/i.test(s))
+    .map((seg) => seg.replace(/\s{2,}/g, ' ').trim())
+    .filter((seg) => seg.length > 0);
+  if (segments.length === 0) return name.trim();
+  const [head, ...rest] = segments;
+  const kept = [head!.replace(TRAILING_SIZE, '').trim(), ...rest.filter((seg) => !SIZE_SEGMENT.test(seg))];
+  const out = kept
+    .filter((seg) => seg.length > 0)
     .join(', ')
-    .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.])/g, '$1')
     .trim();
+  // Never grade against nothing: a name that was all size keeps its full form.
+  return out.length > 0 ? out : name.trim();
 }
 
 function gradingName(name: string, mode: EvalNameMode): string {
@@ -154,6 +184,11 @@ function asResolution(item: GradedItem): Resolution {
   };
 }
 
+// Item numbers as printed vs as read: whitespace and leading zeros are not identity.
+function normalizeSku(sku: string): string {
+  return sku.trim().replace(/^0+(?=\d)/, '');
+}
+
 // Match an expected item to a not-yet-claimed resolved one: an exact SKU match
 // wins; otherwise the unclaimed item whose canonical name is most similar.
 // Never positional — the extracted list may carry rows the reference does not
@@ -161,7 +196,8 @@ function asResolution(item: GradedItem): Resolution {
 // a positional fallback would shift every later match by one.
 function pickActual(actual: GradedItem[], claimed: Set<number>, expected: ExpectedItem, mode: EvalNameMode = 'full'): number | undefined {
   if (expected.sku) {
-    const bySku = actual.findIndex((a, i) => !claimed.has(i) && a.sku !== null && a.sku === expected.sku);
+    const want = normalizeSku(expected.sku);
+    const bySku = actual.findIndex((a, i) => !claimed.has(i) && a.sku !== null && normalizeSku(a.sku) === want);
     if (bySku >= 0) return bySku;
   }
   let best: number | undefined;
@@ -175,6 +211,21 @@ function pickActual(actual: GradedItem[], claimed: Set<number>, expected: Expect
     }
   });
   return best;
+}
+
+/** One pairing shared by every metric: each expected item and the extracted line matched to it, if any. */
+export interface Pairing {
+  expected: ExpectedItem;
+  actual: GradedItem | null;
+}
+export function pairItems(actual: GradedItem[], expected: ExpectedItem[], mode: EvalNameMode = 'full'): Pairing[] {
+  const claimed = new Set<number>();
+  return expected.map((exp) => {
+    const idx = pickActual(actual, claimed, exp, mode);
+    if (idx === undefined) return { expected: exp, actual: null };
+    claimed.add(idx);
+    return { expected: exp, actual: actual[idx]! };
+  });
 }
 
 // Count how many EXPECTED items were correctly resolved (canonical-name Dice
@@ -192,14 +243,26 @@ export function gradeReceipt(
   return { correct: expected.length - explainMisses(actual, expected, ratio, mode).length, total: expected.length };
 }
 
-// How many expected items with an item number were READ off the photo: the
-// number appears among the extracted items, whatever the model then named it.
-// This is the metric the product actually depends on — a read item number
-// resolves from the household's dictionary with no model naming at all.
-export function countSkuReads(actual: GradedItem[], expected: ExpectedItem[]): { read: number; withSku: number } {
-  const seen = new Set(actual.map((a) => a.sku).filter((s): s is string => s !== null));
-  const withSku = expected.filter((e) => e.sku !== null);
-  return { read: withSku.filter((e) => seen.has(e.sku!)).length, withSku: withSku.length };
+// Item numbers, judged on the PAIRED line — not "does this number appear
+// anywhere": two lines that swapped their numbers would both resolve to the
+// wrong product from the dictionary, and a set-membership count would call
+// that perfect. `read` is recall over expected items that have a number;
+// `unexpected` is the precision side — extracted numbers that belong to no
+// expected line (mis-read digits, invented numbers, over-extraction).
+export interface SkuReadStats {
+  read: number;
+  withSku: number;
+  unexpected: number;
+  extractedWithSku: number;
+}
+export function countSkuReads(actual: GradedItem[], expected: ExpectedItem[], mode: EvalNameMode = 'full'): SkuReadStats {
+  const pairs = pairItems(actual, expected, mode);
+  const withSku = pairs.filter((p) => p.expected.sku !== null);
+  const read = withSku.filter((p) => p.actual?.sku != null && normalizeSku(p.actual.sku) === normalizeSku(p.expected.sku!)).length;
+  const expectedSkus = new Set(expected.filter((e) => e.sku !== null).map((e) => normalizeSku(e.sku!)));
+  const extracted = actual.filter((a) => a.sku !== null);
+  const unexpected = extracted.filter((a) => !expectedSkus.has(normalizeSku(a.sku!))).length;
+  return { read, withSku: withSku.length, unexpected, extractedWithSku: extracted.length };
 }
 
 // The misses behind a gradeReceipt score, for the operator's eyes: which
@@ -211,15 +274,11 @@ export interface EvalMiss {
 }
 export function explainMisses(actual: GradedItem[], expected: ExpectedItem[], ratio: number, mode: EvalNameMode = 'full'): EvalMiss[] {
   const misses: EvalMiss[] = [];
-  const claimed = new Set<number>();
-  for (const exp of expected) {
-    const idx = pickActual(actual, claimed, exp, mode);
-    if (idx === undefined) {
+  for (const { expected: exp, actual: got } of pairItems(actual, expected, mode)) {
+    if (got === null) {
       misses.push({ expected: exp, actual: null });
       continue;
     }
-    claimed.add(idx);
-    const got = actual[idx]!;
     const resolution = asResolution(got);
     const graded = { ...resolution, canonicalName: gradingName(resolution.canonicalName, mode) };
     if (!isCorrectlyResolved(graded, { name: gradingName(exp.name, mode), category: exp.category }, ratio)) {
@@ -240,7 +299,9 @@ export function resolveEvalLimit(env: NodeJS.ProcessEnv = process.env): number |
 // A deterministic, evenly spaced sample of a sorted list. Files sort by date
 // (and gas receipts after warehouse ones on the same day), so taking the first
 // N would always grade the oldest, warehouse-only receipts; spreading the
-// picks across the list covers the whole period and both layouts.
+// picks across the list covers the whole period and both layouts. It is a
+// convenience sample for smoke runs, not a held-out split: tune against the
+// full directory, not against it.
 export function sampleEvenly<T>(items: readonly T[], limit: number | null): T[] {
   if (limit === null || limit >= items.length) return [...items];
   if (limit <= 0) return [];

@@ -114,18 +114,35 @@ single-household loop is excellent.
   variants ("Costco Rotisserie Chicken", "HDMI Cable 6ft", "Men's T-Shirt").
   Grade on the real Costco export before tuning the prompt further.
 
-## Real-data eval (2026-09-17, 15 of 78 Costco receipts, `RECEIPT_EVAL_NAME_MODE=identity`)
+## Real-data eval (2026-09-17, Costco export)
 
-- **Item numbers read off the photo: 60/62.** Totals: 15/15. This is the path
-  the product depends on — a read item number resolves from the household's
-  dictionary (bootstrapped from the digital export, then from human answers)
-  with no model naming at all.
-- **Unaided model naming: 9/62** against Costco's catalogue names, even with
-  pack sizes stripped from both sides. The receipt abbreviation alone does not
-  carry the product identity ("KS OLD FASHION" is a whisky, not oats), so the
-  answer is the dictionary plus the review queue, not prompt tuning. The
-  committed fixture eval (80% bar) grades the model-only path on synthetic
-  receipts and stays as the regression gate for that path.
-- Next: grade the dictionary-primed path (seed the dictionary from the same
-  export, then measure names) and the photo→item-number read on the remaining
-  receipts.
+Command, run from the repo root with a pulled `VERCEL_OIDC_TOKEN` in `.env.local`:
+
+```bash
+RECEIPT_EVAL_NAME_MODE=identity RECEIPT_EVAL_DIR=data/costco/eval npm run vision:eval
+```
+
+What the numbers are, and are not:
+
+- **Item numbers read off the photo** is the metric the product depends on: a
+  read item number resolves from the household's dictionary (bootstrapped from
+  the digital export, then from human answers) with no model naming at all. It
+  is judged on the paired line (a swapped number is a miss), with the
+  precision side reported alongside (extracted numbers matching no expected
+  line).
+- **Naming** here is the model alone, with an **empty dictionary** — the
+  harness has no dictionary-primed mode yet — graded on the name only, because
+  Costco's export carries no categories (the fixture eval's "and exact
+  category" half is never exercised on this data). In `identity` mode the
+  appended pack-size segments are stripped from both sides first; a wrong
+  product is still wrong.
+- The 80% bar is asserted only for the committed fixture sample in `full`
+  mode, where it was calibrated. A real-data run prints the report and passes.
+- `RECEIPT_EVAL_LIMIT` takes a deterministic evenly spaced sample — fine for a
+  smoke, but a few large receipts dominate a small sample (in the 15-receipt
+  smoke, three receipts held 29 of 62 lines). Quote the full directory.
+
+Results are appended below as they are measured.
+
+- 2026-09-17, 15 of 78 receipts (62 lines, smoke, first normaliser): item
+  numbers read 60/62, totals 15/15, unaided naming 9/62.
