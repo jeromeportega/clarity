@@ -540,7 +540,10 @@ describe('assembleQueue', () => {
         receiptId: photoReceipt, store: 'COSTCO', purchasedAt: '2026-06-13', hasImage: true,
         sku: '1234567', canonicalName: 'Kirkland Signature Organic Extra Virgin Olive Oil', categoryId: 'groceries', quantity: 2,
       });
-      expect(items.find((i) => i.id === digitalItem)?.context).toMatchObject({ receiptId: digitalReceipt, store: 'Test Store', hasImage: false, canonicalName: null });
+      expect(items.find((i) => i.id === digitalItem)?.context).toEqual({
+        receiptId: digitalReceipt, store: 'Test Store', purchasedAt: '2025-01-15', hasImage: false,
+        sku: null, canonicalName: null, categoryId: null, quantity: 1,
+      });
     });
 
     it('flagged_receipt items carry the receipt and its line count; an unreadable placeholder shows no store or date', async () => {
@@ -559,7 +562,7 @@ describe('assembleQueue', () => {
     it('ambiguous_match and unmatched_txn items carry no context', async () => {
       const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
       await seedHousehold(db, HOUSEHOLD_A);
-      const items = await assembleQueue(scope, new ControlledGateway([{ transactionId: randomUUID(), candidates: [{}, {}] } as never]), db);
+      const items = await assembleQueue(scope, new ControlledGateway([makeGroup(randomUUID())]), db);
       expect(items.length).toBeGreaterThan(0);
       for (const item of items) expect(item.context).toBeUndefined();
     });

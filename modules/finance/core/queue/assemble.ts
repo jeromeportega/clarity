@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import type { FinanceDb } from '../../db/client';
 import { receiptItems, receipts, reviewDecisions } from '../../db/schema';
@@ -127,16 +127,16 @@ export async function assembleQueue(
     .from(receipts)
     .where(and(eq(receipts.householdId, householdId), eq(receipts.needsReview, true)));
 
-  // How many lines each flagged receipt has (a placeholder has none).
+  // How many lines each flagged receipt has (a placeholder has none) — scoped
+  // by household through the same join, never by a list of ids.
   const lineCounts = new Map<string, number>();
-  if (flaggedRows.length > 0) {
-    const counts = await db
-      .select({ receiptId: receiptItems.receiptId, n: sql<number>`count(*)` })
-      .from(receiptItems)
-      .where(inArray(receiptItems.receiptId, flaggedRows.map((r) => r.id)))
-      .groupBy(receiptItems.receiptId);
-    for (const c of counts) lineCounts.set(c.receiptId, Number(c.n));
-  }
+  const counts = await db
+    .select({ receiptId: receiptItems.receiptId, n: sql<number>`count(*)` })
+    .from(receiptItems)
+    .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+    .where(and(eq(receipts.householdId, householdId), eq(receipts.needsReview, true)))
+    .groupBy(receiptItems.receiptId);
+  for (const c of counts) lineCounts.set(c.receiptId, Number(c.n));
 
   for (const row of flaggedRows) {
     if (keep('flagged_receipt', row.id)) {
