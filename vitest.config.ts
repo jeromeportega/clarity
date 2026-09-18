@@ -14,9 +14,9 @@ const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url));
 const NODE_MODULES = realpathSync(fileURLToPath(new URL('./node_modules', import.meta.url)));
 
 // Two projects:
-//   unit — the offline gate. Every co-located *.test.ts under modules/** and
-//          tests/**, plus the type-level contract tests (*.test-d.ts) in the
-//          receipts module. No API key, no network. Runs under `npm test`
+//   unit — the offline gate. Every co-located *.test.ts under modules/**,
+//          apps/web/** and tests/**, plus the type-level contract tests
+//          (*.test-d.ts) in the receipts module. No API key, no network. Runs under `npm test`
 //          (`vitest run --project unit`).
 //   eval — the key-gated vision accuracy harness. Runs under
 //          `npm run vision:eval` (`vitest run --project eval`); each eval test
@@ -38,6 +38,7 @@ export default defineConfig({
           server: { deps: { inline: [/[\\/]@clerk[\\/]/] } },
           include: [
             'modules/**/*.{test,spec}.ts',
+            'apps/web/**/*.{test,spec}.{ts,tsx}',
             'tests/**/*.{test,spec}.ts',
           ],
           exclude: [

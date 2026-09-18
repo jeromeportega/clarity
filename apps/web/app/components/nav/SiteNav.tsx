@@ -22,6 +22,7 @@ export async function SiteNav() {
           <Link href="/" className="text-muted-foreground hover:text-foreground">Review queue</Link>
           <Link href="/true-spend" className="text-muted-foreground hover:text-foreground">True spend</Link>
           <Link href="/receipts" className="text-muted-foreground hover:text-foreground">Receipts</Link>
+          <Link href="/banks" className="text-muted-foreground hover:text-foreground">Banks</Link>
         </nav>
         <div className="flex items-center gap-3 text-sm">
           {demo && (

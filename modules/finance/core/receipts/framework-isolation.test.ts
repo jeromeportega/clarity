@@ -23,7 +23,7 @@ function collectTsFiles(dir: string): string[] {
 }
 
 const IMPORT_RE = /from\s*['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)/g;
-const FORBIDDEN = ['next', 'react', 'react-dom', '@ai-sdk/gateway', '@anthropic-ai/sdk', '@clerk/nextjs', '@vercel/blob'];
+const FORBIDDEN = ['next', 'react', 'react-dom', '@ai-sdk/gateway', '@anthropic-ai/sdk', '@clerk/nextjs', '@vercel/blob', 'plaid'];
 
 function frameworkImports(source: string): string[] {
   const offenders: string[] = [];

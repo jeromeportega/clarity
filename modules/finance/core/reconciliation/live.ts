@@ -135,7 +135,8 @@ export class LiveReconciliationGateway implements ReconciliationGateway {
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(matches, eq(matches.transactionId, transactions.id))
-      .where(and(eq(accounts.householdId, scope.householdId), isNull(matches.id)));
+      // Pending (synced, not yet posted) lines are not offered for matching.
+      .where(and(eq(accounts.householdId, scope.householdId), isNull(matches.id), eq(transactions.pending, false)));
 
     return rows.map((row) => ({
       id: row.id,

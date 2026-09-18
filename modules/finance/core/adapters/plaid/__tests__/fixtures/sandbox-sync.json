@@ -1,0 +1,741 @@
+{
+  "items": [
+    {
+      "item": {
+        "item_id": "d4zE8WJwLVSl6BmNymVbsB5drZg3PLcP9AvzG",
+        "institution_id": "ins_56"
+      },
+      "added": [
+        {
+          "transaction_id": "r8ME9z5JxVHZ9gpbKpVXiXxk5q9NeLijEaLL17",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 5.4,
+          "date": "2026-09-11",
+          "name": "Uber 063015 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "zyWK9P5meqSyD61jE1QgTKqwWod35NuRpwDDQ3",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": -500,
+          "date": "2026-09-09",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "BeBP9G5RjxujZgkvGkD1hgdnVwxZJrudrAqqgA",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 12,
+          "date": "2026-09-08",
+          "name": "McDonald's",
+          "merchant_name": "McDonald's",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "3lE1djvKRgH1EVlzol3nSkjZmdBN4KUkzMGGE8",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 4.33,
+          "date": "2026-09-08",
+          "name": "Starbucks",
+          "merchant_name": "Starbucks",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Coffee Shop"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "xb8l54XrjVHzqD9n69Z5hZdagQxr3jCx8JmmeN",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 89.4,
+          "date": "2026-09-07",
+          "name": "SparkFun",
+          "merchant_name": "FUN",
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "d4zE8WJwLVSl6BmNymVbsBRV5axJMeuv7DooRl",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 6.33,
+          "date": "2026-08-25",
+          "name": "Uber 072515 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "axqp9g3eZVIdNGBPnBVoSkqXjbyw5EU8r1ppDX",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": 25,
+          "date": "2026-09-11",
+          "name": "CREDIT CARD 3333 PAYMENT *//",
+          "merchant_name": null,
+          "category": [
+            "Payment",
+            "Credit Card"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "4qWLG7VrR8IoWvBeLBX7UXlNdnaLR3iXBn88LW",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": -4.22,
+          "date": "2026-09-06",
+          "name": "INTRST PYMNT",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Credit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "NkZKgznRE1TzBdvG4vbVhXJAP69RZxiE9nLLQk",
+          "account_id": "1XgZmNwlRphogxK3aKzvU6eNdQkZLrtW5nQMa",
+          "amount": 1000,
+          "date": "2026-09-10",
+          "name": "CD DEPOSIT .INITIAL.",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Deposit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "Pn1zo3Eblps3ERB1PByXTXDo7VeQdwiGgQEEAm",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 78.5,
+          "date": "2026-09-09",
+          "name": "Touchstone Climbing",
+          "merchant_name": "Touchstone Climbing",
+          "category": [
+            "Recreation",
+            "Gyms and Fitness Centers"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "jQ4EPygbWVC7MWjrgjvNUj4xQ3pREbuPDZooaz",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-08-27",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "7znqlZVpKATAQJazxa4RSXZPjvDKrpiReM44xE",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-08-22",
+          "name": "Tectra Inc",
+          "merchant_name": null,
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "eNBE1AJvpVhP3Ex69xVAFlR1zjBM3aC8p7yymo",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-08-21",
+          "name": "Madison Bicycle Shop",
+          "merchant_name": "Madison Bicycle Center",
+          "category": [
+            "Shops",
+            "Sporting Goods"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "QbLBmxWJqoHxQV1bj1XJfNpkZbGmonF9v3rrDb",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-08-21",
+          "name": "KFC",
+          "merchant_name": "KFC",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "Zln7eQjq4VHQyB5ro5VXU9eD8XMGLACM4rnnGQ",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 2078.5,
+          "date": "2026-08-21",
+          "name": "AUTOMATIC PAYMENT - THANK",
+          "merchant_name": null,
+          "category": [
+            "Payment"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "MWQqorZ78MIrJ8ydaywZh4XvgD3GxRC3qebbRQ",
+          "account_id": "poQw9KX5BVHkJ5n1Pn84hqd4ElRaW5tRL7D59",
+          "amount": 5850,
+          "date": "2026-09-10",
+          "name": "ACH Electronic CreditGUSTO PAY 123456",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Debit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "A7zNpA9nP3sAwBLvzLlmSXDJMzkA7gfZP8almM",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 5.4,
+          "date": "2026-08-12",
+          "name": "Uber 063015 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "GL4Zo9kQMPUM6AyGryd8HG4l9jLKPXHm3aqXdR",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": -500,
+          "date": "2026-08-10",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "nL7EwlJ5rVU81pNj5NvQcX1AVNrdE9frboZN4m",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 12,
+          "date": "2026-08-09",
+          "name": "McDonald's",
+          "merchant_name": "McDonald's",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "bdKEgkjxMVTQoqm95mVrUoRBEAv1KWHaqlE1ey",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 4.33,
+          "date": "2026-08-09",
+          "name": "Starbucks",
+          "merchant_name": "Starbucks",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Coffee Shop"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "m1jybR95KVH6LWmnrmv4SlL7pnQaN8txJE9naG",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 89.4,
+          "date": "2026-08-08",
+          "name": "SparkFun",
+          "merchant_name": "FUN",
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "ymEq5NbV7luB6KVL8VwDTJMRNA9kdofjAGobB7",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 6.33,
+          "date": "2026-07-26",
+          "name": "Uber 072515 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "93mrK1w8znFA8K63z6PGSaZDJg34LqCADrkw6d",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 5.4,
+          "date": "2026-07-13",
+          "name": "Uber 063015 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "vGoXAdRqNVFKlWaogavrTPoXRrplxdCNRpgBd5",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": -500,
+          "date": "2026-07-11",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "Rmp3od18KgudVXWm7WoeSPwz91BQNbCD49wWLn",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 12,
+          "date": "2026-07-10",
+          "name": "McDonald's",
+          "merchant_name": "McDonald's",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "6rGldQBgqWUAJgVwpVaRSKyxVJNEWktN36mpqN",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 4.33,
+          "date": "2026-07-10",
+          "name": "Starbucks",
+          "merchant_name": "Starbucks",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Coffee Shop"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "XXAPB7w8dnh7Qoe6LeGPU1q4Dlar8LiVEQ9NrG",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 89.4,
+          "date": "2026-07-09",
+          "name": "SparkFun",
+          "merchant_name": "FUN",
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "DZk7Vbw8eaUbdGkplk47ioj64prygXHVQ17Brk",
+          "account_id": "Zln7eQjq4VHQyB5ro5VXU986rBvGJgHQgo87p",
+          "amount": 6.33,
+          "date": "2026-06-26",
+          "name": "Uber 072515 SF**POOL**",
+          "merchant_name": "Uber",
+          "category": [
+            "Travel",
+            "Taxi"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "5KAp6eVolEhAVGo68odXSjZe6y89obCRdvbAE7",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": 25,
+          "date": "2026-08-12",
+          "name": "CREDIT CARD 3333 PAYMENT *//",
+          "merchant_name": null,
+          "category": [
+            "Payment",
+            "Credit Card"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "JgjL9lbEpecl6Jvj3vy1sQXrlNG8DkCaJA1vGJ",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": -4.22,
+          "date": "2026-08-07",
+          "name": "INTRST PYMNT",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Credit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "kZNEk9myl5UMma5DX5vLH3mqDzPde7FNp9qe3o",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": 25,
+          "date": "2026-07-13",
+          "name": "CREDIT CARD 3333 PAYMENT *//",
+          "merchant_name": null,
+          "category": [
+            "Payment",
+            "Credit Card"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "lMPEdv1ZkVfDq1LwWL8RiNqAgjRavBFj74ne5m",
+          "account_id": "MWQqorZ78MIrJ8ydaywZh4g7K1dGrafn9jDQr",
+          "amount": -4.22,
+          "date": "2026-07-08",
+          "name": "INTRST PYMNT",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Credit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "K87kZqVnoQHqkK8bx8V7TEo7p3j41GfeNyKajk",
+          "account_id": "1XgZmNwlRphogxK3aKzvU6eNdQkZLrtW5nQMa",
+          "amount": 1000,
+          "date": "2026-08-11",
+          "name": "CD DEPOSIT .INITIAL.",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Deposit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "r8ME9z5JxVHZ9gpbKpVXiXx1rnVyjlfjMQpVXJ",
+          "account_id": "1XgZmNwlRphogxK3aKzvU6eNdQkZLrtW5nQMa",
+          "amount": 1000,
+          "date": "2026-07-12",
+          "name": "CD DEPOSIT .INITIAL.",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Deposit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "other"
+        },
+        {
+          "transaction_id": "4qWLG7VrR8IoWvBeLBX7UXlJQrxke8fXMo9wKv",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 78.5,
+          "date": "2026-08-10",
+          "name": "Touchstone Climbing",
+          "merchant_name": "Touchstone Climbing",
+          "category": [
+            "Recreation",
+            "Gyms and Fitness Centers"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "NkZKgznRE1TzBdvG4vbVhXJdeNzo3LfEK3oqzj",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-07-28",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "Pn1zo3Eblps3ERB1PByXTXDJ1mnbZWfGv18rnd",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-07-23",
+          "name": "Tectra Inc",
+          "merchant_name": null,
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "jQ4EPygbWVC7MWjrgjvNUj4X6gLn9zCPAEx8jd",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-07-22",
+          "name": "Madison Bicycle Shop",
+          "merchant_name": "Madison Bicycle Center",
+          "category": [
+            "Shops",
+            "Sporting Goods"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "7znqlZVpKATAQJazxa4RSXZNMbLzWefRpZ6Kaq",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-07-22",
+          "name": "KFC",
+          "merchant_name": "KFC",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "eNBE1AJvpVhP3Ex69xVAFlRAPn8vmWt8kgJlXX",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 2078.5,
+          "date": "2026-07-22",
+          "name": "AUTOMATIC PAYMENT - THANK",
+          "merchant_name": null,
+          "category": [
+            "Payment"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "QbLBmxWJqoHxQV1bj1XJfNpw1AWBVJF9e1ZWnL",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 78.5,
+          "date": "2026-07-11",
+          "name": "Touchstone Climbing",
+          "merchant_name": "Touchstone Climbing",
+          "category": [
+            "Recreation",
+            "Gyms and Fitness Centers"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "Zln7eQjq4VHQyB5ro5VXU9en3kEVaWfMl3PDvn",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-06-28",
+          "name": "United Airlines",
+          "merchant_name": "United Airlines",
+          "category": [
+            "Travel",
+            "Airlines and Aviation Services"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "MWQqorZ78MIrJ8ydaywZh4XoLZ59zmF3yKN85D",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-06-23",
+          "name": "Tectra Inc",
+          "merchant_name": null,
+          "category": [
+            "Food and Drink",
+            "Restaurants"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "1XgZmNwlRphogxK3aKzvU6Vn87P5xat4ozNGa5",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-06-22",
+          "name": "Madison Bicycle Shop",
+          "merchant_name": "Madison Bicycle Center",
+          "category": [
+            "Shops",
+            "Sporting Goods"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "LEeloKbVkZcKg73ad3GwTe6BXzmb1Eh1a7qymk",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 500,
+          "date": "2026-06-22",
+          "name": "KFC",
+          "merchant_name": "KFC",
+          "category": [
+            "Food and Drink",
+            "Restaurants",
+            "Fast Food"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "in store"
+        },
+        {
+          "transaction_id": "poQw9KX5BVHkJ5n1Pn84hqJejN3b6XiBnwbNqJ",
+          "account_id": "LEeloKbVkZcKg73ad3GwTepLyGnj5dcDPALN4",
+          "amount": 2078.5,
+          "date": "2026-06-22",
+          "name": "AUTOMATIC PAYMENT - THANK",
+          "merchant_name": null,
+          "category": [
+            "Payment"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "gjx9knJbgVsNqolzRlVdF35LwkKyPeFz1oPQGM",
+          "account_id": "poQw9KX5BVHkJ5n1Pn84hqd4ElRaW5tRL7D59",
+          "amount": 5850,
+          "date": "2026-08-11",
+          "name": "ACH Electronic CreditGUSTO PAY 123456",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Debit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        },
+        {
+          "transaction_id": "8BbKqMRprGSrVDjBWjNMh8z6aD3jAXFMmngVRz",
+          "account_id": "poQw9KX5BVHkJ5n1Pn84hqd4ElRaW5tRL7D59",
+          "amount": 5850,
+          "date": "2026-07-12",
+          "name": "ACH Electronic CreditGUSTO PAY 123456",
+          "merchant_name": null,
+          "category": [
+            "Transfer",
+            "Debit"
+          ],
+          "pending": false,
+          "iso_currency_code": "USD",
+          "payment_channel": "online"
+        }
+      ],
+      "modified": [],
+      "removed": [],
+      "cursor": "CAESJjhCYktxTVJwckdTclZEakJXak5NaDh6NmFEM2pBWEZNbW5nVlJ6GgsI2Oy21QYQqIO4ViILCNjsttUGEKiDuFYqCwjY7LbVBhCog7hW"
+    }
+  ]
+}

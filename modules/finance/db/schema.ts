@@ -81,16 +81,57 @@ export const householdMembers = sqliteTable(
   }),
 );
 
-export const accounts = sqliteTable('accounts', {
-  id: text('id').primaryKey(),
-  householdId: text('household_id')
-    .notNull()
-    .references(() => households.id),
-  name: text('name').notNull(),
-  type: text('type'),
-  institution: text('institution'),
-  createdAt: createdAt(),
-});
+/**
+ * A bank connection through Plaid: one Item per institution login. The access
+ * token is stored ENCRYPTED by the app layer (`apps/web/lib/plaid/token-cipher.ts`,
+ * key `PLAID_TOKEN_KEY`); the core sees the plaintext only in memory. `cursor`
+ * is the `/transactions/sync` cursor, persisted after every processed page.
+ */
+export const plaidItems = sqliteTable(
+  'plaid_items',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    itemId: text('item_id').notNull(),
+    accessToken: text('access_token').notNull(),
+    institutionId: text('institution_id'),
+    institutionName: text('institution_name'),
+    cursor: text('cursor'),
+    status: text('status', { enum: ['ok', 'error', 'login_required'] }).notNull().default('ok'),
+    lastSyncedAt: text('last_synced_at'),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxPlaidItemsItemId: uniqueIndex('ux_plaid_items_item_id').on(table.itemId),
+  }),
+);
+
+export const accounts = sqliteTable(
+  'accounts',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    name: text('name').notNull(),
+    type: text('type'),
+    institution: text('institution'),
+    // Where the account came from: created by hand, implied by a file import,
+    // or synced from a Plaid Item (then `plaidItemId` + `externalId` are set).
+    source: text('source', { enum: ['manual', 'file', 'plaid'] }).notNull().default('manual'),
+    plaidItemId: text('plaid_item_id').references(() => plaidItems.id),
+    externalId: text('external_id'),
+    subtype: text('subtype'),
+    mask: text('mask'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxAccountsPlaidExternal: uniqueIndex('ux_accounts_plaid_external').on(table.plaidItemId, table.externalId),
+  }),
+);
 
 export const transactions = sqliteTable(
   'transactions',
@@ -108,10 +149,19 @@ export const transactions = sqliteTable(
     // SHA-256 of (account + date + amount + normalized merchant + source-row
     // hash); the FR-16 idempotency key, enforced by ux_transactions_dedup.
     dedupKey: text('dedup_key').notNull(),
+    // Synced sources (Plaid): the provider's transaction id, whether the bank
+    // still shows it as pending, the pending id a posted transaction replaced,
+    // and the provider's own category (`personal_finance_category.detailed`)
+    // as a hint for ours — never our category.
+    externalId: text('external_id'),
+    pending: integer('pending', { mode: 'boolean' }).notNull().default(false),
+    pendingExternalId: text('pending_external_id'),
+    categoryHint: text('category_hint'),
     createdAt: createdAt(),
   },
   (table) => ({
     uxTransactionsDedup: uniqueIndex('ux_transactions_dedup').on(table.dedupKey),
+    uxTransactionsExternal: uniqueIndex('ux_transactions_external').on(table.accountId, table.externalId),
   }),
 );
 

@@ -64,6 +64,13 @@
       "when": 1789533302248,
       "tag": "0008_sku_dictionary_per_household",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789769308786,
+      "tag": "0009_plaid_items_and_sync_columns",
+      "breakpoints": true
     }
   ]
 }
