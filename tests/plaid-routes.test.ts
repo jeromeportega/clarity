@@ -11,6 +11,7 @@ const lib = vi.hoisted(() => ({
   connectSandboxBank: vi.fn(),
   isPlaidConfigured: vi.fn(() => true),
   plaidEnv: vi.fn((): 'sandbox' | 'production' | null => 'sandbox'),
+  safePlaidMessage: vi.fn((err: unknown) => `safe:${err instanceof Error ? err.message : String(err)}`),
 }));
 vi.mock('../apps/web/lib/plaid/sync', () => lib);
 vi.mock('../modules/finance/db/client', () => ({ createDb: vi.fn(() => ({})) }));
@@ -43,6 +44,14 @@ describe('Plaid routes', () => {
     expect(lib.connectSandboxBank).not.toHaveBeenCalled();
   });
 
+  it('404 on the public demo — it never sits over a bank — before the writer gate', async () => {
+    vi.stubEnv('PUBLIC_DEMO_MODE', '1');
+    expect((await SYNC(post('/api/plaid/sync'))).status).toBe(404);
+    expect((await CONNECT(post('/api/plaid/sandbox/connect'))).status).toBe(404);
+    expect(lib.syncHouseholdBanks).not.toHaveBeenCalled();
+    expect(lib.connectSandboxBank).not.toHaveBeenCalled();
+  });
+
   it('503 when Plaid is not configured on the deployment', async () => {
     lib.isPlaidConfigured.mockReturnValue(false);
     expect((await SYNC(post('/api/plaid/sync'))).status).toBe(503);
@@ -64,20 +73,23 @@ describe('Plaid routes', () => {
   });
 
   it('sandbox connect returns the new Item and its first sync', async () => {
-    lib.connectSandboxBank.mockResolvedValue({ plaidItemId: 'pi-new', summary: { added: 48, accountsCreated: 14 } });
+    lib.connectSandboxBank.mockResolvedValue({ alreadyConnected: false, plaidItemId: 'pi-new', summary: { added: 48, accountsCreated: 14 } });
     const res = await CONNECT(post('/api/plaid/sandbox/connect'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ plaidItemId: 'pi-new', summary: { added: 48, accountsCreated: 14 } });
+    expect(await res.json()).toEqual({ alreadyConnected: false, plaidItemId: 'pi-new', summary: { added: 48, accountsCreated: 14 } });
     expect(lib.connectSandboxBank).toHaveBeenCalledWith({}, DEMO_HOUSEHOLD_ID);
   });
 
-  it('a Plaid failure is a logged 500, never a half answer', async () => {
+  it('a Plaid failure is a logged 500, never a half answer — and only the credential-free line is logged', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    lib.syncHouseholdBanks.mockRejectedValue(new Error('INVALID_ACCESS_TOKEN'));
+    const raw = new Error('INVALID_ACCESS_TOKEN');
+    lib.syncHouseholdBanks.mockRejectedValue(raw);
     const res = await SYNC(post('/api/plaid/sync'));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Sync failed' });
-    expect(spy).toHaveBeenCalled();
+    expect(lib.safePlaidMessage).toHaveBeenCalledWith(raw);
+    expect(spy).toHaveBeenCalledWith('[plaid/sync] failed:', 'safe:INVALID_ACCESS_TOKEN');
+    expect(spy.mock.calls.flat()).not.toContain(raw); // the error object itself never reaches the log
     spy.mockRestore();
   });
 });

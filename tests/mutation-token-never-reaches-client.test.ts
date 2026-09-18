@@ -32,13 +32,32 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIR = join(repoRoot, 'apps/web');
 const CANARY = 'canary-mutation-token-9f8e7d6c5b4a';
 
-const IDENTIFIER = /\bRECONCILE_MUTATION_TOKEN\b/;
-
-// Extending this list is a deliberate security decision — do it in a reviewed change.
-const ALLOWED = new Set([
-  'app/lib/auth/token.ts', // the gate (boolean checks only; never returns the secret)
-  'instrumentation.ts', // server startup: warns when the token is unset
-]);
+// Extending any of these lists is a deliberate security decision — do it in a reviewed change.
+const SECRETS: Array<{ name: string; identifier: RegExp; allowed: Set<string> }> = [
+  {
+    name: 'RECONCILE_MUTATION_TOKEN',
+    identifier: /\bRECONCILE_MUTATION_TOKEN\b/,
+    allowed: new Set([
+      'app/lib/auth/token.ts', // the gate (boolean checks only; never returns the secret)
+      'instrumentation.ts', // server startup: warns when the token is unset
+    ]),
+  },
+  {
+    // The Plaid API secret and the key that encrypts bank access tokens at
+    // rest. Same shape of defect: a page or component that read either would
+    // serialize it into the flight payload.
+    name: 'PLAID_SECRET and PLAID_TOKEN_KEY',
+    identifier: /\bPLAID_(SECRET|TOKEN_KEY)\b/,
+    allowed: new Set([
+      'lib/plaid/client.ts', // constructs the SDK; the only reader of PLAID_SECRET
+      'lib/plaid/client.test.ts', // its unit test (never imported by a page)
+      'lib/plaid/sync.ts', // composition root: parses PLAID_TOKEN_KEY for the call
+      'lib/plaid/token-cipher.ts', // the cipher (names the variable in its error messages)
+      'lib/plaid/token-cipher.test.ts', // its unit test
+      'instrumentation.ts', // server startup: warns when Plaid is half-configured
+    ]),
+  },
+];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -50,21 +69,21 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe('only the server-side auth gate mentions RECONCILE_MUTATION_TOKEN', () => {
+describe.each(SECRETS)('only the allowlisted server files mention $name', ({ identifier, allowed }) => {
   const mentions = walk(WEB_DIR)
-    .filter((f) => IDENTIFIER.test(readFileSync(f, 'utf8')))
+    .filter((f) => identifier.test(readFileSync(f, 'utf8')))
     .map((f) => relative(WEB_DIR, f))
     .sort();
 
   it('the allowed files still mention it (sanity: the gate reads the env)', () => {
-    for (const allowed of ALLOWED) {
-      expect(mentions, `${allowed} should mention the token`).toContain(allowed);
+    for (const file of allowed) {
+      expect(mentions, `${file} should mention the secret`).toContain(file);
     }
   });
 
   it('no other file under apps/web mentions it', () => {
-    const unexpected = mentions.filter((m) => !ALLOWED.has(m));
-    expect(unexpected, 'unexpected mentions of RECONCILE_MUTATION_TOKEN').toEqual([]);
+    const unexpected = mentions.filter((m) => !allowed.has(m));
+    expect(unexpected, 'unexpected mentions of the secret').toEqual([]);
   });
 });
 

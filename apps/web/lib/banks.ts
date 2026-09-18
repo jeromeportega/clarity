@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 
 import type { HouseholdScope } from '../../../modules/finance/core/reconciliation/types';
 import type { FinanceDb } from '../../../modules/finance/db/client';
@@ -19,7 +19,6 @@ export interface ConnectedBankView {
   institutionName: string | null;
   status: 'ok' | 'error' | 'login_required';
   lastSyncedAt: string | null;
-  lastError: string | null;
   accounts: BankAccountView[];
 }
 
@@ -37,7 +36,6 @@ export async function fetchBanks(db: FinanceDb, scope: HouseholdScope): Promise<
       institutionName: plaidItems.institutionName,
       status: plaidItems.status,
       lastSyncedAt: plaidItems.lastSyncedAt,
-      lastError: plaidItems.lastError,
     })
     .from(plaidItems)
     .where(eq(plaidItems.householdId, scope.householdId))
@@ -79,6 +77,3 @@ export async function fetchBanks(db: FinanceDb, scope: HouseholdScope): Promise<
   };
 }
 
-// Keep the unused-import linters honest about the helpers we may need later.
-void and;
-void isNull;

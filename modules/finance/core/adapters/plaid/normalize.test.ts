@@ -36,7 +36,7 @@ describe('normalizePlaidTransaction — Plaid dollars to the house model', () =>
   it('rounds to the cent rather than truncating float noise', () => {
     expect(toCents(0.1 + 0.2)).toBe(30);
     expect(toCents(19.999)).toBe(2000);
-    expect(toCents(-4.005)).toBe(-400); // JS rounds half away from zero on the magnitude here
+    expect(toCents(-4.005)).toBe(-400); // -400.49999… → -400: Math.round rounds a half toward +∞; Plaid never sends a third decimal
   });
 
   it('prefers Plaid’s merchant name, falls back to the bank line, and cleans it like the bank adapter', () => {

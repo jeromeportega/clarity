@@ -60,12 +60,15 @@ class FakePlaid implements PlaidClient {
   async transactionsSync(_token: string, cursor: string | null): Promise<PlaidSyncPage> {
     this.syncCalls.push(cursor);
     const page = this.pages.shift();
-    if (!page) return { added: [], modified: [], removed: [], nextCursor: cursor ?? 'c-empty', hasMore: false };
+    if (!page) return { added: [], modified: [], removed: [], nextCursor: cursor ?? 'c-empty', hasMore: false, updateStatus: 'historical' };
     return page;
   }
 }
 
-const page = (over: Partial<PlaidSyncPage>): PlaidSyncPage => ({ added: [], modified: [], removed: [], nextCursor: 'c1', hasMore: false, ...over });
+const page = (over: Partial<PlaidSyncPage>): PlaidSyncPage => ({ added: [], modified: [], removed: [], nextCursor: 'c1', hasMore: false, updateStatus: 'historical', ...over });
+
+/** A human's decision on a line, as the queue records one. */
+const manualMatch = (id: string, transactionId: string) => ({ id, transactionId, status: 'manual' as const, confidence: 1, method: 'human', rationale: 'test' });
 
 const HH = 'hh-plaid';
 let handle: ReturnType<typeof createTestDb>;
@@ -82,14 +85,13 @@ beforeEach(async () => {
 afterEach(() => handle.cleanup());
 
 const sample = fixtureAdded[0]!;
-const acctOf = (t: PlaidTransaction) => fixtureAccounts.find((a) => a.accountId === t.accountId)!;
 
 describe('syncPlaidItem — the sandbox fixture end to end', () => {
   it('creates every reported account and inserts every added transaction, then persists the cursor', async () => {
     const client = new FakePlaid(fixtureAccounts, [page({ added: fixtureAdded, nextCursor: 'cursor-after-1' })]);
     const summary = await syncPlaidItem(db, item, client);
 
-    expect(summary).toMatchObject({ accountsCreated: fixtureAccounts.length, accountsUpdated: 0, added: fixtureAdded.length, modified: 0, removed: 0, pendingResolved: 0, skippedUnknownAccount: 0, pages: 1, cursor: 'cursor-after-1' });
+    expect(summary).toMatchObject({ accountsCreated: fixtureAccounts.length, accountsUpdated: 0, added: fixtureAdded.length, modified: 0, removed: 0, pendingResolved: 0, matchesReset: 0, skippedUnknownAccount: 0, pages: 1, cursor: 'cursor-after-1', updateStatus: 'historical' });
     const acctRows = await db.select().from(accounts).where(eq(accounts.householdId, HH));
     expect(acctRows).toHaveLength(fixtureAccounts.length);
     expect(acctRows.every((a) => a.source === 'plaid' && a.plaidItemId === 'pi-1' && a.externalId)).toBe(true);
@@ -161,7 +163,7 @@ describe('syncPlaidItem — changes after the first sync', () => {
     await syncPlaidItem(db, item, new FakePlaid(fixtureAccounts, [page({ added: [pending], nextCursor: 'c1' })]));
     const row = (await db.select().from(transactions).where(eq(transactions.externalId, 'pending-1')))[0]!;
     expect(row.pending).toBe(true);
-    await db.insert(matches).values({ id: 'm-1', transactionId: row.id, status: 'matched', confidence: 1, matchType: 'manual', amountCents: -4000 } as never);
+    await db.insert(matches).values(manualMatch('m-1', row.id));
 
     const posted: PlaidTransaction = { ...pending, transactionId: 'posted-1', pending: false, pendingTransactionId: 'pending-1', amount: 41.5, date: '2026-09-16' };
     const summary = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [
@@ -178,7 +180,7 @@ describe('syncPlaidItem — changes after the first sync', () => {
   it('a removed transaction (no replacement) is deleted together with its matches', async () => {
     await seeded();
     const row = (await db.select().from(transactions).where(eq(transactions.externalId, sample.transactionId)))[0]!;
-    await db.insert(matches).values({ id: 'm-gone', transactionId: row.id, status: 'matched', confidence: 1, matchType: 'manual', amountCents: row.amountCents } as never);
+    await db.insert(matches).values(manualMatch('m-gone', row.id));
     const summary = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [
       page({ removed: [{ transactionId: sample.transactionId, accountId: sample.accountId }], nextCursor: 'c2' }),
     ]));
@@ -211,6 +213,81 @@ describe('syncPlaidItem — changes after the first sync', () => {
     expect((await db.select().from(plaidItems))[0]!.status).toBe('error');
   });
 
+  it('replaying the page that folded a pending line into its posted one is a no-op — no duplicate, no UNIQUE error', async () => {
+    const pending: PlaidTransaction = { ...sample, transactionId: 'pending-2', pending: true, amount: 40, date: '2026-09-15' };
+    await syncPlaidItem(db, item, new FakePlaid(fixtureAccounts, [page({ added: [pending], nextCursor: 'c1' })]));
+    const posted: PlaidTransaction = { ...pending, transactionId: 'posted-2', pending: false, pendingTransactionId: 'pending-2', amount: 41.5, date: '2026-09-16' };
+    const collapse = () => page({ added: [posted], removed: [{ transactionId: 'pending-2', accountId: pending.accountId }], nextCursor: 'c2' });
+
+    await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [collapse()]));
+    // A crash after the page was applied but before the cursor persisted would replay it —
+    // and so would a provider that resends the pending line itself.
+    const replay = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [collapse()]));
+    const resend = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [page({ added: [pending, posted], nextCursor: 'c3' })]));
+
+    expect(replay).toMatchObject({ added: 0, pendingResolved: 0, removed: 0 });
+    expect(resend).toMatchObject({ added: 0, pendingResolved: 0, removed: 0 });
+    const rows = await db.select().from(transactions).where(eq(transactions.accountId, (await db.select().from(accounts).where(eq(accounts.externalId, pending.accountId)))[0]!.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ externalId: 'posted-2', pendingExternalId: 'pending-2', pending: false, amountCents: -4150 });
+  });
+
+  it('a removed entry for an account this Item did not report touches nothing — not even a same-id line in another household', async () => {
+    await seeded();
+    await db.insert(households).values({ id: 'hh-other', name: 'Other household' });
+    await db.insert(accounts).values({ id: 'acct-other', householdId: 'hh-other', name: 'Their checking', type: 'checking', source: 'file' });
+    await db.insert(transactions).values({
+      id: 'tx-other', accountId: 'acct-other', postedDate: '2026-09-01', amountCents: -100, direction: 'debit', normalizedMerchant: 'x', sourceRowHash: 'h', dedupKey: 'k', externalId: sample.transactionId,
+    });
+
+    const summary = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [
+      page({ removed: [{ transactionId: sample.transactionId, accountId: null }, { transactionId: sample.transactionId, accountId: 'acct-not-in-item' }], nextCursor: 'c2' }),
+    ]));
+    expect(summary).toMatchObject({ removed: 0, skippedUnknownAccount: 2 });
+    expect(await db.select().from(transactions).where(eq(transactions.id, 'tx-other'))).toHaveLength(1);
+    expect(await db.select().from(transactions).where(eq(transactions.externalId, sample.transactionId))).toHaveLength(2);
+  });
+
+  it('a modified line whose amount changed withdraws the human’s manual match; a reworded line keeps it', async () => {
+    await seeded();
+    const row = (await db.select().from(transactions).where(eq(transactions.externalId, sample.transactionId)))[0]!;
+    await db.insert(matches).values(manualMatch('m-keep', row.id));
+
+    const reworded = await syncPlaidItem(db, { ...item, cursor: 'c1' }, new FakePlaid(fixtureAccounts, [page({ modified: [{ ...sample, name: 'SAME MONEY, NEW WORDS' }], nextCursor: 'c2' })]));
+    expect(reworded).toMatchObject({ modified: 1, matchesReset: 0 });
+    expect(await db.select().from(matches).where(eq(matches.id, 'm-keep'))).toHaveLength(1);
+
+    const repriced = await syncPlaidItem(db, { ...item, cursor: 'c2' }, new FakePlaid(fixtureAccounts, [page({ modified: [{ ...sample, amount: sample.amount + 5 }], nextCursor: 'c3' })]));
+    expect(repriced).toMatchObject({ modified: 1, matchesReset: 1 });
+    expect(await db.select().from(matches).where(eq(matches.id, 'm-keep'))).toHaveLength(0);
+    expect((await db.select().from(transactions).where(eq(transactions.id, row.id)))[0]!.amountCents).toBe(-Math.round((sample.amount + 5) * 100));
+  });
+
+  it('a page that claims more but does not move the cursor stops the sync instead of looping', async () => {
+    const stuck: PlaidClient = {
+      async accountsGet() { return fixtureAccounts; },
+      async transactionsSync(_t, cursor) { return page({ added: [], nextCursor: cursor ?? 'same', hasMore: true }); },
+    };
+    await expect(syncPlaidItem(db, { ...item, cursor: 'same' }, stuck)).rejects.toThrow(/did not advance/);
+    expect((await db.select().from(plaidItems))[0]!.status).toBe('error');
+  });
+
+  it('a provider that never stops saying "more" is cut off at the page cap, keeping the last cursor', async () => {
+    let n = 0;
+    const endless: PlaidClient = {
+      async accountsGet() { return fixtureAccounts; },
+      async transactionsSync() { n += 1; return page({ nextCursor: `p${n}`, hasMore: true }); },
+    };
+    await expect(syncPlaidItem(db, item, endless)).rejects.toThrow(/200 pages/);
+    expect(n).toBe(200);
+    expect((await db.select().from(plaidItems))[0]!.cursor).toBe('p200');
+  });
+
+  it('surfaces Plaid’s update status so a fresh Item’s empty first page reads as "not ready", not "no activity"', async () => {
+    const summary = await syncPlaidItem(db, item, new FakePlaid(fixtureAccounts, [page({ nextCursor: 'c1', updateStatus: 'not_ready' })]));
+    expect(summary).toMatchObject({ added: 0, updateStatus: 'not_ready', cursor: 'c1' });
+  });
+
   it('accounts are created for the Item’s household only and renamed on later syncs', async () => {
     await seeded();
     const renamed = fixtureAccounts.map((a) => (a.accountId === sample.accountId ? { ...a, officialName: 'Renamed Checking' } : a));
@@ -218,6 +295,5 @@ describe('syncPlaidItem — changes after the first sync', () => {
     const row = (await db.select().from(accounts).where(eq(accounts.externalId, sample.accountId)))[0]!;
     expect(row.name.startsWith('Renamed Checking')).toBe(true);
     expect(row.householdId).toBe(HH);
-    void acctOf;
   });
 });

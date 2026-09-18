@@ -29,9 +29,12 @@ line that has no `diagnostic` key. Access tokens appear in `item list` /
 ```bash
 plaid doctor --json          # status/checks; ".env not present" is fine here
 plaid config                 # env, linked items, trial adds left
-plaid keys fetch --json      # store the team's API keys in the CLI config
 plaid config set --env sandbox
 ```
+
+Only if `plaid doctor` reports keys missing: `plaid keys fetch --json` stores
+the team's keys — production included — in the CLI config. Do not run it
+otherwise, and never copy that file anywhere.
 
 ## Sandbox Items
 
@@ -42,8 +45,13 @@ plaid item list --json
 plaid item get --json                                        # accounts + balances (one item)
 plaid item get --item <item_id|alias> --json
 plaid item rename <item_id> checking-test
-plaid item remove <item_id>                                  # destructive; sandbox only
+plaid config | grep 'Selected Environment'                   # MUST say sandbox before the next line
+plaid item remove --item <item_id> --force                   # destructive; sandbox only
 ```
+
+Before any destructive command (`item remove`, and `link` which spends a
+trial Item add) assert the environment with `plaid config` in the same
+step; never assume it from an earlier call.
 
 A fresh sandbox Item's transactions take a while to be ready: the first
 `sync` pages return `added: []` with a cursor. Retry with a 20 s pause.

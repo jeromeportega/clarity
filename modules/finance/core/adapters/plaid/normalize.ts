@@ -21,7 +21,8 @@ export interface NormalizedPlaidTransaction extends NormalizedTransaction {
 }
 
 export function toCents(amountDollars: number): number {
-  // Plaid amounts are decimal dollars; round to the cent, never truncate.
+  // Plaid amounts are decimal dollars (two places in practice); round to the
+  // cent rather than truncate float noise. Math.round rounds a half toward +∞.
   return Math.round(amountDollars * 100);
 }
 

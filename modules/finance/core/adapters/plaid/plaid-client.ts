@@ -39,8 +39,17 @@ export interface PlaidTransaction {
 
 export interface PlaidRemovedTransaction {
   transactionId: string;
-  accountId: string;
+  /** Plaid may omit it; the sync then skips the entry rather than guessing. */
+  accountId: string | null;
 }
+
+/**
+ * Where Plaid is with this Item's history: a fresh Item answers `not_ready`
+ * (nothing pulled yet) before `initial` (recent activity) and `historical`
+ * (the full window). A sync that adds nothing while `not_ready` is not "no
+ * activity" — it is "come back in a minute".
+ */
+export type PlaidUpdateStatus = 'not_ready' | 'initial' | 'historical' | 'unknown';
 
 export interface PlaidSyncPage {
   added: PlaidTransaction[];
@@ -48,6 +57,7 @@ export interface PlaidSyncPage {
   removed: PlaidRemovedTransaction[];
   nextCursor: string;
   hasMore: boolean;
+  updateStatus: PlaidUpdateStatus;
 }
 
 export interface PlaidClient {

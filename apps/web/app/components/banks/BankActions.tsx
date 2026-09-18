@@ -7,22 +7,27 @@ import { Button } from '@/components/ui/button';
 import { connectSandbox, syncBanks, type BankActionResult } from '@/app/actions/banks';
 
 const MESSAGES: Record<string, string> = {
+  demo: 'The public demo has no bank behind it.',
   plaid_not_configured: 'Plaid is not configured on this deployment.',
   sandbox_only: 'Test banks can only be connected in the Plaid sandbox.',
+  already_connected: 'That test bank is already connected; use Sync now.',
   failed: 'That did not work. The error is in the server log.',
 };
 
 function describe(result: BankActionResult): string {
   if (!result.ok) return MESSAGES[result.code] ?? 'Something went wrong.';
   if ('connected' in result) {
-    return `Connected: ${result.connected.accountsCreated} account(s), ${result.connected.added} transaction(s) pulled.`;
+    const base = `Connected: ${result.connected.accountsCreated} account(s), ${result.connected.added} transaction(s) pulled.`;
+    return result.connected.stillPreparing ? `${base} The bank is still preparing its history — sync again in a minute.` : base;
   }
   const ok = result.result.items.filter((i) => i.ok);
   const added = ok.reduce((n, i) => n + (i.summary?.added ?? 0), 0);
   const modified = ok.reduce((n, i) => n + (i.summary?.modified ?? 0), 0);
   const removed = ok.reduce((n, i) => n + (i.summary?.removed ?? 0), 0);
+  const preparing = ok.filter((i) => i.summary?.updateStatus === 'not_ready').length;
   const failed = result.result.items.length - ok.length;
   const parts = [`${added} new`, `${modified} changed`, `${removed} removed`];
+  if (preparing > 0) parts.push(`${preparing} still preparing history`);
   if (failed > 0) parts.push(`${failed} bank(s) failed`);
   return `Synced ${ok.length} bank(s): ${parts.join(', ')}.`;
 }

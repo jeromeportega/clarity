@@ -81,9 +81,14 @@ export default async function BanksPage() {
                   {bank.lastSyncedAt ? ` · synced ${bank.lastSyncedAt.slice(0, 16).replace('T', ' ')}` : ' · never synced'}
                 </span>
               </div>
-              {bank.status !== 'ok' && bank.lastError && (
+              {bank.status === 'error' && (
                 <p className="text-xs text-destructive" role="alert">
-                  {bank.lastError}
+                  The last sync did not complete. Try Sync now; if it keeps failing, the details are in the server log.
+                </p>
+              )}
+              {bank.status === 'login_required' && (
+                <p className="text-xs text-destructive" role="alert">
+                  The bank needs you to sign in again before more activity can be pulled.
                 </p>
               )}
               <AccountRows rows={bank.accounts} />

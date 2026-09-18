@@ -130,7 +130,9 @@ export class DrizzleReconcileSource implements ReconcileSource {
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(eq(accounts.householdId, householdId))
+      // A pending line (a synced authorization) may change amount or vanish
+      // when it posts: it is not a bank line until then.
+      .where(and(eq(accounts.householdId, householdId), eq(transactions.pending, false)))
       .orderBy(asc(transactions.id));
 
     return rows.map((r) => ({
