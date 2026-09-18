@@ -127,9 +127,10 @@ What the numbers are, and are not:
 - **Item numbers read off the photo** is the metric the product depends on: a
   read item number resolves from the household's dictionary (bootstrapped from
   the digital export, then from human answers) with no model naming at all. It
-  is judged on the paired line (a swapped number is a miss), with the
-  precision side reported alongside (extracted numbers matching no expected
-  line).
+  is a multiset count over the receipt's numbers (a duplicated number needs as
+  many extracted lines); a number attached to the wrong line's text is caught
+  by the name grade, not here. The precision side is reported alongside
+  (extracted numbers matching no expected line).
 - **Naming** here is the model alone, with an **empty dictionary** — the
   harness has no dictionary-primed mode yet — graded on the name only, because
   Costco's export carries no categories (the fixture eval's "and exact

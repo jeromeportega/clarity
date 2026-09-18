@@ -301,6 +301,13 @@ describe('identityName — the product identity without its appended pack-size s
     expect(identityName('1.5 L')).toBe('1.5 L');
     expect(identityName('12 ct')).toBe('12 ct');
     expect(identityName('500-count')).toBe('500-count');
+    expect(identityName('2 x 1 lb')).toBe('2 x 1 lb');
+  });
+
+  it('a size in the middle of the head never eats the product noun', () => {
+    expect(identityName('Kirkland Signature 3 lb Ground Coffee')).toBe('Kirkland Signature 3 lb Ground Coffee');
+    expect(identityName('Ninja Foodi 8 Quart Pressure Cooker')).toBe('Ninja Foodi 8 Quart Pressure Cooker');
+    expect(identityName('Kirkland Signature Whole Cashews 2.5 lb bag')).toBe('Kirkland Signature Whole Cashews');
   });
 
   it('resolveEvalNameMode defaults to full and accepts identity; isGatedRun is the fixture in full mode only', () => {
@@ -308,6 +315,7 @@ describe('identityName — the product identity without its appended pack-size s
     expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'IDENTITY' })).toBe('identity');
     expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'garbage' })).toBe('full');
     expect(isGatedRun(DEFAULT_EVAL_DIR, 'full')).toBe(true);
+    expect(isGatedRun(`${DEFAULT_EVAL_DIR}/`, 'full')).toBe(true);
     expect(isGatedRun(DEFAULT_EVAL_DIR, 'identity')).toBe(false);
     expect(isGatedRun('/somewhere/real', 'full')).toBe(false);
   });
@@ -345,20 +353,18 @@ describe('countSkuReads — item numbers judged on the paired line', () => {
     expect(countSkuReads([], expected)).toEqual({ read: 0, withSku: 2, unexpected: 0, extractedWithSku: 0 });
   });
 
-  it('two lines that swapped their numbers are two misses, not a perfect score', () => {
-    const actual = [a('222', 'Apples'), a('111', 'Bananas')];
+  it('a number on the wrong line still counts as read — pairing is number-first; the NAME grade catches the mix-up', () => {
     const expected = [
       { sku: '111', name: 'Apples', category: null },
       { sku: '222', name: 'Bananas', category: null },
     ];
-    // SKU pairing wins first, so each expected item pairs with the line carrying its number —
-    // the line whose text is the OTHER product. Those are reads of the right number on the
-    // wrong text; the name grade catches them. When the numbers are absent from the swapped
-    // lines the pairing falls to names and the numbers do not match.
-    const swappedText = [a('222', 'Bananas'), a('111', 'Apples')];
+    // The number of the OTHER product on each line: 222 sits on the Apples text, 111 on the Bananas text.
+    const swappedText = [a('222', 'Apples'), a('111', 'Bananas')];
     expect(countSkuReads(swappedText, expected)).toEqual({ read: 2, withSku: 2, unexpected: 0, extractedWithSku: 2 });
+    // …and that same output fails the name grade on both lines, which is where the damage shows.
+    expect(gradeReceipt(swappedText, expected, 0.85)).toEqual({ correct: 0, total: 2 });
+    // Lines with no numbers read nothing.
     expect(countSkuReads([a(null, 'Apples'), a(null, 'Bananas')], expected)).toEqual({ read: 0, withSku: 2, unexpected: 0, extractedWithSku: 0 });
-    void actual;
   });
 
   it('a duplicated item number on the receipt needs two extracted lines, not one', () => {

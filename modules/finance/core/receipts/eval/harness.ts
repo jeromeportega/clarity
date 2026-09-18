@@ -1,5 +1,5 @@
 import { readdirSync } from 'node:fs';
-import { dirname, extname, join } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_RECEIPT_CONFIG } from '../config';
 import { isCorrectlyResolved, similarityRatio } from '../resolver/similarity';
@@ -94,7 +94,7 @@ export function resolveEvalNameMode(env: NodeJS.ProcessEnv = process.env): EvalN
 // The 80% bar means something only for the sample it was calibrated on, graded
 // the way it was calibrated. Anything else is a measurement run: report, never assert.
 export function isGatedRun(dir: string, mode: EvalNameMode): boolean {
-  return dir === DEFAULT_EVAL_DIR && mode === 'full';
+  return resolve(dir) === resolve(DEFAULT_EVAL_DIR) && mode === 'full';
 }
 
 // Pack, weight, volume and container nouns — never dimensions (in, ft, gal)
@@ -116,8 +116,13 @@ const PER_UNIT = /,?\s*\bper\s+(?:lb|lbs|oz|kg|g|each|ea)\b\.?/gi;
 // A parenthetical that is a size: "(4 x 1 lb packs)", "(2-pack)".
 const SIZE_PAREN = /\s*\(\s*\d[^)]*\)/g;
 // A trailing size on the head of the name, without a comma: "… Tennessee 1L",
-// "WD-40 11 oz", "Salmon 1 lb each" — the unit may be followed by a word or two.
-const TRAILING_SIZE = new RegExp(`\\s+\\d+(?:[.,/]\\d+)?\\s*-?\\s*${UNITS}\\b\\.?(?:\\s+[a-z]+){0,2}$`, 'i');
+// "WD-40 11 oz", "Salmon 1 lb each". Only a closed set of pack words may
+// follow the unit — any word would eat the product noun when a size sits
+// mid-name ("3 lb Ground Coffee").
+const TRAILING_SIZE = new RegExp(
+  `\\s+\\d+(?:[.,/]\\d+)?\\s*-?\\s*${UNITS}\\b\\.?(?:\\s+(?:each|ea|packs?|bags?|box|tub|jar|avg\\s+wt))?$`,
+  'i',
+);
 
 /** The product identity in a catalogue name: the name without its appended pack-size segments. */
 export function identityName(name: string): string {
@@ -134,8 +139,9 @@ export function identityName(name: string): string {
     .join(', ')
     .replace(/\s+([,.])/g, '$1')
     .trim();
-  // Never grade against nothing: a name that was all size keeps its full form.
-  return out.length > 0 ? out : name.trim();
+  // Never grade against nothing: a name that was all size ("12 ct", "2 x 1 lb")
+  // keeps its full form.
+  return /[a-z]{2,}/i.test(out) ? out : name.trim();
 }
 
 function gradingName(name: string, mode: EvalNameMode): string {
@@ -243,12 +249,14 @@ export function gradeReceipt(
   return { correct: expected.length - explainMisses(actual, expected, ratio, mode).length, total: expected.length };
 }
 
-// Item numbers, judged on the PAIRED line — not "does this number appear
-// anywhere": two lines that swapped their numbers would both resolve to the
-// wrong product from the dictionary, and a set-membership count would call
-// that perfect. `read` is recall over expected items that have a number;
-// `unexpected` is the precision side — extracted numbers that belong to no
-// expected line (mis-read digits, invented numbers, over-extraction).
+// Item numbers, counted over the shared pairing. Because pairing is
+// number-first, `read` is a MULTISET count of the receipt's numbers (a number
+// duplicated on the receipt needs as many extracted lines): it says the
+// number was read, not that it landed on the right line — a number attached
+// to the wrong line's text is caught by the name grade, not here. `read` is
+// recall over expected items that have a number; `unexpected` is the
+// precision side — extracted numbers that belong to no expected line
+// (mis-read digits, invented numbers, over-extraction).
 export interface SkuReadStats {
   read: number;
   withSku: number;
