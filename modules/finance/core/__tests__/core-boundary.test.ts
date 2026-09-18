@@ -24,7 +24,7 @@ const CORE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
  * model-agnostic calling convention — but never the thing that authenticates.
  */
 function isForbiddenModule(spec: string): boolean {
-  return /^(?:next|react|react-dom|@ai-sdk\/gateway|@anthropic-ai\/sdk|@clerk\/[^/]+|@vercel\/blob)(?:\/.*)?$/.test(spec);
+  return /^(?:next|react|react-dom|@ai-sdk\/gateway|@anthropic-ai\/sdk|@clerk\/[^/]+|@vercel\/blob|plaid)(?:\/.*)?$/.test(spec);
 }
 
 /**
@@ -90,6 +90,7 @@ describe('core boundary (no Next.js / React under modules/finance/core)', () => 
     expect(findForbiddenImports(`import { gateway } from '@ai-sdk/gateway';`)).toContain('@ai-sdk/gateway');
     expect(findForbiddenImports(`import Anthropic from '@anthropic-ai/sdk';`)).toContain('@anthropic-ai/sdk');
     expect(findForbiddenImports(`import { auth } from '@clerk/nextjs/server';`)).toContain('@clerk/nextjs/server');
+    expect(findForbiddenImports(`import { PlaidApi } from 'plaid';`)).toContain('plaid');
     expect(findForbiddenImports(`import { generateText } from 'ai';`)).toEqual([]);
     expect(findForbiddenImports(`import { sql } from 'drizzle-orm';`)).toEqual([]);
     expect(findForbiddenImports(`import { createHash } from 'node:crypto';`)).toEqual([]);
