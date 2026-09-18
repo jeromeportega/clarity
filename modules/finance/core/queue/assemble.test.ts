@@ -520,4 +520,48 @@ describe('assembleQueue', () => {
     const items = await assembleQueue(scope, new ControlledGateway(), db);
     expect(items).toEqual([]);
   });
+
+  describe('queue item context — what the person needs in front of them', () => {
+    it('sku_resolution items carry the receipt (store, date), the model’s answer and whether a photo exists', async () => {
+      const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+      await seedHousehold(db, HOUSEHOLD_A);
+      const photoReceipt = randomUUID();
+      await db.insert(receipts).values({ id: photoReceipt, householdId: HOUSEHOLD_A, source: 'photo', store: 'COSTCO', purchasedAt: '2026-06-13', totalCents: 1899, imageHash: 'hash-1' });
+      const itemId = randomUUID();
+      await db.insert(receiptItems).values({
+        id: itemId, receiptId: photoReceipt, lineNo: 1, sku: '1234567', rawDescription: 'KS ORG EVOO 2L', canonicalName: 'Kirkland Signature Organic Extra Virgin Olive Oil',
+        categoryId: 'groceries', quantity: 2, linePriceCents: 1899, needsReview: true,
+      });
+      const digitalReceipt = await seedReceipt(db, HOUSEHOLD_A); // source 'test': no photo
+      const digitalItem = await seedReceiptItem(db, digitalReceipt, { needsReview: true });
+
+      const items = await assembleQueue(scope, new ControlledGateway(), db);
+      expect(items.find((i) => i.id === itemId)?.context).toEqual({
+        receiptId: photoReceipt, store: 'COSTCO', purchasedAt: '2026-06-13', hasImage: true,
+        sku: '1234567', canonicalName: 'Kirkland Signature Organic Extra Virgin Olive Oil', categoryId: 'groceries', quantity: 2,
+      });
+      expect(items.find((i) => i.id === digitalItem)?.context).toMatchObject({ receiptId: digitalReceipt, store: 'Test Store', hasImage: false, canonicalName: null });
+    });
+
+    it('flagged_receipt items carry the receipt and its line count; an unreadable placeholder shows no store or date', async () => {
+      const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+      await seedHousehold(db, HOUSEHOLD_A);
+      const flagged = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: 'COSTCO', totalCents: 1234 });
+      await seedReceiptItem(db, flagged);
+      await seedReceiptItem(db, flagged);
+      const placeholder = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: '', totalCents: 0 });
+
+      const items = await assembleQueue(scope, new ControlledGateway(), db);
+      expect(items.find((i) => i.id === flagged)?.context).toEqual({ receiptId: flagged, store: 'COSTCO', purchasedAt: '2025-01-15', hasImage: false, itemCount: 2 });
+      expect(items.find((i) => i.id === placeholder)?.context).toEqual({ receiptId: placeholder, store: null, purchasedAt: null, hasImage: false, itemCount: 0 });
+    });
+
+    it('ambiguous_match and unmatched_txn items carry no context', async () => {
+      const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+      await seedHousehold(db, HOUSEHOLD_A);
+      const items = await assembleQueue(scope, new ControlledGateway([{ transactionId: randomUUID(), candidates: [{}, {}] } as never]), db);
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) expect(item.context).toBeUndefined();
+    });
+  });
 });
