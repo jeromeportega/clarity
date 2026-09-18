@@ -14,6 +14,7 @@ interface QueueItemActionsProps {
 }
 
 const READ_AGAIN_MESSAGES: Record<string, string> = {
+  still_unreadable: 'Still could not read this photo. Try a clearer picture, or dismiss it.',
   not_found: 'This receipt is no longer here.',
   has_items: 'This receipt already has line items; decide it here instead.',
   no_image: 'The photo for this receipt is not stored, so it cannot be read again.',
@@ -27,8 +28,8 @@ export function QueueItemActions({ item, onActed }: QueueItemActionsProps) {
   const [error, setError] = React.useState<string | null>(null);
 
   // An unreadable photo can be read again: on a readable result the row
-  // changes or disappears (refresh); on another unreadable result it stays,
-  // and the person is told rather than left wondering.
+  // changes or disappears (refresh); on another unreadable result nothing was
+  // written and the person is told rather than left wondering.
   async function performReadAgain(): Promise<void> {
     if (pending) return;
     setPending(true);
@@ -37,10 +38,6 @@ export function QueueItemActions({ item, onActed }: QueueItemActionsProps) {
       const result = await readReceiptAgain(item.id);
       if (!result.ok) {
         setError(READ_AGAIN_MESSAGES[result.code] ?? 'Could not read the receipt again.');
-        return;
-      }
-      if (result.itemCount === 0) {
-        setError('Still could not read this photo. Try a clearer picture, or dismiss it.');
         return;
       }
       onActed?.(item.id);

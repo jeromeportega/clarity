@@ -16,7 +16,7 @@ function getDb(): FinanceDb {
 
 export type ReadAgainResult =
   | { ok: true; status: 'ok' | 'needs_review'; itemCount: number }
-  | { ok: false; code: 'not_found' | 'has_items' | 'image_mismatch' | 'no_image' | 'unsupported_image' };
+  | { ok: false; code: 'not_found' | 'has_items' | 'image_mismatch' | 'still_unreadable' | 'no_image' | 'unsupported_image' };
 
 /** Read the photo behind an unreadable receipt again (see `lib/reextract.ts`). */
 export async function readReceiptAgain(receiptId: unknown): Promise<ReadAgainResult> {

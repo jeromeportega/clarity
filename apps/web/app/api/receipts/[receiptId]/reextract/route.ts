@@ -1,4 +1,5 @@
 import { requireWriter } from '../../../../lib/auth/writer';
+import { MAX_FIELD_LEN } from '../../../queue/[id]/_lib/validation';
 import { reextractReceipt } from '../../../../../lib/reextract';
 import { createDb, type FinanceDb } from '../../../../../../../modules/finance/db/client';
 
@@ -10,8 +11,6 @@ function getDb(): FinanceDb {
   return _db;
 }
 
-const MAX_ID_LEN = 128;
-
 /**
  * POST /api/receipts/[receiptId]/reextract — read a stored receipt photo
  * again. For a receipt the model could not read (zero items), in the writer's
@@ -19,7 +18,9 @@ const MAX_ID_LEN = 128;
  *
  *   401 no writer · 400 bad id · 404 no such receipt here, or no stored image
  *   409 the receipt already has line items (decided in the queue instead)
- *   422 the stored image is not a type the model can read
+ *   422 the stored image is not a type the model can read, or the model still
+ *       could not read it (nothing was written)
+ *   500 the stored image does not hash to the receipt's own key
  *   200 { status, receipt, items } — status 'ok' or 'needs_review'
  */
 export async function POST(req: Request, { params }: { params: { receiptId: string } }): Promise<Response> {
@@ -27,7 +28,7 @@ export async function POST(req: Request, { params }: { params: { receiptId: stri
   if (writer instanceof Response) return writer;
 
   const receiptId = params.receiptId;
-  if (typeof receiptId !== 'string' || receiptId.length === 0 || receiptId.length > MAX_ID_LEN) {
+  if (typeof receiptId !== 'string' || receiptId.length === 0 || receiptId.length > MAX_FIELD_LEN) {
     return Response.json({ error: 'Bad Request' }, { status: 400 });
   }
 
@@ -41,7 +42,13 @@ export async function POST(req: Request, { params }: { params: { receiptId: stri
 
   if (!outcome.ok) {
     const status =
-      outcome.code === 'has_items' ? 409 : outcome.code === 'unsupported_image' ? 422 : outcome.code === 'image_mismatch' ? 500 : 404;
+      outcome.code === 'has_items'
+        ? 409
+        : outcome.code === 'unsupported_image' || outcome.code === 'still_unreadable'
+          ? 422
+          : outcome.code === 'image_mismatch'
+            ? 500
+            : 404;
     return Response.json({ error: outcome.code }, { status });
   }
   return Response.json({ status: outcome.result.status, receipt: outcome.result.receipt, items: outcome.result.items });

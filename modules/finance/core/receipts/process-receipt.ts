@@ -71,7 +71,7 @@ const DEFAULT_SOURCE = 'photo';
 
 // Unreadable / refusal (FR-6): a zero-item record flagged needs_review; never
 // fabricated items.
-const UNREADABLE_FIELDS: ReceiptExtractionFields = {
+const UNREADABLE_FIELDS: Readonly<ReceiptExtractionFields> = Object.freeze({
   store: null,
   purchasedAt: null,
   subtotalCents: null,
@@ -79,7 +79,7 @@ const UNREADABLE_FIELDS: ReceiptExtractionFields = {
   totalCents: null,
   paymentLast4: null,
   needsReview: true,
-};
+});
 
 /**
  * extract → resolve → reconcile → flag, with no store writes: the part of the
@@ -92,7 +92,7 @@ export async function readReceipt(
 ): Promise<ReceiptReading> {
   const cfg: ReceiptConfig = { ...DEFAULT_RECEIPT_CONFIG, ...config };
   const extracted = await deps.vision.extract(input);
-  if (!extracted.readable) return { fields: UNREADABLE_FIELDS, items: [], readable: false };
+  if (!extracted.readable) return { fields: { ...UNREADABLE_FIELDS }, items: [], readable: false };
 
   // Resolution — exactly one resolve() per line item, in extraction order.
   const categories = await deps.store.listCategories();

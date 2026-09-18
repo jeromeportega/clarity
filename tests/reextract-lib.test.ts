@@ -20,7 +20,7 @@ import type { Resolution, SkuResolver } from '../modules/finance/core/receipts/r
 import { receiptImageKey } from '../modules/finance/core/receipts/store/image-store';
 import type { ExtractedReceipt, VisionProvider } from '../modules/finance/core/receipts/vision/vision-provider';
 import { createTestDb, type FinanceDb } from '../modules/finance/db/client';
-import { households, receiptItems, receipts } from '../modules/finance/db/schema';
+import { households, receiptItems, receipts, reviewDecisions } from '../modules/finance/db/schema';
 
 const HH = 'hh-mine';
 const OTHER = 'hh-theirs';
@@ -57,6 +57,8 @@ beforeAll(async () => {
   imagesDir = mkdtempSync(join(tmpdir(), 'clarity-reextract-'));
   vi.stubEnv('CLARITY_DATA_DIR', imagesDir);
   vi.stubEnv('BLOB_READ_WRITE_TOKEN', '');
+  // Offline: no live model client is ever built, whichever pipeline root is in use.
+  vi.stubEnv('ANTHROPIC_API_KEY', '');
   vi.stubEnv('RECEIPT_AI', 'recorded');
 
   await db.insert(households).values([{ id: HH, name: 'Mine' }, { id: OTHER, name: 'Theirs' }]);
@@ -76,7 +78,12 @@ afterAll(() => {
 });
 
 describe('reextractReceipt (lib)', () => {
-  it('reads the stored photo again, replaces the placeholder, and re-runs reconciliation', async () => {
+  it('reads the stored photo again, replaces the placeholder, forgets the old flagged_receipt decision, and re-runs reconciliation', async () => {
+    // Someone had dismissed the unreadable placeholder; that decision is about a row that no longer says that.
+    await db.insert(reviewDecisions).values([
+      { id: 'dec-old', householdId: HH, itemType: 'flagged_receipt', itemId: 'rcpt-unread', decision: 'dismiss' },
+      { id: 'dec-other', householdId: HH, itemType: 'flagged_receipt', itemId: 'rcpt-noimage', decision: 'dismiss' },
+    ]);
     const out = await reextractReceipt(db, HH, 'rcpt-unread', { vision: vision(readable), llm });
     expect(out.ok).toBe(true);
     if (!out.ok) return;
@@ -88,6 +95,8 @@ describe('reextractReceipt (lib)', () => {
     const items = await db.select().from(receiptItems).where(eq(receiptItems.receiptId, 'rcpt-unread'));
     expect(items.map((i) => i.canonicalName)).toEqual(['Kirkland Signature Thing']);
     expect(reconcileAfterWrite).toHaveBeenCalledWith(db, HH);
+    const decisions = await db.select({ id: reviewDecisions.id }).from(reviewDecisions);
+    expect(decisions.map((d) => d.id)).toEqual(['dec-other']);
   });
 
   it('refuses once the receipt has items', async () => {
@@ -100,20 +109,17 @@ describe('reextractReceipt (lib)', () => {
     expect(await reextractReceipt(db, HH, 'nope', { vision: vision(readable), llm })).toEqual({ ok: false, code: 'not_found' });
   });
 
-  it('a still-unreadable photo stays a flagged placeholder and does not reconcile', async () => {
+  it('a still-unreadable photo writes nothing, keeps decisions, and does not reconcile', async () => {
     vi.mocked(reconcileAfterWrite).mockClear();
     const hash = imageHash(new Uint8Array([1, 2, 3]));
     await db.insert(receipts).values({ id: 'rcpt-still', householdId: HH, source: 'photo', store: '', purchasedAt: '', totalCents: 0, imageHash: hash, needsReview: true });
+    await db.insert(reviewDecisions).values({ id: 'dec-still', householdId: HH, itemType: 'flagged_receipt', itemId: 'rcpt-still', decision: 'dismiss' });
     await getImageStore().put(receiptImageKey(HH, hash), new Uint8Array([1, 2, 3]), 'image/png');
 
-    const out = await reextractReceipt(db, HH, 'rcpt-still', { vision: vision(unreadable), llm });
-    expect(out.ok).toBe(true);
-    if (!out.ok) return;
-    expect(out.result.status).toBe('needs_review');
-    expect(out.result.items).toEqual([]);
+    expect(await reextractReceipt(db, HH, 'rcpt-still', { vision: vision(unreadable), llm })).toEqual({ ok: false, code: 'still_unreadable' });
     const row = (await db.select().from(receipts).where(eq(receipts.id, 'rcpt-still')))[0]!;
     expect(row).toMatchObject({ store: '', totalCents: 0, needsReview: true });
-    // Nothing about the receipt changed for the reconciler, but the read did run: reconcile is called on ok outcomes.
-    expect(reconcileAfterWrite).toHaveBeenCalledTimes(1);
+    expect((await db.select({ id: reviewDecisions.id }).from(reviewDecisions).where(eq(reviewDecisions.itemId, 'rcpt-still'))).map((d) => d.id)).toEqual(['dec-still']);
+    expect(reconcileAfterWrite).not.toHaveBeenCalled();
   });
 });

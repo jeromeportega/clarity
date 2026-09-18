@@ -16,11 +16,15 @@ import type { ReceiptImageInput } from './vision/vision-provider';
 // review decisions and dictionary learning that a silent replacement would
 // orphan. Re-reading a receipt that already has items is a later feature with
 // its own rules.
+//
+// A read that fails again writes NOTHING: whatever the row already says (a
+// total read off a cropped photo, say) stays, and the caller is told
+// `still_unreadable`. Only a readable result replaces the row.
 // =============================================================================
 
 export type ReprocessOutcome =
   | { ok: true; result: ProcessReceiptResult }
-  | { ok: false; code: 'not_found' | 'has_items' | 'image_mismatch' };
+  | { ok: false; code: 'not_found' | 'has_items' | 'image_mismatch' | 'still_unreadable' };
 
 export async function reprocessReceipt(
   receiptId: string,
@@ -39,6 +43,7 @@ export async function reprocessReceipt(
   if (imageHash(input.bytes) !== existing.imageHash) return { ok: false, code: 'image_mismatch' };
 
   const reading = await readReceipt(input, deps, config);
+  if (!reading.readable) return { ok: false, code: 'still_unreadable' };
   const replaced = await deps.store.replaceReceiptExtraction(receiptId, reading.fields, reading.items);
 
   return {

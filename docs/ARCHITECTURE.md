@@ -68,7 +68,7 @@ transactions + orders + receipts ─► reconcile() ─► matches · LedgerEven
 
 ### 2. Receipt extraction — `modules/finance/core/receipts/`
 
-`processReceipt(input, deps, config)` (`process-receipt.ts`) is the single entry point. Order of operations:
+`processReceipt(input, deps, config)` (`process-receipt.ts`) is the entry point for a new photo; `reprocessReceipt` (`reprocess-receipt.ts`) reads a stored one again. Both run the same `readReceipt` middle (extract → resolve → reconcile → flag, no writes) and differ only in the write: insert versus a transactional replace of the row's fields and items. Order of operations:
 
 1. `imageHash` (SHA-256 of bytes) → `store.findReceiptByImageHash`; a hit returns the existing record with `idempotent: true` and performs no model call.
 2. `vision.extract(input)` → `ExtractedReceipt { readable, store, purchasedAt, total, tax, fees[], paymentHint, lineItems[] }`, all money as integer cents.
@@ -148,7 +148,7 @@ I/O ports:
 | `sku_resolution` | `receipt_items.needs_review = 1` |
 | `ambiguous_match` | `gateway.getAmbiguousMatchGroups()` |
 | `unmatched_txn` | `gateway.listUnmatchedTransactions()` |
-| `flagged_receipt` | `receipts.needs_review = 1` (arithmetic failure) |
+| `flagged_receipt` | `receipts.needs_review = 1` (arithmetic failure, or an unreadable photo — the placeholder rows carry `unreadable: true` and offer "Read again") |
 
 …then anti-joins against `review_decisions` on `(household_id, item_type, item_id)`; a decided item disappears from the queue.
 
@@ -242,7 +242,7 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 | `POST /api/queue/[id]/confirm` · `/correct` · `/dismiss` | writer (session or `x-reconcile-token`) | `applyCorrection` on the writer's household; body validated in `[id]/_lib/validation.ts`. |
 | `POST /api/receipts/upload` | writer (session or `x-reconcile-token`) | multipart `file`; Content-Length cap before buffering, then MIME + 20 MiB per-file checks before the bytes are copied; the image is stored under `receipts/<household>/<imageHash>` (private Blob, or local disk) BEFORE anything touches the database, then `processReceipt` against the real store/dictionary, then `reconcileAfterWrite` (skipped for a duplicate upload). Response = the receipt result + `reconciliation`. |
 | `GET /api/receipts/image/[receiptId]` | read scope; 403 without one | the stored image for a receipt in the caller's household, with its content type, `cache-control: private, no-store`; 404 for another household's id, a digital receipt, or an upload that predates durable storage. |
-| `POST /api/receipts/[receiptId]/reextract` | writer (session or `x-reconcile-token`) | Read again: for a receipt in the writer's household that the model could not read (zero line items), fetch the stored image under the receipt's own hash, run the same extract → resolve → reconcile → flag sequence, and replace the placeholder's fields and items in one transaction (`core/receipts/reprocess-receipt.ts`), then reconcile. 404 no such receipt or no stored image, 409 the receipt already has items, 422 unsupported image type. The queue offers it as "Read again" on unreadable receipts (`QueueItem.unreadable`). |
+| `POST /api/receipts/[receiptId]/reextract` | writer (session or `x-reconcile-token`) | Read again: for a receipt in the writer's household that the model could not read (zero line items), fetch the stored image under the receipt's own hash, run the same extract → resolve → reconcile → flag sequence, and replace the placeholder's fields and items in one transaction (`core/receipts/reprocess-receipt.ts`), then reconcile. A read that fails again writes nothing (422 `still_unreadable`); a successful one also forgets any earlier `flagged_receipt` decision about the placeholder, so a receipt that needs review again surfaces again. 400 bad id, 404 no such receipt here or no stored image, 409 the receipt already has items, 422 unsupported image type or still unreadable, 500 the stored image does not hash to its own key. The queue offers it as "Read again" on unreadable receipts (`QueueItem.unreadable`). |
 | `POST /api/ingest/bank` | writer (session or `x-reconcile-token`) | multipart `file` + `accountId` (25 MiB cap); household derived from the account row — see gaps. `importSource` then `reconcileAfterWrite`; response = `ImportResult` + `reconciliation`. |
 | `POST /api/ingest/orders` | writer (session or `x-reconcile-token`) | multipart `file` (25 MiB cap); imports into the writer's household, then reconciles. |
 | `POST /api/ingest/costco` | writer (session or `x-reconcile-token`) | multipart `file` = saved `WarehouseReceiptDetail` JSON (25 MiB cap); receipts + line items into the writer's household, then `learnFromDigitalReceipts` into that household's dictionary (response carries `dictionary`), then reconciles. |
@@ -299,7 +299,7 @@ Seams that exist and are tested but are not connected on the live HTTP path, or 
 - **Classifier has no confidence signal**, so a misclassified item never reaches the queue; only low-confidence SKU resolutions and arithmetic failures do.
 - **Tenancy is per person; a few edges remain.** A signed-in person's household comes from `household_members`; the demo household is still a code constant (`DEMO_HOUSEHOLD_ID`) for the public demo and the operator token's writes, and that token is cross-tenant by design (`/api/ingest/bank` by account, `/api/reconcile` by household). `matches` is scoped through `transactions → accounts`; `categories` is the shared taxonomy; `review_decisions.household_id` has no FK. A person in several households gets the one they joined first; switching and invitations are not built. Foreign keys are declared but not enforced at runtime (`PRAGMA foreign_keys` is never set).
 - **`/api/ingest/bank` derives the household from a client-supplied `accountId`** (marked `TODO(auth)` in the route). Acceptable while one shared secret guards one seeded household; an IDOR the moment users exist.
-- **Unreadable receipts persist as masked placeholders** (`''` store, `''` date, `0` total) because `receipts.store / purchased_at / total_cents` are `NOT NULL` (see Data model).
+- **Unreadable receipts persist as masked placeholders** (`''` store, `''` date, `0` total) because `receipts.store / purchased_at / total_cents` are `NOT NULL` (see Data model). They can be read again from the queue (`POST /api/receipts/[receiptId]/reextract`); a receipt that already has line items cannot, yet.
 - **Live vision latency vs. function timeouts.** A live extraction call can take 20–30 s and the upload route sets no `maxDuration`; it relies on the platform default function timeout. Verify the project's limit before relying on live uploads in production.
 - **`insights/`, `rollups/rollup.ts`, `classify/recurring.ts`, `reconcile/gate-scanner.ts`** are tested but unused outside tests.
 - **No mobile capture** (`ReceiptDrop` has no `capture` attribute), no navigation between pages, no loading/error boundaries, no month picker on True Spend.

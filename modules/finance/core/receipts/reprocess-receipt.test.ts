@@ -77,15 +77,22 @@ describe('reprocessReceipt — reading an unreadable photo again', () => {
     expect(third.receipt.id).toBe(first.receipt.id);
   });
 
-  it('a second unreadable read leaves the placeholder flagged, with zero items', async () => {
+  it('a second unreadable read writes nothing and says so', async () => {
     const d = deps(new ScriptedVision([unreadable, unreadable]));
     const first = await processReceipt(photo, d);
-    const again = await reprocessReceipt(first.receipt.id, photo, d);
-    expect(again.ok).toBe(true);
-    if (!again.ok) return;
-    expect(again.result.status).toBe('needs_review');
-    expect(again.result.items).toEqual([]);
-    expect(again.result.receipt).toMatchObject({ store: null, totalCents: null, needsReview: true });
+    expect(await reprocessReceipt(first.receipt.id, photo, d)).toEqual({ ok: false, code: 'still_unreadable' });
+    expect(await d.store.getReceiptById(first.receipt.id)).toEqual(first.receipt);
+    expect(await d.store.listReceiptItems(first.receipt.id)).toEqual([]);
+  });
+
+  it('a failed re-read never erases what the row already says (a total read off a cropped photo)', async () => {
+    const partial: ExtractedReceipt = { ...readable, lineItems: [] };
+    const d = deps(new ScriptedVision([partial, unreadable]));
+    const first = await processReceipt(photo, d);
+    expect(first.items).toEqual([]);
+    expect(first.receipt).toMatchObject({ store: 'COSTCO', totalCents: 1580 });
+    expect(await reprocessReceipt(first.receipt.id, photo, d)).toEqual({ ok: false, code: 'still_unreadable' });
+    expect(await d.store.getReceiptById(first.receipt.id)).toMatchObject({ store: 'COSTCO', totalCents: 1580 });
   });
 
   it('refuses a receipt that already has line items', async () => {
@@ -103,15 +110,9 @@ describe('reprocessReceipt — reading an unreadable photo again', () => {
     expect(await d.store.listReceiptItems(first.receipt.id)).toEqual([]);
   });
 
-  it('is not_found for an unknown id and for another household’s receipt', async () => {
+  it('is not_found for an unknown id (household scoping itself is the store contract’s job — see receipt-store-reextract.test.ts)', async () => {
     const d = deps(new ScriptedVision([unreadable]));
     expect(await reprocessReceipt('nope', photo, d)).toEqual({ ok: false, code: 'not_found' });
-
-    // Same store instance, scoped elsewhere: the row exists but is not in scope.
-    const theirs = new StubReceiptStore({ householdId: 'hh-2' });
-    const first = await processReceipt(photo, { ...deps(new ScriptedVision([unreadable]), theirs), householdId: 'hh-2' });
-    const mine = new StubReceiptStore({ householdId: HH });
-    expect(await reprocessReceipt(first.receipt.id, photo, deps(new ScriptedVision([readable]), mine))).toEqual({ ok: false, code: 'not_found' });
   });
 
   it('does not call vision before the guards pass', async () => {

@@ -52,12 +52,14 @@ describe('POST /api/receipts/[receiptId]/reextract', () => {
     expect(lib.reextractReceipt).toHaveBeenCalledWith({}, DEMO_HOUSEHOLD_ID, 'rcpt-1');
   });
 
-  it('maps the outcome codes: 404 not_found / no_image, 409 has_items, 422 unsupported_image', async () => {
+  it('maps the outcome codes: 404 not_found / no_image, 409 has_items, 422 unsupported_image / still_unreadable, 500 image_mismatch', async () => {
     for (const [code, status] of [
       ['not_found', 404],
       ['no_image', 404],
       ['has_items', 409],
       ['unsupported_image', 422],
+      ['still_unreadable', 422],
+      ['image_mismatch', 500],
     ] as const) {
       lib.reextractReceipt.mockResolvedValueOnce({ ok: false, code });
       const res = await post('rcpt-1');

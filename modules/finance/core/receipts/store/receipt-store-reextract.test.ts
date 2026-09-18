@@ -155,16 +155,13 @@ describe.each(factories)('ReceiptStore read-again contract — %s', (name, make)
   });
 
   it('getReceiptById and replaceReceiptExtraction respect the household scope', async () => {
+    // Inserted through the unscoped view (the stub: the same instance, which
+    // filters reads by scope); the scoped view must neither see nor touch it.
     const theirs = await h.unscoped.insertReceipt(placeholder(OTHER, 'hash-3'));
+    expect(await h.scoped.getReceiptById(theirs.id)).toBeNull();
+    await expect(h.scoped.replaceReceiptExtraction(theirs.id, { ...theirs, store: 'MINE' }, [])).rejects.toThrow(/not found in scope/);
     if (name === 'LibSqlReceiptStore') {
-      expect(await h.scoped.getReceiptById(theirs.id)).toBeNull();
-      await expect(
-        h.scoped.replaceReceiptExtraction(theirs.id, { ...theirs, store: 'MINE' }, []),
-      ).rejects.toThrow(/not found in scope/);
       expect((await h.unscoped.getReceiptById(theirs.id))?.store).toBe('');
-    } else {
-      // The stub's scope is per instance; a scoped stub never holds another household's row.
-      expect(await h.scoped.getReceiptById(theirs.id)).toBeNull();
     }
   });
 });
