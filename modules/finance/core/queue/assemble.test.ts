@@ -453,6 +453,9 @@ describe('assembleQueue', () => {
     const items = await assembleQueue(scope, new ControlledGateway(), db);
     expect(items.find((i) => i.id === placeholder)?.reason).toBe('Flagged receipt: photo could not be read');
     expect(items.find((i) => i.id === arithmetic)?.reason).toBe('Flagged receipt: arithmetic check failed (COSTCO)');
+    // Only the unreadable one offers "read again"; the arithmetic failure is decided in the queue.
+    expect(items.find((i) => i.id === placeholder)?.unreadable).toBe(true);
+    expect(items.find((i) => i.id === arithmetic)?.unreadable).toBeUndefined();
   });
 
   it('ambiguous_match items do not carry amountCents (gateway has no amount)', async () => {

@@ -5,6 +5,8 @@ import { categories, receiptItems, receipts } from './h1-schema';
 import type {
   NewReceipt,
   NewReceiptItem,
+  NewReceiptItemDraft,
+  ReceiptExtractionFields,
   ReceiptItemRecord,
   ReceiptRecord,
   ReceiptStore,
@@ -94,6 +96,63 @@ export class LibSqlReceiptStore implements ReceiptStore {
       .values(items.map((item) => ({ ...item, id: this.newId(), createdAt })))
       .returning();
     return rows.map(toReceiptItemRecord);
+  }
+
+  async getReceiptById(id: string): Promise<ReceiptRecord | null> {
+    const where = this.householdId
+      ? and(eq(receipts.id, id), eq(receipts.householdId, this.householdId))
+      : eq(receipts.id, id);
+    const rows = await this.db.select().from(receipts).where(where).limit(1);
+    const row = rows[0];
+    return row ? toReceiptRecord(row) : null;
+  }
+
+  async listReceiptItems(receiptId: string): Promise<ReceiptItemRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(receiptItems)
+      .where(eq(receiptItems.receiptId, receiptId))
+      .orderBy(receiptItems.lineNo);
+    return rows.map(toReceiptItemRecord);
+  }
+
+  async replaceReceiptExtraction(
+    receiptId: string,
+    fields: ReceiptExtractionFields,
+    items: NewReceiptItemDraft[],
+  ): Promise<{ receipt: ReceiptRecord; items: ReceiptItemRecord[] }> {
+    const createdAt = new Date(this.now()).toISOString();
+    return this.db.transaction(async (tx) => {
+      // Same placeholder rule as insertReceipt for the NOT NULL columns.
+      const updated = await tx
+        .update(receipts)
+        .set({
+          store: fields.store ?? '',
+          purchasedAt: fields.purchasedAt ?? '',
+          subtotalCents: fields.subtotalCents,
+          taxCents: fields.taxCents,
+          totalCents: fields.totalCents ?? 0,
+          paymentLast4: fields.paymentLast4,
+          needsReview: fields.needsReview,
+        })
+        .where(
+          this.householdId
+            ? and(eq(receipts.id, receiptId), eq(receipts.householdId, this.householdId))
+            : eq(receipts.id, receiptId),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) throw new Error(`replaceReceiptExtraction: receipt ${receiptId} not found in scope`);
+      await tx.delete(receiptItems).where(eq(receiptItems.receiptId, receiptId));
+      const inserted =
+        items.length === 0
+          ? []
+          : await tx
+              .insert(receiptItems)
+              .values(items.map((item) => ({ ...item, receiptId, id: this.newId(), createdAt })))
+              .returning();
+      return { receipt: toReceiptRecord(row), items: inserted.map(toReceiptItemRecord) };
+    });
   }
 
   async listCategories(): Promise<readonly string[]> {

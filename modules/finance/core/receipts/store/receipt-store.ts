@@ -69,10 +69,32 @@ export interface ReceiptItemRecord {
 export type NewReceipt = Omit<ReceiptRecord, 'id' | 'createdAt'>;
 export type NewReceiptItem = Omit<ReceiptItemRecord, 'id' | 'createdAt'>;
 
+// What a (re)read of the photo produces about the receipt itself. Identity
+// (`id`, `householdId`, `imageHash`), provenance (`source`) and `createdAt`
+// never change when a receipt is read again.
+export type ReceiptExtractionFields = Pick<
+  ReceiptRecord,
+  'store' | 'purchasedAt' | 'subtotalCents' | 'taxCents' | 'totalCents' | 'paymentLast4' | 'needsReview'
+>;
+export type NewReceiptItemDraft = Omit<NewReceiptItem, 'receiptId'>;
+
 export interface ReceiptStore {
   findReceiptByImageHash(hash: string): Promise<ReceiptRecord | null>;
+  /** A receipt by id — inside the store's household scope when it has one. */
+  getReceiptById(id: string): Promise<ReceiptRecord | null>;
   insertReceipt(r: NewReceipt): Promise<ReceiptRecord>;
   insertReceiptItems(items: NewReceiptItem[]): Promise<ReceiptItemRecord[]>;
+  listReceiptItems(receiptId: string): Promise<ReceiptItemRecord[]>;
+  /**
+   * Read again: replace what the photo said — the receipt's own fields and
+   * every line item — in one transaction, keeping the row's identity. The
+   * caller has already checked the receipt may be re-read.
+   */
+  replaceReceiptExtraction(
+    receiptId: string,
+    fields: ReceiptExtractionFields,
+    items: NewReceiptItemDraft[],
+  ): Promise<{ receipt: ReceiptRecord; items: ReceiptItemRecord[] }>;
   // SOLE source of the category taxonomy. Every downstream story reads the
   // allowed categories through this method; a category outside it is invalid.
   listCategories(): Promise<readonly string[]>;
