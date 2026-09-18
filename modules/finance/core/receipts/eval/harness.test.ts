@@ -3,6 +3,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  countSkuReads,
+  identityName,
+  resolveEvalNameMode,
   DEFAULT_EVAL_DIR,
   EVAL_PASS_FRACTION,
   MIN_EVAL_RECEIPTS,
@@ -260,5 +263,58 @@ describe('vision:eval is a separate, isolated Vitest project (FR-18, G-3)', () =
   it('the eval project glob is scoped to eval/**/*.eval.test.ts and is not the unit glob', () => {
     expect(vitestConfig).toContain("name: 'eval'");
     expect(vitestConfig).toContain("'modules/finance/core/receipts/eval/**/*.eval.test.ts'");
+  });
+});
+
+describe('identityName — the product identity without pack size, count, weight or volume', () => {
+  it('strips the size segments a retailer catalogue appends', () => {
+    expect(identityName('Jimmy Dean Croissant Sausage Egg & Cheese, 4.5 oz, 12-count')).toBe('Jimmy Dean Croissant Sausage Egg & Cheese');
+    expect(identityName('Kirkland Signature Bath Tissue, 2-Ply, 380 Sheets, 30 Rolls')).toBe('Kirkland Signature Bath Tissue');
+    expect(identityName('Lysol Advanced Toilet Bowl Cleaner, 32 fl oz, 4-count')).toBe('Lysol Advanced Toilet Bowl Cleaner');
+    expect(identityName('Huggies Little Snugglers Plus Diapers Size 2, 174-count')).toBe('Huggies Little Snugglers Plus Diapers');
+    expect(identityName('Kirkland Signature Sliced Bacon, 4 lb (4 x 1 lb packs)')).toMatch(/^Kirkland Signature Sliced Bacon/);
+    expect(identityName('Q-Tips Cotton Swabs, 1750 count')).toBe('Q-Tips Cotton Swabs');
+    expect(identityName('Kirkland Signature Paper Towels, 2-Ply, 160 Sheets, 12 Individually Wrapped Rolls')).toBe('Kirkland Signature Paper Towels');
+    expect(identityName('Felina Ladies\u2019 Ribbed Tank, 3 pack, Large, Assorted Colors')).toBe('Felina Ladies\u2019 Ribbed Tank, Large, Assorted Colors');
+  });
+
+  it('leaves names without sizes alone, including numbers that are part of the identity', () => {
+    expect(identityName('Rotisserie Chicken')).toBe('Rotisserie Chicken');
+    expect(identityName('Reversible Cotton Throw, Assorted Colors')).toBe('Reversible Cotton Throw, Assorted Colors');
+    expect(identityName('Q-Tips Cotton Swabs')).toBe('Q-Tips Cotton Swabs');
+    expect(identityName('Kirkland Signature 10-Gallon Wastebasket Liner, Clear, 500-count')).toBe('Kirkland Signature Wastebasket Liner, Clear');
+  });
+
+  it('resolveEvalNameMode defaults to full and accepts identity', () => {
+    expect(resolveEvalNameMode({})).toBe('full');
+    expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'IDENTITY' })).toBe('identity');
+    expect(resolveEvalNameMode({ RECEIPT_EVAL_NAME_MODE: 'garbage' })).toBe('full');
+  });
+
+  it('identity mode credits a size-less answer against a sized catalogue name; full mode does not', () => {
+    const actual = [{ sku: '1', canonicalName: 'Kirkland Signature Bath Tissue', category: null }];
+    const expected = [{ sku: '1', name: 'Kirkland Signature Bath Tissue, 2-Ply, 380 Sheets, 30 Rolls', category: null }];
+    expect(gradeReceipt(actual, expected, 0.85, 'full')).toEqual({ correct: 0, total: 1 });
+    expect(gradeReceipt(actual, expected, 0.85, 'identity')).toEqual({ correct: 1, total: 1 });
+    // A wrong product is still wrong in identity mode.
+    const wrong = [{ sku: '1', canonicalName: 'Kirkland Signature Paper Towels', category: null }];
+    expect(gradeReceipt(wrong, expected, 0.85, 'identity')).toEqual({ correct: 0, total: 1 });
+  });
+});
+
+describe('countSkuReads — item numbers read off the photo, whatever they were named', () => {
+  it('counts expected item numbers present among the extracted ones, over those that have one', () => {
+    const actual = [
+      { sku: '111', canonicalName: 'whatever', category: null },
+      { sku: null, canonicalName: 'no code', category: null },
+      { sku: '333', canonicalName: 'x', category: null },
+    ];
+    const expected = [
+      { sku: '111', name: 'A', category: null },
+      { sku: '222', name: 'B', category: null },
+      { sku: null, name: 'C (no code on the receipt)', category: null },
+    ];
+    expect(countSkuReads(actual, expected)).toEqual({ read: 1, withSku: 2 });
+    expect(countSkuReads([], expected)).toEqual({ read: 0, withSku: 2 });
   });
 });

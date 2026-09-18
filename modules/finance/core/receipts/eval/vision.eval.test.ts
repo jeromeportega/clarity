@@ -10,6 +10,7 @@ import type { ReceiptImageInput } from '../vision/vision-provider';
 import {
   EVAL_PASS_FRACTION,
   MIN_EVAL_RECEIPTS,
+  countSkuReads,
   discoverReceipts,
   evalKeyPresent,
   evalTimeoutMs,
@@ -20,6 +21,7 @@ import {
   mimeTypeForFile,
   resolveEvalDir,
   resolveEvalLimit,
+  resolveEvalNameMode,
   resolveEvalRatio,
   sampleEvenly,
   type ExpectedReceipt,
@@ -53,6 +55,7 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
   let deps: ReceiptPipelineDeps;
   const dir = resolveEvalDir();
   const ratio = resolveEvalRatio();
+  const nameMode = resolveEvalNameMode();
   const limit = resolveEvalLimit();
   // An evenly spaced sample when capped, so a smoke run spans the whole period.
   const receiptFiles = RUN ? sampleEvenly(discoverReceipts(dir), limit) : [];
@@ -80,6 +83,9 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
 
       let correct = 0;
       let total = 0;
+      let skuRead = 0;
+      let skuTotal = 0;
+      let totalsOk = 0;
       const perReceipt: string[] = [];
       for (const file of receiptFiles) {
         const input: ReceiptImageInput = {
@@ -95,16 +101,20 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
           category: item.categoryId,
         }));
 
-        const score = gradeReceipt(graded, expected.items, ratio);
+        const score = gradeReceipt(graded, expected.items, ratio, nameMode);
         correct += score.correct;
         total += score.total;
+        const reads = countSkuReads(graded, expected.items);
+        skuRead += reads.read;
+        skuTotal += reads.withSku;
+        if (out.receipt.totalCents === expected.totalCents) totalsOk += 1;
         const totalOk = out.receipt.totalCents === expected.totalCents ? 'total ok' : `total ${out.receipt.totalCents} vs ${expected.totalCents}`;
         // Filenames embed the full transaction id; print only its tail.
         const label = (file.split('/').pop() ?? file).replace(/(\d{6})\d{8,}/, '…$1');
         perReceipt.push(`${label}: ${score.correct}/${score.total} items, ${totalOk}${out.status === 'ok' ? '' : ` [${out.status}]`}`);
         // Each miss on its own line: what was expected, what came back — so a
         // failing threshold says which names or categories to look at.
-        for (const miss of explainMisses(graded, expected.items, ratio)) {
+        for (const miss of explainMisses(graded, expected.items, ratio, nameMode)) {
           const got = miss.actual
             ? `"${miss.actual.canonicalName ?? ''}" [${miss.actual.category ?? '-'}]`
             : 'no line paired';
@@ -112,7 +122,10 @@ describe.skipIf(!RUN)('vision:eval — live accuracy over sanitized receipts (FR
         }
       }
       // Per-receipt diagnostics for the operator; the assertion stays a single threshold.
-      console.log(`vision:eval — ${correct}/${total} line items resolved (${((100 * correct) / Math.max(total, 1)).toFixed(1)}%)\n${perReceipt.join('\n')}`);
+      console.log(
+        `vision:eval — ${correct}/${total} line items resolved (${((100 * correct) / Math.max(total, 1)).toFixed(1)}%, names: ${nameMode})` +
+          ` · item numbers read ${skuRead}/${skuTotal} · totals ${totalsOk}/${receiptFiles.length}\n${perReceipt.join('\n')}`,
+      );
 
       // A single threshold assertion over the whole sample — never per-item.
       expect(total).toBeGreaterThan(0);

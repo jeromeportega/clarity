@@ -113,3 +113,19 @@ single-household loop is excellent.
 - **Eval margin.** The fixture eval passes at exactly 80%; the misses are naming
   variants ("Costco Rotisserie Chicken", "HDMI Cable 6ft", "Men's T-Shirt").
   Grade on the real Costco export before tuning the prompt further.
+
+## Real-data eval (2026-09-17, 15 of 78 Costco receipts, `RECEIPT_EVAL_NAME_MODE=identity`)
+
+- **Item numbers read off the photo: 60/62.** Totals: 15/15. This is the path
+  the product depends on — a read item number resolves from the household's
+  dictionary (bootstrapped from the digital export, then from human answers)
+  with no model naming at all.
+- **Unaided model naming: 9/62** against Costco's catalogue names, even with
+  pack sizes stripped from both sides. The receipt abbreviation alone does not
+  carry the product identity ("KS OLD FASHION" is a whisky, not oats), so the
+  answer is the dictionary plus the review queue, not prompt tuning. The
+  committed fixture eval (80% bar) grades the model-only path on synthetic
+  receipts and stays as the regression gate for that path.
+- Next: grade the dictionary-primed path (seed the dictionary from the same
+  export, then measure names) and the photo→item-number read on the remaining
+  receipts.

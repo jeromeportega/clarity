@@ -75,6 +75,43 @@ export function resolveEvalRatio(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(parsed) ? parsed : DEFAULT_RECEIPT_CONFIG.similarityRatio;
 }
 
+// How canonical names are compared. `full`: the name as written on both sides
+// (a retailer's catalogue name carries pack size — "…, 4.5 oz, 12-count").
+// `identity`: pack size, count, weight and volume are stripped from BOTH sides
+// before comparing, which is what the resolver is asked to produce (the size
+// lives in its own fields) and what a dictionary keyed by item number needs.
+export type EvalNameMode = 'full' | 'identity';
+
+export function resolveEvalNameMode(env: NodeJS.ProcessEnv = process.env): EvalNameMode {
+  return env.RECEIPT_EVAL_NAME_MODE?.trim().toLowerCase() === 'identity' ? 'identity' : 'full';
+}
+
+const UNITS = '(?:fl\\s*oz|oz|ounces?|lbs?|pounds?|g|kg|mg|ml|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?|ct|count|pk|packs?|pcs?|pieces?|rolls?|sheets?|bars?|pods?|tabs?|tablets?|capsules?|servings?|loads?|in|inch|inches|ft|feet|cm|mm|ply|pack)';
+// "4.5 oz", "12-count", "30 Rolls", "2-Ply", "0.7 oz Bars", "10-Gallon", "Size 2", "2 x 1 lb"
+// A number, optionally "x" another number, optionally up to two describing words
+// ("12 Individually Wrapped Rolls"), then a unit.
+const SIZE_TOKEN = new RegExp(`\\b\\d+(?:[.,/]\\d+)?\\s*(?:x\\s*\\d+(?:[.,/]\\d+)?\\s*)?-?\\s*(?:[a-z]+\\s+){0,2}?${UNITS}\\b\\.?`, 'gi');
+const SIZE_WORD = /\b(?:size)\s+\d+[a-z]?\b/gi;
+
+/** The product identity in a name: everything but pack size, count, weight and volume. */
+export function identityName(name: string): string {
+  return name
+    .replace(SIZE_TOKEN, ' ')
+    .replace(SIZE_WORD, ' ')
+    // Empty comma segments left behind (", , ") and dangling separators.
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !/^[\d\s.\-x×/]+$/i.test(s))
+    .join(', ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.])/g, '$1')
+    .trim();
+}
+
+function gradingName(name: string, mode: EvalNameMode): string {
+  return mode === 'identity' ? identityName(name) : name;
+}
+
 export function mimeTypeForFile(file: string): SupportedMimeType | null {
   const ext = extname(file).toLowerCase();
   const mime =
@@ -122,7 +159,7 @@ function asResolution(item: GradedItem): Resolution {
 // Never positional — the extracted list may carry rows the reference does not
 // (a separate instant-savings line, a fee line the ground truth excludes), and
 // a positional fallback would shift every later match by one.
-function pickActual(actual: GradedItem[], claimed: Set<number>, expected: ExpectedItem): number | undefined {
+function pickActual(actual: GradedItem[], claimed: Set<number>, expected: ExpectedItem, mode: EvalNameMode = 'full'): number | undefined {
   if (expected.sku) {
     const bySku = actual.findIndex((a, i) => !claimed.has(i) && a.sku !== null && a.sku === expected.sku);
     if (bySku >= 0) return bySku;
@@ -131,7 +168,7 @@ function pickActual(actual: GradedItem[], claimed: Set<number>, expected: Expect
   let bestScore = -1;
   actual.forEach((a, i) => {
     if (claimed.has(i)) return;
-    const score = similarityRatio(a.canonicalName ?? '', expected.name);
+    const score = similarityRatio(gradingName(a.canonicalName ?? '', mode), gradingName(expected.name, mode));
     if (score > bestScore) {
       bestScore = score;
       best = i;
@@ -149,9 +186,20 @@ export function gradeReceipt(
   actual: GradedItem[],
   expected: ExpectedItem[],
   ratio: number,
+  mode: EvalNameMode = 'full',
 ): { correct: number; total: number } {
   // One pairing, one verdict: the score is what is left after the misses.
-  return { correct: expected.length - explainMisses(actual, expected, ratio).length, total: expected.length };
+  return { correct: expected.length - explainMisses(actual, expected, ratio, mode).length, total: expected.length };
+}
+
+// How many expected items with an item number were READ off the photo: the
+// number appears among the extracted items, whatever the model then named it.
+// This is the metric the product actually depends on — a read item number
+// resolves from the household's dictionary with no model naming at all.
+export function countSkuReads(actual: GradedItem[], expected: ExpectedItem[]): { read: number; withSku: number } {
+  const seen = new Set(actual.map((a) => a.sku).filter((s): s is string => s !== null));
+  const withSku = expected.filter((e) => e.sku !== null);
+  return { read: withSku.filter((e) => seen.has(e.sku!)).length, withSku: withSku.length };
 }
 
 // The misses behind a gradeReceipt score, for the operator's eyes: which
@@ -161,18 +209,20 @@ export interface EvalMiss {
   expected: ExpectedItem;
   actual: GradedItem | null;
 }
-export function explainMisses(actual: GradedItem[], expected: ExpectedItem[], ratio: number): EvalMiss[] {
+export function explainMisses(actual: GradedItem[], expected: ExpectedItem[], ratio: number, mode: EvalNameMode = 'full'): EvalMiss[] {
   const misses: EvalMiss[] = [];
   const claimed = new Set<number>();
   for (const exp of expected) {
-    const idx = pickActual(actual, claimed, exp);
+    const idx = pickActual(actual, claimed, exp, mode);
     if (idx === undefined) {
       misses.push({ expected: exp, actual: null });
       continue;
     }
     claimed.add(idx);
     const got = actual[idx]!;
-    if (!isCorrectlyResolved(asResolution(got), { name: exp.name, category: exp.category }, ratio)) {
+    const resolution = asResolution(got);
+    const graded = { ...resolution, canonicalName: gradingName(resolution.canonicalName, mode) };
+    if (!isCorrectlyResolved(graded, { name: gradingName(exp.name, mode), category: exp.category }, ratio)) {
       misses.push({ expected: exp, actual: got });
     }
   }
