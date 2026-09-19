@@ -31,5 +31,9 @@ describe('isUniqueViolation', () => {
     expect(isUniqueViolation(new Error('no such table: t'))).toBe(false);
     expect(isUniqueViolation(null)).toBe(false);
     expect(isUniqueViolation('SQLITE_CONSTRAINT_UNIQUE')).toBe(false);
+    const a: { cause?: unknown; message: string } = { message: 'a' };
+    const b = { message: 'b', cause: a };
+    a.cause = b; // a two-hop cycle neither matches nor spins
+    expect(isUniqueViolation(a)).toBe(false);
   });
 });

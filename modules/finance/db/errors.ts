@@ -12,11 +12,12 @@
  * Deliberately not `instanceof LibsqlError` — a duplicated package copy or a
  * wrapped error would silently turn a 409 into a 500 (and did, once).
  */
-export function isUniqueViolation(err: unknown): boolean {
+export function isUniqueViolation(err: unknown, depth = 0): boolean {
   if (!err || typeof err !== 'object') return false;
   const e = err as { code?: unknown; extendedCode?: unknown; message?: unknown; cause?: unknown };
   const codes = [e.code, e.extendedCode].filter((c): c is string => typeof c === 'string');
   if (codes.some((c) => c === 'SQLITE_CONSTRAINT_UNIQUE' || c === 'SQLITE_CONSTRAINT_PRIMARYKEY')) return true;
   if (typeof e.message === 'string' && /UNIQUE constraint failed/i.test(e.message)) return true;
-  return e.cause !== undefined && e.cause !== err ? isUniqueViolation(e.cause) : false;
+  // Follow a wrapped error's `cause`, a few hops at most: a cyclic chain must not spin.
+  return depth < 4 && e.cause !== undefined && e.cause !== err ? isUniqueViolation(e.cause, depth + 1) : false;
 }
