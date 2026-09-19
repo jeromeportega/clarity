@@ -97,7 +97,9 @@ single-household loop is excellent.
 ## Later
 
 - Multi-user: households, members, invites.
-- **Bank connection: Plaid** (decided 2026-09-18; file imports stay for Amazon and Costco). Done so far: the sync core behind a `PlaidClient` port, accounts and transactions from a sandbox Item, encrypted tokens, `/banks`. Next: Link in the app (link token + public-token exchange), disconnect (`/item/remove`), tombstones for bank lines a sync removed under a human's match, webhook-driven or scheduled sync, ITEM_LOGIN_REQUIRED re-auth, and the production Plaid application.
+- **Bank connection: Plaid** (decided 2026-09-18; file imports stay for Amazon and Costco). Done so far: the sync core behind a `PlaidClient` port, accounts and transactions from a sandbox Item, encrypted tokens, `/banks`.
+  Next: Link in the app (link token + public-token exchange), disconnect (`/item/remove`), tombstones for bank lines a sync removed under a human's match, webhook-driven or scheduled sync, ITEM_LOGIN_REQUIRED re-auth, and the production Plaid application.
+- **Queue (2026-09-19):** the "unmatched transaction" item is gone. An unmatched bank line is an ordinary charge; the queue offers "upload the receipt for a breakdown" only for recent debits at receipt-capable stores (`queue/receipt-capable.ts`, plus the household's own receipt history), in its own section, without red. What ordinary charges still lack is a home: a transactions ledger with merchant-level categories (from Plaid's `category_hint`, merchant rules, the person's past choices) that counts in budgets at the transaction level — the next standard-budgeting slice. Amazon charges with no order imported are not asked about yet (that ask is "import your orders", which needs the import page).
 - Email forwarding for order confirmations (`.eml` adapter exists as a seam).
 - Additional retailers' digital receipts.
 - Second module of the home platform (chores, calendars) once finance is solid.

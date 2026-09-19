@@ -100,7 +100,7 @@ describe('receipts page never serializes the mutation token', () => {
     // The page is an async server component (it resolves the read scope);
     // without sign-in configured and outside demo mode it renders uploads
     // disabled — and, whatever it renders, never the secret.
-    const html = renderToStaticMarkup(await ReceiptsPage());
+    const html = renderToStaticMarkup(await ReceiptsPage({}));
     expect(html).not.toContain(CANARY);
     expect(html).not.toMatch(/mutationToken/);
     expect(html).toContain('Receipt uploads are temporarily disabled');

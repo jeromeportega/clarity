@@ -142,14 +142,16 @@ I/O ports:
 
 ### 6. Review queue and corrections — `core/queue/`, `core/corrections/`
 
-`assembleQueue(scope, gateway, db)` (`queue/assemble.ts`) unions four uncertainty sources into `QueueItem { id, type, reason, amountCents? }`:
+`assembleQueue(scope, gateway, db, { now? })` (`queue/assemble.ts`) unions four sources into `QueueItem { id, type, reason, amountCents?, context?, transaction? }`:
 
 | `type` | Source |
 |---|---|
 | `sku_resolution` | `receipt_items.needs_review = 1` |
 | `ambiguous_match` | `gateway.getAmbiguousMatchGroups()` |
-| `unmatched_txn` | `gateway.listUnmatchedTransactions()` |
+| `missing_receipt` | `gateway.listUnmatchedTransactions()`, filtered to **debits in the last 60 days at a receipt-capable store** (`queue/receipt-capable.ts`: a built-in list of warehouse, big-box, home-improvement, grocery and pharmacy chains matched as whole words on the normalised merchant, plus every store the household has already uploaded a receipt from). Every other unmatched bank line — fuel, rent, a restaurant — is an ordinary charge and is **not** a queue item. |
 | `flagged_receipt` | `receipts.needs_review = 1` (arithmetic failure, or an unreadable photo — the placeholder rows carry `unreadable: true` and offer "Read again") |
+
+Three of these are questions; `missing_receipt` is an offer ("upload this receipt for a breakdown") and the queue page renders it apart, in its own section below the questions, newest charge first, with "Upload receipt" (the upload page, told which charge it is for via `?txn=`) and "No receipt" (a dismiss). It carries `transaction { merchant, postedDate }`.
 
 The two receipt-borne types also carry `context` (`QueueItemContext`): the receipt (store, date, `receiptId`), whether a photo can be shown (`hasImage`, true for `source = 'photo'`), and for `sku_resolution` the model's current answer (item number, canonical name, category, quantity); for `flagged_receipt` the line count. The queue row renders it under the reason with a thumbnail from `/api/receipts/image/[receiptId]` and a link to the evidence page, so a decision takes one glance.
 
@@ -159,9 +161,9 @@ The two receipt-borne types also carry `context` (`QueueItemContext`): the recei
 
 What "apply at its source" means:
 
-| decision | `sku_resolution` | `flagged_receipt` | `ambiguous_match` | `unmatched_txn` |
+| decision | `sku_resolution` | `flagged_receipt` | `ambiguous_match` | `missing_receipt` |
 |---|---|---|---|---|
-| `confirm` | `needs_review = 0`; `name_confidence = 1.0` only if the item has a `canonical_name`, `category_confidence = 1.0` only if it has a `category_id` — confirm vouches for what exists, never for a blank | `receipts.needs_review = 0` | highest-confidence pending `matches` row → `manual`, its siblings → `rejected`; with no pending rows, decision row only | decision row only |
+| `confirm` | `needs_review = 0`; `name_confidence = 1.0` only if the item has a `canonical_name`, `category_confidence = 1.0` only if it has a `category_id` — confirm vouches for what exists, never for a blank | `receipts.needs_review = 0` | highest-confidence pending `matches` row → `manual`, its siblings → `rejected`; with no pending rows, decision row only | refused, `not_applicable` (nothing to confirm; the receipt is added on the upload page) |
 | `dismiss` | `needs_review = 0` (confidences untouched) | `receipts.needs_review = 0` | decision row only | decision row only |
 | `correct / pickCategoryId` | `category_id`, `category_confidence = 1.0`, `needs_review = 0`, **and** — only when the item already has a `canonical_name` — a `source: 'human'` `sku_dictionary` upsert keyed by the receipt's store + `sku ?? raw_description`, carrying that name at the item's existing `name_confidence` (the human chose a category, not a name; an item with no canonical name teaches the dictionary nothing, so a raw shelf abbreviation can never become a permanent "human" name) | — | — | — |
 | `correct / pickMatchCandidateId` | — | — | the named **pending** candidate → `manual`, other pending rows for that transaction → `rejected`; a rejected or settled row is `candidate_mismatch` | — |
@@ -171,7 +173,7 @@ So an item leaves the queue two ways at once: the `review_decisions` anti-join, 
 
 A decision on an `ambiguous_match` (confirm, or `pickMatchCandidateId`) turns one candidate row `manual`; the routes and server actions then re-run reconciliation for the household, and the engine honours that row as a `ConfirmedMatch` (§5) — linking, classifying and counting the receipt or order the human chose, and never proposing another candidate for that transaction.
 
-Decisions are only accepted for items actually in the queue: a `sku_resolution` or `flagged_receipt` target whose `needs_review` flag is already clear is `not_queued`, so a decision can never rewrite confidence on a row the human was never shown. Every read and write is scoped to the household — `receipt_items` through `receipts.household_id`, `matches` and transaction-typed items through `transactions → accounts.household_id` — and a target outside it throws `not_found` rather than updating nothing, for all four item types. Refusals are a `CorrectionError` with a stable `code` (`invalid_variant`, `unknown_category`, `not_found`, `not_queued`, `candidate_mismatch`) that the three mutation routes map to **400** with the code in the JSON body. Categories arrive as anything `categoryIdFor` accepts (slug, display name, legacy name) and are stored as the slug id; an unrecognised one is `unknown_category`.
+Decisions are only accepted for items actually in the queue: a `sku_resolution` or `flagged_receipt` target whose `needs_review` flag is already clear is `not_queued`, so a decision can never rewrite confidence on a row the human was never shown. Every read and write is scoped to the household — `receipt_items` through `receipts.household_id`, `matches` and transaction-typed items through `transactions → accounts.household_id` — and a target outside it throws `not_found` rather than updating nothing, for all four item types. Refusals are a `CorrectionError` with a stable `code` (`invalid_variant`, `unknown_category`, `not_found`, `not_queued`, `not_applicable`, `candidate_mismatch`) that the three mutation routes map to **400** with the code in the JSON body. Categories arrive as anything `categoryIdFor` accepts (slug, display name, legacy name) and are stored as the slug id; an unrecognised one is `unknown_category`.
 
 ### 7. Read gateway, true spend, evidence — `core/reconciliation/`, `core/truespend/`, `core/evidence/`
 
@@ -218,9 +220,9 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 | `RECEIPT_EVAL_DIR`, `RECEIPT_EVAL_RATIO` | Eval harness: receipt directory and Dice ratio overrides. |
 | `E2E_BASE_URL` | Playwright target (defaults to the deployed URL in `playwright.config.ts`). |
 
-- **Migrations:** `modules/finance/db/migrations/0000`–`0006`, generated by drizzle-kit (`npm run db:generate` / `db:migrate` in `modules/finance`). `createTestDb()` applies them to a throwaway temp file for every test.
+- **Migrations:** `modules/finance/db/migrations/0000`–`0010`, generated by drizzle-kit (`npm run db:generate` / `db:migrate` in `modules/finance`). `createTestDb()` applies them to a throwaway temp file for every test.
 - **Household scope:** `DEMO_HOUSEHOLD_ID` is a code constant (`core/scope.ts`), deliberately not an env var. `apps/web/lib/public-mode.ts#resolveHouseholdScope` returns it on every branch; mutation routes and server actions reference it directly.
-- **Demo seed:** `npm run seed:demo` → `core/seed/demoHousehold.ts` inserts a household, one account, two orders, two receipts, three transactions, then runs `reconcile()` over a hand-written `ReconcileInputs` literal and persists through `DrizzleReconcileSink`.
+- **Demo seed:** `npm run seed:demo` → `core/seed/demoHousehold.ts` inserts a household, one account, two orders, two receipts, four transactions, then runs `reconcile()` over a hand-written `ReconcileInputs` literal and persists through `DrizzleReconcileSink`.
 - **Deploy:** `vercel.json` (`npm ci`, `npm run build --workspace=@clarity/web`, output `apps/web/.next`). `deploy/deploy.sh` prints the exact `vercel` command after pre-flight checks but never executes it; `deploy/smoke.sh` asserts `GET /api/queue → 200` with demo data and `POST /api/queue/<id>/confirm` without a token → 401.
 
 ## Web app surface — `apps/web/`
@@ -229,7 +231,7 @@ Environment variables (names only; values live in Vercel / a local untracked `.e
 
 | Route | Renders |
 |---|---|
-| `/` | Review Queue — a table of `QueueItem`s (type badge, reason, amount) with confirm / correct / dismiss for a writable scope; read-only on the public demo. Redirects to `/sign-in` (stranger) or `/no-access` (signed in, no household) without a scope. |
+| `/` | Review Queue — the questions (type badge, reason, amount; confirm / correct / dismiss for a writable scope) and, in a section below them, the receipts you could add (Upload receipt / No receipt); read-only on the public demo. Redirects to `/sign-in` (stranger) or `/no-access` (signed in, no household) without a scope. |
 | `/receipts` | Receipt upload page. The dropzone (`ReceiptDrop`: click / drag-drop / keyboard; JPEG, PNG, PDF → extracted line items) is enabled for a signed-in person (the session cookie is the upload route's credential) and rendered disabled on the public demo or without sign-in. |
 | `/banks` | Connected institutions (Plaid Items) with sync status and their accounts, plus file/manual accounts; a signed-in person can sync now and, in the sandbox, connect Plaid's test bank. Read-only on the demo or without Plaid configured. |
 | `/true-spend?month=YYYY-MM` | Category breakdown with item drill-down; same scope rule and redirects as `/`. |
@@ -293,6 +295,7 @@ Server actions (`app/actions/queue.ts`: `confirmItem`, `dismissItem`, `correctIt
 
 Seams that exist and are tested but are not connected on the live HTTP path, or behaviours that differ from what the code comments imply:
 
+- **A receipt uploaded from a "Receipt wanted" row is not pinned to that charge.** `/receipts?txn=` only names the charge; the upload runs the ordinary matcher (±3 days, ±$15, name similarity), which may pick another bank line or none — in which case the offer stays and the receipt counts no dollars. Threading the id through the upload as a `ConfirmedMatch` is the next queue step. Also: `listUnmatchedTransactions` treats a transaction with only `rejected` match rows as matched, so rejecting the wrong receipt for a Costco charge also ends the offer to upload the right one.
 - **Receipt images predating durable storage have no image.** Uploads now land in the private Blob store (or the local data directory) under `receipts/<household>/<imageHash>` and `/api/receipts/image/[receiptId]` serves them after the household check; receipts uploaded before this (whose bytes went to `/tmp`) and digital imports (no image at all) answer 404 there, and the evidence page still shows the link.
 - **Reconciliation runs whole-household, synchronously, after every write.** `reconcileAfterWrite` re-runs `reconcile()` over everything the household has each time an ingest, upload or match decision commits. Correct, idempotent and now indexed (no per-pair scan), but still one run per request; a very large household will want an incremental or queued run.
 - **A receipt is not in True Spend until its bank line is.** Counted dollars are bank-anchored, so a photographed or imported receipt whose bank export has not arrived — or that lost its bank line to a better-scoring receipt — shows in the receipts list but in no rollup, and nothing in the queue says so yet (the engine's `unmatched.receipts` is reported in the run summary only).

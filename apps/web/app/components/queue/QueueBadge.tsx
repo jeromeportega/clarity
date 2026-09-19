@@ -1,3 +1,5 @@
+// Explicit React import for vitest/esbuild compatibility (classic JSX transform).
+import React from 'react';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import type { QueueItemType } from '../../../../../modules/finance/core/queue/types';
 
@@ -6,7 +8,7 @@ type BadgeConfig = { label: string; variant: BadgeProps['variant'] };
 const BADGE_CONFIG = {
   sku_resolution: { label: 'SKU Resolution', variant: 'warning' },
   ambiguous_match: { label: 'Ambiguous Match', variant: 'info' },
-  unmatched_txn: { label: 'Unmatched', variant: 'destructive' },
+  missing_receipt: { label: 'Receipt wanted', variant: 'outline' },
   flagged_receipt: { label: 'Flagged Receipt', variant: 'secondary' },
 } as const satisfies Record<QueueItemType, BadgeConfig>;
 

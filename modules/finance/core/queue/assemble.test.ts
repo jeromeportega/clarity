@@ -20,6 +20,12 @@ import type {
 } from '../reconciliation/types';
 import { assembleQueue } from './assemble';
 
+// The fixture transactions are dated 2025-01-10; the receipt ask window is
+// measured from this clock, so they are "recent" in every test that does not
+// say otherwise.
+const NOW = () => new Date('2025-01-12T12:00:00Z');
+const assemble = (scope: HouseholdScope, gw: ReconciliationGateway, db: FinanceDb) => assembleQueue(scope, gw, db, { now: NOW });
+
 // ---------------------------------------------------------------------------
 // Isolated test DB helper
 //
@@ -154,7 +160,7 @@ async function seedDecision(
   });
 }
 
-function makeTxn(id: string, householdId: string, merchant = 'ACME STORE'): Transaction {
+function makeTxn(id: string, householdId: string, merchant = 'COSTCO WHSE', over: Partial<Transaction> = {}): Transaction {
   return {
     id,
     householdId,
@@ -163,6 +169,7 @@ function makeTxn(id: string, householdId: string, merchant = 'ACME STORE'): Tran
     amountCents: -1500,
     direction: 'debit',
     normalizedMerchant: merchant,
+    ...over,
   };
 }
 
@@ -225,12 +232,12 @@ describe('assembleQueue', () => {
 
     await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: 'Costco' });
 
-    const items = await assembleQueue(scope, gw, db);
+    const items = await assemble(scope, gw, db);
 
     const types = items.map((i) => i.type);
     expect(types).toContain('sku_resolution');
     expect(types).toContain('ambiguous_match');
-    expect(types).toContain('unmatched_txn');
+    expect(types).toContain('missing_receipt');
     expect(types).toContain('flagged_receipt');
   });
 
@@ -246,7 +253,7 @@ describe('assembleQueue', () => {
     const gw = new ControlledGateway([makeGroup(txnId1)], [makeTxn(txnId2, HOUSEHOLD_A)]);
     await seedReceipt(db, HOUSEHOLD_A, { needsReview: true });
 
-    const items = await assembleQueue(scope, gw, db);
+    const items = await assemble(scope, gw, db);
     for (const item of items) {
       expect(item.reason.length).toBeGreaterThan(0);
     }
@@ -266,7 +273,7 @@ describe('assembleQueue', () => {
       ids.push(await seedReceiptItem(db, receiptId, { needsReview: true }));
     }
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     const skuItems = items.filter((i) => i.type === 'sku_resolution');
     expect(skuItems).toHaveLength(5);
     expect(skuItems.map((i) => i.id).sort()).toEqual([...ids].sort());
@@ -281,7 +288,7 @@ describe('assembleQueue', () => {
       ids.push(await seedReceipt(db, HOUSEHOLD_A, { needsReview: true }));
     }
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     const flagged = items.filter((i) => i.type === 'flagged_receipt');
     expect(flagged).toHaveLength(4);
     expect(flagged.map((i) => i.id).sort()).toEqual([...ids].sort());
@@ -294,13 +301,13 @@ describe('assembleQueue', () => {
     const txnIds = [randomUUID(), randomUUID(), randomUUID()];
     const gw = new ControlledGateway(txnIds.map(makeGroup), []);
 
-    const items = await assembleQueue(scope, gw, db);
+    const items = await assemble(scope, gw, db);
     const ambiguous = items.filter((i) => i.type === 'ambiguous_match');
     expect(ambiguous).toHaveLength(3);
     expect(ambiguous.map((i) => i.id).sort()).toEqual([...txnIds].sort());
   });
 
-  it('surfaces all N unmatched_txn items from the gateway', async () => {
+  it('surfaces every recent receipt-capable debit the gateway reports as a missing_receipt offer', async () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);
 
@@ -311,10 +318,72 @@ describe('assembleQueue', () => {
     ];
     const gw = new ControlledGateway([], txns);
 
-    const items = await assembleQueue(scope, gw, db);
-    const unmatched = items.filter((i) => i.type === 'unmatched_txn');
+    const items = await assemble(scope, gw, db);
+    const unmatched = items.filter((i) => i.type === 'missing_receipt');
     expect(unmatched).toHaveLength(3);
     expect(unmatched.map((i) => i.id).sort()).toEqual(txns.map((t) => t.id).sort());
+  });
+
+  it('an ordinary charge — fuel, a utility, a restaurant — is not a queue item at all', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+    const gw = new ControlledGateway([], [
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'SHELL OIL 57442'),
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'PG E WEB PAYMENT'),
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'CHIPOTLE 1401'),
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'ACME STORE'),
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO GAS 0021'), // fuel, even at a warehouse club
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'BJS RESTAURANT BREWHOUSE'), // a namesake
+    ]);
+    expect(await assemble(scope, gw, db)).toEqual([]);
+  });
+
+  it('a refund at a store, and a store charge older than the ask window, are not offered', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+    const recent = makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO WHSE');
+    const refund = makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO WHSE', { amountCents: 2599, direction: 'credit' });
+    const old = makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO WHSE', { postedDate: '2024-10-01' });
+    const items = await assemble(scope, new ControlledGateway([], [recent, refund, old]), db);
+    expect(items.map((i) => i.id)).toEqual([recent.id]);
+    // The same charges asked about a year later: nothing is recent any more.
+    const later = await assembleQueue(scope, new ControlledGateway([], [recent, refund, old]), db, { now: () => new Date('2026-01-12T00:00:00Z') });
+    expect(later).toEqual([]);
+  });
+
+  it('a store this household has uploaded a receipt from before counts as receipt-capable', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+    await seedReceipt(db, HOUSEHOLD_A, { store: 'Corner Market #12' }); // as the receipt header prints it
+    const corner = makeTxn(randomUUID(), HOUSEHOLD_A, 'CORNER MARKET 123');
+    const other = makeTxn(randomUUID(), HOUSEHOLD_A, 'CORNER BISTRO');
+    const items = await assemble(scope, new ControlledGateway([], [corner, other]), db);
+    expect(items.map((i) => i.id)).toEqual([corner.id]);
+    expect(items[0]!.transaction).toEqual({ merchant: 'Corner Market', postedDate: '2025-01-10' });
+  });
+
+  it('another household’s receipt history does not widen this household’s store list', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+    await seedHousehold(db, HOUSEHOLD_B);
+    await seedReceipt(db, HOUSEHOLD_B, { store: 'Corner Market' });
+    const corner = makeTxn(randomUUID(), HOUSEHOLD_A, 'CORNER MARKET 123');
+    expect(await assemble(scope, new ControlledGateway([], [corner]), db)).toEqual([]);
+  });
+
+  it('a missing_receipt item names the store, says what the upload gives, and carries the charge', async () => {
+    const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
+    await seedHousehold(db, HOUSEHOLD_A);
+    const txn = makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO WHSE 0420');
+    const [item] = await assemble(scope, new ControlledGateway([], [txn]), db);
+    expect(item).toMatchObject({
+      id: txn.id,
+      type: 'missing_receipt',
+      reason: 'Costco charge — upload the receipt for an item breakdown',
+      amountCents: -1500,
+      transaction: { merchant: 'Costco', postedDate: '2025-01-10' },
+    });
+    expect(item!.context).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------
@@ -334,14 +403,14 @@ describe('assembleQueue', () => {
 
     await seedDecision(db, HOUSEHOLD_A, 'sku_resolution', idA);
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     const skuIds = items.filter((i) => i.type === 'sku_resolution').map((i) => i.id);
     expect(skuIds).not.toContain(idA);
     expect(skuIds).toContain(idB);
     expect(skuIds).toContain(idC);
   });
 
-  it('excludes a decided unmatched_txn while other items remain', async () => {
+  it('excludes a decided missing_receipt while other items remain', async () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);
 
@@ -349,10 +418,10 @@ describe('assembleQueue', () => {
     const txnB = makeTxn(randomUUID(), HOUSEHOLD_A);
     const gw = new ControlledGateway([], [txnA, txnB]);
 
-    await seedDecision(db, HOUSEHOLD_A, 'unmatched_txn', txnA.id);
+    await seedDecision(db, HOUSEHOLD_A, 'missing_receipt', txnA.id);
 
-    const items = await assembleQueue(scope, gw, db);
-    const unmatchedIds = items.filter((i) => i.type === 'unmatched_txn').map((i) => i.id);
+    const items = await assemble(scope, gw, db);
+    const unmatchedIds = items.filter((i) => i.type === 'missing_receipt').map((i) => i.id);
     expect(unmatchedIds).not.toContain(txnA.id);
     expect(unmatchedIds).toContain(txnB.id);
   });
@@ -364,12 +433,12 @@ describe('assembleQueue', () => {
     const txnId = randomUUID();
     const gw = new ControlledGateway([makeGroup(txnId)], [makeTxn(txnId, HOUSEHOLD_A)]);
 
-    // Decide only under unmatched_txn; the same id under ambiguous_match must survive
-    await seedDecision(db, HOUSEHOLD_A, 'unmatched_txn', txnId);
+    // Decide only under missing_receipt; the same id under ambiguous_match must survive
+    await seedDecision(db, HOUSEHOLD_A, 'missing_receipt', txnId);
 
-    const items = await assembleQueue(scope, gw, db);
+    const items = await assemble(scope, gw, db);
     const ambiguous = items.filter((i) => i.type === 'ambiguous_match');
-    const unmatched = items.filter((i) => i.type === 'unmatched_txn');
+    const unmatched = items.filter((i) => i.type === 'missing_receipt');
 
     expect(ambiguous.map((i) => i.id)).toContain(txnId);   // NOT filtered
     expect(unmatched.map((i) => i.id)).not.toContain(txnId); // filtered
@@ -383,7 +452,7 @@ describe('assembleQueue', () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     expect(items).toEqual([]);
   });
 
@@ -394,7 +463,7 @@ describe('assembleQueue', () => {
     const receiptId = await seedReceipt(db, HOUSEHOLD_A);
     await seedReceiptItem(db, receiptId, { needsReview: false });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     expect(items.filter((i) => i.type === 'sku_resolution')).toHaveLength(0);
   });
 
@@ -404,7 +473,7 @@ describe('assembleQueue', () => {
 
     await seedReceipt(db, HOUSEHOLD_A, { needsReview: false });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     expect(items.filter((i) => i.type === 'flagged_receipt')).toHaveLength(0);
   });
 
@@ -415,20 +484,20 @@ describe('assembleQueue', () => {
     const receiptId = await seedReceipt(db, HOUSEHOLD_A);
     await seedReceiptItem(db, receiptId, { needsReview: true, linePriceCents: -399 });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     const skuItem = items.find((i) => i.type === 'sku_resolution');
     expect(skuItem?.amountCents).toBe(-399);
   });
 
-  it('unmatched_txn items carry amountCents from the transaction', async () => {
+  it('missing_receipt items carry amountCents from the transaction', async () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);
 
     const txn = makeTxn(randomUUID(), HOUSEHOLD_A);
     const gw = new ControlledGateway([], [txn]);
 
-    const items = await assembleQueue(scope, gw, db);
-    const unmatchedItem = items.find((i) => i.type === 'unmatched_txn');
+    const items = await assemble(scope, gw, db);
+    const unmatchedItem = items.find((i) => i.type === 'missing_receipt');
     expect(unmatchedItem?.amountCents).toBe(txn.amountCents);
   });
 
@@ -438,7 +507,7 @@ describe('assembleQueue', () => {
 
     await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, totalCents: 5499 });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     const flaggedItem = items.find((i) => i.type === 'flagged_receipt');
     expect(flaggedItem?.amountCents).toBe(5499);
   });
@@ -450,7 +519,7 @@ describe('assembleQueue', () => {
     const placeholder = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: '', totalCents: 0 });
     const arithmetic = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: 'COSTCO', totalCents: 1234 });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     expect(items.find((i) => i.id === placeholder)?.reason).toBe('Flagged receipt: photo could not be read');
     expect(items.find((i) => i.id === arithmetic)?.reason).toBe('Flagged receipt: arithmetic check failed (COSTCO)');
     // Only the unreadable one offers "read again"; the arithmetic failure is decided in the queue.
@@ -465,7 +534,7 @@ describe('assembleQueue', () => {
     const txnId = randomUUID();
     const gw = new ControlledGateway([makeGroup(txnId)], []);
 
-    const items = await assembleQueue(scope, gw, db);
+    const items = await assemble(scope, gw, db);
     const ambiguousItem = items.find((i) => i.type === 'ambiguous_match');
     expect(ambiguousItem?.amountCents).toBeUndefined();
   });
@@ -488,7 +557,7 @@ describe('assembleQueue', () => {
     await seedReceipt(db, HOUSEHOLD_B, { needsReview: true });
 
     const scopeA: HouseholdScope = { householdId: HOUSEHOLD_A };
-    const items = await assembleQueue(scopeA, new ControlledGateway(), db);
+    const items = await assemble(scopeA, new ControlledGateway(), db);
 
     const skuItems = items.filter((i) => i.type === 'sku_resolution');
     const flaggedItems = items.filter((i) => i.type === 'flagged_receipt');
@@ -498,7 +567,7 @@ describe('assembleQueue', () => {
     expect(flaggedItems).toHaveLength(1);
   });
 
-  it('drops unmatched_txn items the gateway returned for the wrong household (defense-in-depth)', async () => {
+  it('drops missing_receipt items the gateway returned for the wrong household (defense-in-depth)', async () => {
     await seedHousehold(db, HOUSEHOLD_A);
     await seedHousehold(db, HOUSEHOLD_B);
 
@@ -506,8 +575,8 @@ describe('assembleQueue', () => {
     const txnB = makeTxn(randomUUID(), HOUSEHOLD_B);
     const gw = new ControlledGateway([], [txnB]);
 
-    const items = await assembleQueue({ householdId: HOUSEHOLD_A }, gw, db);
-    expect(items.filter((i) => i.type === 'unmatched_txn')).toHaveLength(0);
+    const items = await assemble({ householdId: HOUSEHOLD_A }, gw, db);
+    expect(items.filter((i) => i.type === 'missing_receipt')).toHaveLength(0);
   });
 
   it('returns an empty array for an unknown householdId (no data, no crash)', async () => {
@@ -517,7 +586,7 @@ describe('assembleQueue', () => {
     const receiptId = await seedReceipt(db, HOUSEHOLD_A);
     await seedReceiptItem(db, receiptId, { needsReview: true });
 
-    const items = await assembleQueue(scope, new ControlledGateway(), db);
+    const items = await assemble(scope, new ControlledGateway(), db);
     expect(items).toEqual([]);
   });
 
@@ -535,7 +604,7 @@ describe('assembleQueue', () => {
       const digitalReceipt = await seedReceipt(db, HOUSEHOLD_A); // source 'test': no photo
       const digitalItem = await seedReceiptItem(db, digitalReceipt, { needsReview: true });
 
-      const items = await assembleQueue(scope, new ControlledGateway(), db);
+      const items = await assemble(scope, new ControlledGateway(), db);
       expect(items.find((i) => i.id === itemId)?.context).toEqual({
         receiptId: photoReceipt, store: 'COSTCO', purchasedAt: '2026-06-13', hasImage: true,
         sku: '1234567', canonicalName: 'Kirkland Signature Organic Extra Virgin Olive Oil', categoryId: 'groceries', quantity: 2,
@@ -554,15 +623,15 @@ describe('assembleQueue', () => {
       await seedReceiptItem(db, flagged);
       const placeholder = await seedReceipt(db, HOUSEHOLD_A, { needsReview: true, store: '', totalCents: 0 });
 
-      const items = await assembleQueue(scope, new ControlledGateway(), db);
+      const items = await assemble(scope, new ControlledGateway(), db);
       expect(items.find((i) => i.id === flagged)?.context).toEqual({ receiptId: flagged, store: 'COSTCO', purchasedAt: '2025-01-15', hasImage: false, itemCount: 2 });
       expect(items.find((i) => i.id === placeholder)?.context).toEqual({ receiptId: placeholder, store: null, purchasedAt: null, hasImage: false, itemCount: 0 });
     });
 
-    it('ambiguous_match and unmatched_txn items carry no context', async () => {
+    it('ambiguous_match and missing_receipt items carry no context', async () => {
       const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
       await seedHousehold(db, HOUSEHOLD_A);
-      const items = await assembleQueue(scope, new ControlledGateway([makeGroup(randomUUID())]), db);
+      const items = await assemble(scope, new ControlledGateway([makeGroup(randomUUID())]), db);
       expect(items.length).toBeGreaterThan(0);
       for (const item of items) expect(item.context).toBeUndefined();
     });

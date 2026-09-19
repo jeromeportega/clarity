@@ -14,12 +14,16 @@ test.describe('golden path', () => {
     ).toBeVisible();
 
     // At least one real queue item/row is shown. The demo household surfaces
-    // items such as "Wireless Headphones" / "WHOLE FOODS", plus unmatched /
-    // ambiguous rows — assert that any one of these is visible.
+    // items such as "Wireless Headphones" / "WHOLE FOODS", plus ambiguous rows
+    // — assert that any one of these is visible.
     const queueItem = page
-      .getByText(/wireless headphones|whole foods|unmatched|ambiguous/i)
+      .getByText(/wireless headphones|whole foods|ambiguous/i)
       .first();
     await expect(queueItem).toBeVisible();
+
+    // The seed's recent Costco charge with no receipt is offered, not flagged.
+    await expect(page.getByRole('heading', { name: /receipts you could add/i })).toBeVisible();
+    await expect(page.getByText(/unmatched/i)).toHaveCount(0);
   });
 
   test('true-spend renders a category breakdown', async ({ page }) => {

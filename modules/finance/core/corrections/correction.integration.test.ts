@@ -346,7 +346,7 @@ describe('anti-stub integration: CorrectionError → 400 with the code in the bo
     const res = await postCorrect(
       makeRequest(
         {
-          itemType: 'unmatched_txn',
+          itemType: 'missing_receipt',
           correction: { variant: 'pickCategoryId', categoryId: 'groceries' },
         },
         'correct',

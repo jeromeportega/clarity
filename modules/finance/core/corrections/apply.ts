@@ -83,6 +83,7 @@ export type CorrectionErrorCode =
   | 'unknown_category'
   | 'not_found'
   | 'not_queued'
+  | 'not_applicable'
   | 'candidate_mismatch';
 
 export class CorrectionError extends Error {
@@ -210,7 +211,7 @@ async function requireQueuedReceipt(
 }
 
 /**
- * Assert a transaction is in this household (ambiguous_match / unmatched_txn
+ * Assert a transaction is in this household (ambiguous_match / missing_receipt
  * targets). `transactions` carries no household column, so scoping goes
  * through accounts.
  */
@@ -336,7 +337,7 @@ async function learnFromHuman(
 const QUEUE_ITEM_TYPES: ReadonlySet<string> = new Set<QueueItem['type']>([
   'sku_resolution',
   'ambiguous_match',
-  'unmatched_txn',
+  'missing_receipt',
   'flagged_receipt',
 ]);
 
@@ -395,10 +396,11 @@ async function applyConfirm(
       await resolveAmbiguity(tx, scope, bestCandidate(pending).id, pending);
       return;
     }
-    case 'unmatched_txn':
-      // Nothing to change: there is no match row and the transaction stands.
+    case 'missing_receipt':
+      // An offer, not a question: there is nothing to confirm. The receipt is
+      // added on the upload page; "no receipt" is a dismiss.
       await requireScopedTransaction(tx, scope, item.id);
-      return;
+      throw new CorrectionError('not_applicable', 'A missing receipt is not confirmed; upload the receipt or dismiss the offer');
   }
 }
 
@@ -429,7 +431,7 @@ async function applyDismiss(
       return;
     }
     case 'ambiguous_match':
-    case 'unmatched_txn':
+    case 'missing_receipt':
       await requireScopedTransaction(tx, scope, item.id);
       return;
   }
