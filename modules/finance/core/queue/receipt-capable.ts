@@ -138,11 +138,11 @@ export function receiptCapableMerchant(normalizedMerchant: string, learned: read
   const lineTokens = normalizeStore(line).split(' ').filter((t) => t.length > 0);
   for (const store of learned) {
     const n = sharedPrefixLength(lineTokens, store.tokens);
-    if (n > 0) {
-      // The whole learned key matched: its proper spelling. Only the line's
-      // shorter head matched: the line's own words, title-cased.
-      return n === store.tokens.length ? store.display : titleCase(lineTokens.slice(0, n).join(' '));
-    }
+    // The whole learned key led the line: its proper spelling.
+    if (n > 0 && n === store.tokens.length) return store.display;
+    // The whole (shorter) line led the learned key: the line's own words —
+    // but at least two of them; one word of a longer name is not the name.
+    if (n >= 2 && n === lineTokens.length) return titleCase(lineTokens.join(' '));
     if (containsRun(lineTokens, store.tokens)) return store.display;
   }
   return null;
