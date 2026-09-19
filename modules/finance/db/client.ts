@@ -66,13 +66,26 @@ export function uncachedFetch(base: typeof fetch = fetch): typeof fetch {
   return (input, init) => base(input, { ...init, cache: 'no-store' });
 }
 
-function openClient(url: string, authToken?: string): Client {
-  const remote = !url.startsWith('file:');
-  const client = createClient({
+/** A URL the libSQL client will reach over the network (HTTP/WebSocket), as opposed to a local file or `:memory:`. */
+export function isRemoteDbUrl(url: string): boolean {
+  return /^(libsql|https?|wss?):\/\//i.test(url);
+}
+
+/**
+ * The libSQL client config for a URL: the token when there is one, and — for
+ * a remote URL only — the uncached `fetch`. Exported, like `resolveDbConfig`,
+ * so the wiring is unit-testable without opening a client.
+ */
+export function clientConfig(url: string, authToken?: string, base: typeof fetch = fetch): { url: string; authToken?: string; fetch?: typeof fetch } {
+  return {
     url,
     ...(authToken ? { authToken } : {}),
-    ...(remote ? { fetch: uncachedFetch() } : {}),
-  });
+    ...(isRemoteDbUrl(url) ? { fetch: uncachedFetch(base) } : {}),
+  };
+}
+
+function openClient(url: string, authToken?: string): Client {
+  const client = createClient(clientConfig(url, authToken));
   // A second writer on the same file waits (up to 5 s) for the write lock
   // instead of failing at once with SQLITE_BUSY. A file client runs its
   // statements FIFO, so this lands before anything issued after it. Remote
