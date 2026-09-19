@@ -1,5 +1,5 @@
-import { LibsqlError } from '@libsql/client';
 import { createDb } from '../../../../../../../modules/finance/db/client';
+import { isUniqueViolation } from '../../../../../../../modules/finance/db/errors';
 import { gatewayFor } from '../../../../../../../modules/finance/core/reconciliation/gateway';
 import { applyCorrection, CorrectionError } from '../../../../../../../modules/finance/core/corrections/apply';
 import { VALID_ITEM_TYPES, isValidItemType, validateCorrection } from '../_lib/validation';
@@ -59,7 +59,7 @@ export async function POST(
       ...(reconciliation ? { reconciled: !('error' in reconciliation), reconciliation } : {}),
     });
   } catch (err) {
-    if (err instanceof LibsqlError && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return new Response('Conflict: item already decided', { status: 409 });
     }
     // The correction cannot apply to this item — caller's fault, not ours.

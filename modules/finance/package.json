@@ -13,7 +13,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@libsql/client": "^0.14.0",
+    "@libsql/client": "^0.18.0",
     "ai": "7.0.102",
     "csv-parse": "^5.5.6",
     "drizzle-orm": "^0.36.4",
