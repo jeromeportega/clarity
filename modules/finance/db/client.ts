@@ -51,8 +51,28 @@ export function resolveDbConfig(
   }
 }
 
+/**
+ * The `fetch` a remote (Turso) client must use. The libSQL HTTP transport
+ * POSTs each statement through the global `fetch`; inside a Next.js server
+ * that global is patched, and on Vercel a fetch it deems cacheable lands in
+ * the persistent Data Cache — keyed by URL and body, shared across
+ * deployments. A query whose text and parameters never change (the queue's
+ * "unmatched transactions" read) was being answered from a response recorded
+ * weeks earlier, so new rows never appeared in production while the same
+ * build against the same database was right locally. Database traffic is
+ * never cacheable: every request goes out with `cache: 'no-store'`.
+ */
+export function uncachedFetch(base: typeof fetch = fetch): typeof fetch {
+  return (input, init) => base(input, { ...init, cache: 'no-store' });
+}
+
 function openClient(url: string, authToken?: string): Client {
-  const client = createClient(authToken ? { url, authToken } : { url });
+  const remote = !url.startsWith('file:');
+  const client = createClient({
+    url,
+    ...(authToken ? { authToken } : {}),
+    ...(remote ? { fetch: uncachedFetch() } : {}),
+  });
   // A second writer on the same file waits (up to 5 s) for the write lock
   // instead of failing at once with SQLITE_BUSY. A file client runs its
   // statements FIFO, so this lands before anything issued after it. Remote
