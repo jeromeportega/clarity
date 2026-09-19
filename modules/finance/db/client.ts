@@ -51,8 +51,41 @@ export function resolveDbConfig(
   }
 }
 
+/**
+ * The `fetch` a remote (Turso) client must use. The libSQL HTTP transport
+ * POSTs each statement through the global `fetch`; inside a Next.js server
+ * that global is patched, and on Vercel a fetch it deems cacheable lands in
+ * the persistent Data Cache — keyed by URL and body, shared across
+ * deployments. A query whose text and parameters never change (the queue's
+ * "unmatched transactions" read) was being answered from a response recorded
+ * weeks earlier, so new rows never appeared in production while the same
+ * build against the same database was right locally. Database traffic is
+ * never cacheable: every request goes out with `cache: 'no-store'`.
+ */
+export function uncachedFetch(base: typeof fetch = fetch): typeof fetch {
+  return (input, init) => base(input, { ...init, cache: 'no-store' });
+}
+
+/** A URL the libSQL client will reach over the network (HTTP/WebSocket), as opposed to a local file or `:memory:`. */
+export function isRemoteDbUrl(url: string): boolean {
+  return /^(libsql|https?|wss?):\/\//i.test(url);
+}
+
+/**
+ * The libSQL client config for a URL: the token when there is one, and — for
+ * a remote URL only — the uncached `fetch`. Exported, like `resolveDbConfig`,
+ * so the wiring is unit-testable without opening a client.
+ */
+export function clientConfig(url: string, authToken?: string, base: typeof fetch = fetch): { url: string; authToken?: string; fetch?: typeof fetch } {
+  return {
+    url,
+    ...(authToken ? { authToken } : {}),
+    ...(isRemoteDbUrl(url) ? { fetch: uncachedFetch(base) } : {}),
+  };
+}
+
 function openClient(url: string, authToken?: string): Client {
-  const client = createClient(authToken ? { url, authToken } : { url });
+  const client = createClient(clientConfig(url, authToken));
   // A second writer on the same file waits (up to 5 s) for the write lock
   // instead of failing at once with SQLITE_BUSY. A file client runs its
   // statements FIFO, so this lands before anything issued after it. Remote

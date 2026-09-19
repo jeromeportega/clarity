@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createDb, createTestDb, resolveDbConfig } from './client';
+import { clientConfig, createDb, createTestDb, isRemoteDbUrl, resolveDbConfig, uncachedFetch } from './client';
 
 const TEMP_DB_GLOB = /^clarity-finance-.*\.db$/;
 
@@ -99,5 +99,66 @@ describe('createTestDb', () => {
     for (const suffix of ['', '-wal', '-shm', '-journal']) {
       expect(existsSync(`${file}${suffix}`)).toBe(false);
     }
+  });
+});
+
+describe('uncachedFetch — database traffic never enters a framework fetch cache', () => {
+  it('forwards the request to the base fetch with cache: no-store, keeping the rest of the init', async () => {
+    const calls: Array<[unknown, RequestInit | undefined]> = [];
+    const base = (async (input: unknown, init?: RequestInit) => {
+      calls.push([input, init]);
+      return new Response('ok');
+    }) as unknown as typeof fetch;
+    const f = uncachedFetch(base);
+    await f('https://db.example/v2/pipeline', { method: 'POST', body: '{"sql":"select 1"}', headers: { a: 'b' } });
+    await f('https://db.example/v2/pipeline');
+    expect(calls).toHaveLength(2);
+    expect(calls[0]![1]).toMatchObject({ method: 'POST', body: '{"sql":"select 1"}', headers: { a: 'b' }, cache: 'no-store' });
+    expect(calls[1]![1]).toMatchObject({ cache: 'no-store' });
+  });
+
+  it('overrides a caller-supplied cache mode: nothing from the database may be served stale', async () => {
+    let seen: RequestInit | undefined;
+    const base = (async (_i: unknown, init?: RequestInit) => { seen = init; return new Response('ok'); }) as unknown as typeof fetch;
+    await uncachedFetch(base)('https://db.example/', { cache: 'force-cache' });
+    expect(seen?.cache).toBe('no-store');
+  });
+});
+
+describe('clientConfig — the uncached fetch is wired for remote clients and nothing else', () => {
+  it('a remote URL gets the token and an uncached fetch; a file or in-memory URL gets neither', async () => {
+    const seen: RequestInit[] = [];
+    const base = (async (_i: unknown, init?: RequestInit) => { seen.push(init ?? {}); return new Response('ok'); }) as unknown as typeof fetch;
+
+    const remote = clientConfig('libsql://clarity-x.turso.io', 'tok', base);
+    expect(remote.authToken).toBe('tok');
+    expect(typeof remote.fetch).toBe('function');
+    await remote.fetch!('https://clarity-x.turso.io/v2/pipeline');
+    expect(seen[0]).toMatchObject({ cache: 'no-store' });
+
+    for (const url of ['https://clarity-x.turso.io', 'wss://clarity-x.turso.io']) expect(clientConfig(url, undefined, base).fetch).toBeTypeOf('function');
+    for (const url of ['file:/tmp/x.db', ':memory:', 'file::memory:']) {
+      const cfg = clientConfig(url, undefined, base);
+      expect(cfg, url).toEqual({ url });
+    }
+  });
+
+  it('classifies URLs by scheme, not by "anything that is not file:"', () => {
+    expect(isRemoteDbUrl('libsql://h.turso.io')).toBe(true);
+    expect(isRemoteDbUrl('HTTPS://h.turso.io')).toBe(true);
+    expect(isRemoteDbUrl(':memory:')).toBe(false);
+    expect(isRemoteDbUrl('file:data/finance.db')).toBe(false);
+  });
+
+  it('handles the shape the libSQL HTTP transport really uses — a single Request with a body, no init', async () => {
+    let got: { input: unknown; init: RequestInit | undefined } | undefined;
+    const base = (async (input: unknown, init?: RequestInit) => { got = { input, init }; return new Response('ok'); }) as unknown as typeof fetch;
+    const req = new Request('https://h.turso.io/v2/pipeline', { method: 'POST', body: '{"requests":[]}', headers: { authorization: 'Bearer t' } });
+    await uncachedFetch(base)(req);
+    expect(got?.input).toBe(req);
+    expect(got?.init).toEqual({ cache: 'no-store' });
+    // The Request itself is untouched: method, body and headers still travel with it.
+    expect(req.method).toBe('POST');
+    expect(await req.text()).toBe('{"requests":[]}');
   });
 });
