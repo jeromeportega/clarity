@@ -104,25 +104,35 @@ describe('.gitignore (FR-4)', () => {
 
 // The AI SDK (`ai`) needs Node 22+. CI and the declared engines must not fall
 // behind the runtime the code actually requires, or the gate would test on a
-// Node the app cannot run on.
-describe('Node version floor follows the AI SDK', () => {
+// Node the app cannot run on. And the engines field is PINNED to one major
+// (`22.x`), never an open range: Vercel resolves `>=22` to whatever the newest
+// major is on the day of the build, so production would move to a Node that
+// CI never ran — that is what its "will automatically upgrade" warning means.
+describe('Node version: pinned major, at or above the AI SDK floor, same as CI', () => {
   // Read from the installed package, so the floor moves when the SDK's does.
   const sdk = JSON.parse(readFileSync(join(repoRoot, 'node_modules/ai/package.json'), 'utf8')) as { engines?: { node?: string } };
   const required = Number(/>=\s*(\d+)/.exec(sdk.engines?.node ?? '')?.[1]);
+  const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { engines?: { node?: string } };
+  const engines = pkg.engines?.node ?? '';
+  const pinned = /^(\d+)\.x$/.exec(engines);
+  const major = Number(pinned?.[1]);
+
   it('the SDK declares a Node floor at all', () => {
     expect(required).toBeGreaterThan(0);
   });
 
-  it('package.json engines requires at least the SDK minimum', () => {
-    const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { engines?: { node?: string } };
-    const floor = Number(/>=\s*(\d+)/.exec(pkg.engines?.node ?? '')?.[1]);
-    expect(floor).toBeGreaterThanOrEqual(required);
+  it('package.json engines is pinned to one major (`NN.x`), not an open range', () => {
+    expect(engines, 'engines.node must look like "22.x"').toMatch(/^\d+\.x$/);
   });
 
-  it('the CI workflow runs on at least that Node', () => {
+  it('that major is at least the SDK minimum', () => {
+    expect(major).toBeGreaterThanOrEqual(required);
+  });
+
+  it('the CI workflow runs on exactly that major, so the gate tests what production runs', () => {
     const workflow = readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
     const versions = [...workflow.matchAll(/node-version:\s*['"]?(\d+)/g)].map((m) => Number(m[1]));
     expect(versions.length).toBeGreaterThan(0);
-    for (const v of versions) expect(v).toBeGreaterThanOrEqual(required);
+    for (const v of versions) expect(v).toBe(major);
   });
 });
