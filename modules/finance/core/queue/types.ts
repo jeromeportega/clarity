@@ -1,11 +1,16 @@
 /**
- * The four uncertainty conditions that feed the review queue inbox.
+ * The four conditions that feed the review queue inbox.
  * Each type maps to one DB/gateway source in assembleQueue.
+ *
+ * Three are questions the person must answer. `missing_receipt` is an offer:
+ * a recent charge at a store whose receipt breaks down into items, with no
+ * receipt uploaded — add one and the charge becomes items with categories.
+ * An ordinary charge (fuel, rent, a restaurant) is not a queue item at all.
  */
 export type QueueItemType =
   | 'sku_resolution'    // receipt_items.needs_review=1
   | 'ambiguous_match'   // gateway.getAmbiguousMatchGroups
-  | 'unmatched_txn'     // gateway.listUnmatchedTransactions
+  | 'missing_receipt'   // gateway.listUnmatchedTransactions, filtered to receipt-capable recent debits
   | 'flagged_receipt';  // receipts.needs_review=1 (arithmetic failure)
 
 export interface QueueItem {
@@ -27,6 +32,8 @@ export interface QueueItem {
    * (`sku_resolution` only), and whether a photo can be shown.
    */
   context?: QueueItemContext;
+  /** `missing_receipt` only: the bank charge the receipt would explain. */
+  transaction?: { merchant: string; postedDate: string };
 }
 
 export interface QueueItemContext {

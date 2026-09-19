@@ -286,14 +286,14 @@ describe('applyCorrection', () => {
       expect(await readMatchStatus(theirs)).toBe('pending');
     });
 
-    it('unmatched_txn: records the decision and changes nothing else', async () => {
+    it('missing_receipt: confirm is not_applicable — the offer is taken on the upload page or dismissed — and writes nothing', async () => {
       const txnId = await seedTransaction();
 
-      await applyCorrection(SCOPE, item(txnId, 'unmatched_txn'), { type: 'confirm' }, gw, db);
+      await expect(
+        applyCorrection(SCOPE, item(txnId, 'missing_receipt'), { type: 'confirm' }, gw, db),
+      ).rejects.toMatchObject({ code: 'not_applicable' });
 
-      const rows = await readDecisions(txnId);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.decision).toBe('confirm');
+      expect(await readDecisions(txnId)).toHaveLength(0);
       expect(await db.select().from(matches)).toHaveLength(0);
     });
 
@@ -359,10 +359,10 @@ describe('applyCorrection', () => {
       expect(await readDecisions(txnId)).toHaveLength(1);
     });
 
-    it('unmatched_txn: records the decision only', async () => {
+    it('missing_receipt: dismiss ("no receipt") records the decision only', async () => {
       const txnId = await seedTransaction();
 
-      await applyCorrection(SCOPE, item(txnId, 'unmatched_txn'), { type: 'dismiss' }, gw, db);
+      await applyCorrection(SCOPE, item(txnId, 'missing_receipt'), { type: 'dismiss' }, gw, db);
 
       expect(await readDecisions(txnId)).toHaveLength(1);
     });
@@ -476,7 +476,7 @@ describe('applyCorrection', () => {
       const txnId = await seedTransaction();
 
       await expect(
-        applyCorrection(SCOPE, item(txnId, 'unmatched_txn'), pick('groceries'), gw, db),
+        applyCorrection(SCOPE, item(txnId, 'missing_receipt'), pick('groceries'), gw, db),
       ).rejects.toMatchObject({ code: 'invalid_variant' });
 
       expect(await readDecisions(txnId)).toHaveLength(0);
@@ -753,7 +753,7 @@ describe('applyCorrection', () => {
       const txnId = await seedTransaction();
       const err = await applyCorrection(
         SCOPE,
-        item(txnId, 'unmatched_txn'),
+        item(txnId, 'missing_receipt'),
         { type: 'correct', correction: { variant: 'pickCategoryId', categoryId: 'groceries' } },
         gw,
         db,
@@ -846,7 +846,7 @@ describe('applyCorrection', () => {
       const foreignTxn = await seedTransaction(OTHER_HH);
 
       await expect(
-        applyCorrection(SCOPE, item(foreignTxn, 'unmatched_txn'), { type: 'confirm' }, gw, db),
+        applyCorrection(SCOPE, item(foreignTxn, 'missing_receipt'), { type: 'confirm' }, gw, db),
       ).rejects.toMatchObject({ code: 'not_found' });
 
       expect(await readDecisions(foreignTxn)).toHaveLength(0);
@@ -855,7 +855,7 @@ describe('applyCorrection', () => {
     it('dismiss on a transaction-typed item in another household throws not_found', async () => {
       const foreignTxn = await seedTransaction(OTHER_HH);
 
-      for (const type of ['ambiguous_match', 'unmatched_txn'] as const) {
+      for (const type of ['ambiguous_match', 'missing_receipt'] as const) {
         await expect(
           applyCorrection(SCOPE, item(foreignTxn, type), { type: 'dismiss' }, gw, db),
         ).rejects.toMatchObject({ code: 'not_found' });

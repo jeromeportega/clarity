@@ -42,6 +42,11 @@ export function QueueItemRow({ item, renderActions }: QueueItemRowProps) {
           {ctx?.hasImage && <ReceiptThumb receiptId={ctx.receiptId} alt={ctx.store ?? 'receipt'} />}
           <div className="min-w-0">
             <div className="text-muted-foreground">{item.reason}</div>
+            {item.transaction && (
+              <div className="mt-0.5 text-xs text-muted-foreground/80" data-queue-context>
+                {item.transaction.merchant} · {item.transaction.postedDate}
+              </div>
+            )}
             {ctx && (
               <div className="mt-0.5 text-xs text-muted-foreground/80" data-queue-context>
                 {contextLine(item, ctx)}

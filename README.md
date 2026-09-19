@@ -43,7 +43,8 @@ receipt photo/PDF ┘        │               ├─▶ reconcile ─▶ classi
 - **Classification** — item-level categories with a merchant-level fallback when
   no item data exists.
 - **Review queue** — low-confidence SKU resolutions, ambiguous matches,
-  unmatched transactions, and receipts whose arithmetic doesn't add up.
+  receipts whose arithmetic doesn't add up, and — as an offer, not a task —
+  recent charges at stores whose receipt would break the charge into items.
   Confirm / correct / dismiss; decisions persist.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the module map, data

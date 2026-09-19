@@ -13,8 +13,8 @@ export default async function Home() {
     <main className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">Review Queue</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Items needing judgment — low-confidence SKU resolutions, ambiguous matches,
-        unmatched transactions, and flagged receipts.
+        Items needing judgment — low-confidence SKU resolutions, ambiguous matches and flagged
+        receipts — and, below them, recent store charges you could itemise by adding the receipt.
         {scope.readonly ? ' This is the public demo: decisions are disabled.' : ''}
       </p>
       <QueueView

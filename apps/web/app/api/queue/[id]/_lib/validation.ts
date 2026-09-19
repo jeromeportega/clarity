@@ -4,7 +4,7 @@ import type { CorrectionVariant } from '../../../../../../../modules/finance/cor
 export const VALID_ITEM_TYPES: readonly QueueItemType[] = [
   'sku_resolution',
   'ambiguous_match',
-  'unmatched_txn',
+  'missing_receipt',
   'flagged_receipt',
 ];
 

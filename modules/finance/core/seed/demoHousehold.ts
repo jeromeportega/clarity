@@ -41,7 +41,7 @@ export const DEMO_RI_1_ID = 'ri-demo-001';
 // Transaction IDs must match reconciliation/stub.ts
 export const DEMO_TXN_1_ID = 'txn-demo-001';
 export const DEMO_TXN_2_ID = 'txn-demo-002';
-/** No match row — trips the "unmatched transaction" uncertainty condition. */
+/** No match row — an unmatched bank line (a "missing receipt" offer while it is recent). */
 export const DEMO_TXN_3_ID = 'txn-demo-003';
 
 // Match IDs must match reconciliation/stub.ts
@@ -70,7 +70,8 @@ export interface DemoSeedResult {
  * conditions so the queue is non-empty on first load:
  *   1. receipt_items.needs_review = 1  (ri-demo-001)
  *   2. ambiguous match candidates      (txn-demo-002 has two pending matches)
- *   3. unmatched transaction            (txn-demo-003 has no match row)
+ *   3. unmatched transaction            (txn-demo-003 has no match row; a
+ *      "missing receipt" offer in the queue only while the charge is recent)
  *   4. receipt arithmetic mismatch     (receipt-demo-002: subtotal+tax ≠ total)
  */
 export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> {

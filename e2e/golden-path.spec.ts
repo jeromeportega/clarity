@@ -14,10 +14,10 @@ test.describe('golden path', () => {
     ).toBeVisible();
 
     // At least one real queue item/row is shown. The demo household surfaces
-    // items such as "Wireless Headphones" / "WHOLE FOODS", plus unmatched /
-    // ambiguous rows — assert that any one of these is visible.
+    // items such as "Wireless Headphones" / "WHOLE FOODS", plus ambiguous rows
+    // — assert that any one of these is visible.
     const queueItem = page
-      .getByText(/wireless headphones|whole foods|unmatched|ambiguous/i)
+      .getByText(/wireless headphones|whole foods|ambiguous/i)
       .first();
     await expect(queueItem).toBeVisible();
   });

@@ -69,6 +69,34 @@ export function QueueItemActions({ item, onActed }: QueueItemActionsProps) {
     // Any error propagates to CorrectionDialog's handleSubmit, which keeps the dialog open
   }
 
+  // A missing receipt is an offer, not a question: the person either adds the
+  // receipt (the upload page, told which charge it is for) or says there is none.
+  if (item.type === 'missing_receipt') {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex gap-1">
+          <Button size="sm" variant="outline" disabled={pending} asChild>
+            <a href={`/receipts?txn=${encodeURIComponent(item.id)}`} aria-label={`Upload the receipt for charge ${item.id}`}>
+              Upload receipt
+            </a>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => void performAction('dismiss')}
+            aria-label={`No receipt for charge ${item.id}`}
+          >
+            No receipt
+          </Button>
+        </div>
+        {error && (
+          <p className="text-xs text-destructive" role="alert">{error}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex gap-1">

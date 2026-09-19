@@ -4,6 +4,7 @@ import type { FinanceDb } from '../../db/client';
 import { receiptItems, receipts, reviewDecisions } from '../../db/schema';
 import type { HouseholdScope } from '../scope';
 import type { ReconciliationGateway } from '../reconciliation/types';
+import { isWithinAskWindow, receiptCapableMerchant } from './receipt-capable';
 import type { QueueItem, QueueItemType } from './types';
 
 /**
@@ -13,7 +14,9 @@ import type { QueueItem, QueueItemType } from './types';
  * Sources:
  *   1. receipt_items.needs_review=1         → sku_resolution
  *   2. gw.getAmbiguousMatchGroups()         → ambiguous_match
- *   3. gw.listUnmatchedTransactions()       → unmatched_txn
+ *   3. gw.listUnmatchedTransactions()       → missing_receipt — only the recent
+ *      debits at receipt-capable stores (see receipt-capable.ts); every other
+ *      unmatched bank line is an ordinary charge and is not a queue item
  *   4. receipts.needs_review=1              → flagged_receipt (arithmetic failure)
  *
  * Anti-join key: (type, id) must NOT appear in review_decisions
@@ -21,18 +24,25 @@ import type { QueueItem, QueueItemType } from './types';
  *
  * Scope note: DB sources are filtered by householdId in the WHERE clause.
  * Gateway sources receive the HouseholdScope and are contractually required to
- * return only matching-household data. unmatched_txn adds a defense-in-depth
+ * return only matching-household data. missing_receipt adds a defense-in-depth
  * post-filter (Transaction carries householdId); AmbiguousMatchGroup does not
  * expose householdId on its type, so the gateway contract is the sole guard for
  * that source — both the stub and live implementations enforce it at the scope
  * check inside their method bodies.
  */
+export interface AssembleQueueOptions {
+  /** Clock for the receipt ask window; tests pin it. */
+  now?: () => Date;
+}
+
 export async function assembleQueue(
   scope: HouseholdScope,
   gw: ReconciliationGateway,
   db: FinanceDb,
+  opts: AssembleQueueOptions = {},
 ): Promise<QueueItem[]> {
   const { householdId } = scope;
+  const now = opts.now ?? (() => new Date());
 
   // Build the decided set for the anti-join: Set<"type::id">
   const decided = await db
@@ -100,18 +110,33 @@ export async function assembleQueue(
     }
   }
 
-  // 3. unmatched_txn — gateway surfaces transactions with no match at all
+  // 3. missing_receipt — of the transactions with no match at all, the recent
+  //    debits at stores whose receipt would break the charge into items. The
+  //    household's own receipt history widens the store list.
   const unmatched = await gw.listUnmatchedTransactions(scope);
-  for (const txn of unmatched) {
-    // Defense-in-depth: drop any txn the gateway returned for the wrong household.
-    if (txn.householdId !== householdId) continue;
-    if (keep('unmatched_txn', txn.id)) {
-      items.push({
-        id: txn.id,
-        type: 'unmatched_txn',
-        reason: `Unmatched transaction: ${txn.normalizedMerchant}`,
-        amountCents: txn.amountCents,
-      });
+  if (unmatched.length > 0) {
+    const storeRows = await db
+      .selectDistinct({ store: receipts.store })
+      .from(receipts)
+      .where(eq(receipts.householdId, householdId));
+    const learnedStores = storeRows.map((r) => r.store).filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+    const today = now();
+    for (const txn of unmatched) {
+      // Defense-in-depth: drop any txn the gateway returned for the wrong household.
+      if (txn.householdId !== householdId) continue;
+      if (txn.amountCents >= 0) continue; // a refund or deposit has no receipt to add
+      if (!isWithinAskWindow(txn.postedDate, today)) continue;
+      const merchant = receiptCapableMerchant(txn.normalizedMerchant, learnedStores);
+      if (!merchant) continue;
+      if (keep('missing_receipt', txn.id)) {
+        items.push({
+          id: txn.id,
+          type: 'missing_receipt',
+          reason: `${merchant} charge — upload the receipt for an item breakdown`,
+          amountCents: txn.amountCents,
+          transaction: { merchant, postedDate: txn.postedDate },
+        });
+      }
     }
   }
 
