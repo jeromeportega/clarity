@@ -1,7 +1,6 @@
 // Explicit React import for vitest/esbuild compatibility (classic JSX transform).
 import React from 'react';
 
-import { receiptCapableMerchant } from '../../../../modules/finance/core/queue/receipt-capable';
 import { createDb, type FinanceDb } from '../../../../modules/finance/db/client';
 import { resolveReadScope } from '../../lib/public-mode';
 import { fetchChargeSummary } from '../../lib/transactions';
@@ -37,7 +36,7 @@ export default async function ReceiptsPage({ searchParams }: { searchParams?: Re
       <h1 className="mb-2 text-2xl font-semibold">Upload a Receipt</h1>
       {charge ? (
         <p className="mb-8 text-sm text-muted-foreground" data-upload-for={charge.id}>
-          For the {receiptCapableMerchant(charge.merchant) ?? charge.merchant} charge of {formatCharge(charge.amountCents)} on{' '}
+          For the {charge.displayMerchant} charge of {formatCharge(charge.amountCents)} on{' '}
           {charge.postedDate}. Once read, Clarity will try to match the receipt to this charge, and the charge becomes
           items with categories.
         </p>

@@ -60,12 +60,24 @@ describe('receiptCapableMerchant — which charges are worth a receipt', () => {
   });
 
   it('a short or generic receipt header never becomes a catch-all', () => {
-    const learned = ['Gas', 'Market', 'THE', 'A1', '123', '   ', 'Costco Gas'];
-    expect(compileLearnedStores(learned).map((s) => s.key)).toEqual(['MARKET']);
+    const learned = ['Gas', 'Market', 'Store', 'THE', 'A1', '123', '   ', 'Costco Gas'];
+    expect(compileLearnedStores(learned)).toEqual([]);
     expect(at('SHELL GAS 123', learned)).toBeNull();
-    expect(at('FARMERS MARKET', learned)).toBeNull(); // "MARKET" is not a prefix of "FARMERS MARKET"
+    expect(at('FARMERS MARKET', learned)).toBeNull();
+    expect(at('MARKET BASKET 12', learned)).toBeNull();
+    expect(at('STORE 24', learned)).toBeNull();
     expect(at('A1 TOWING', learned)).toBeNull();
     expect(at('THE CORNER', learned)).toBeNull();
+  });
+
+  it('finds a learned store a bank buries behind its own prefix, and labels a long header by the words that matched', () => {
+    const learned = ['Corner Market', 'HARRIS TEETER STORE 123 RALEIGH NC'];
+    expect(at('PURCHASE AUTHORIZED ON 09 16 CORNER MARKET', learned)).toBe('Corner Market'); // Wells Fargo's payee shape
+    expect(at('POS DEBIT CORNER MARKET', learned)).toBe('Corner Market');
+    expect(at('TST CORNER MARKET', learned)).toBe('Corner Market');
+    expect(at('HARRIS TEETER 0456', learned)).toBe('Harris Teeter');
+    expect(at('HARRIS TEETER STORE 123 RALEIGH NC', learned)).toBe('Harris Teeter Store 123 Raleigh Nc'); // the whole key matched: its own spelling
+    expect(at('CORNER', learned)).toBeNull(); // half a key is not a key
   });
 
   it('prefers the built-in name over a learned spelling of the same chain, and compiles each key once', () => {

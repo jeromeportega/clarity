@@ -85,11 +85,17 @@ export interface LearnedStore {
   display: string;
 }
 
+/** One-word headers that name a kind of shop, not a shop: never a key on their own. */
+const GENERIC_SINGLE_WORDS = new Set([
+  'STORE', 'STORES', 'MARKET', 'MARKETS', 'SHOP', 'SHOPS', 'MART', 'FOODS', 'FOOD', 'GROCERY', 'GROCER',
+  'PHARMACY', 'SUPERMARKET', 'DEPOT', 'CENTER', 'CENTRE', 'OUTLET', 'WAREHOUSE', 'CLUB', 'HARDWARE', 'RECEIPT', 'TOTAL',
+]);
+
 /**
  * Prepare the household's receipt headers for matching. A key must be able
  * to stand for a retailer on its own: at least two words, or one word of at
- * least four characters, and not just a number — so "Gas", "A1" and "THE"
- * never become catch-alls.
+ * least four characters that is not a generic kind of shop, and not just a
+ * number — so "Gas", "A1", "THE", "Market" and "Store" never become catch-alls.
  */
 export function compileLearnedStores(stores: Iterable<string>): LearnedStore[] {
   const out: LearnedStore[] = [];
@@ -102,7 +108,7 @@ export function compileLearnedStores(stores: Iterable<string>): LearnedStore[] {
     const tokens = key.split(' ').filter((t) => t.length > 0);
     if (tokens.length === 0 || seen.has(key)) continue;
     if (/^\d+$/.test(key)) continue;
-    if (tokens.length < 2 && key.length < 4) continue;
+    if (tokens.length < 2 && (key.length < 4 || GENERIC_SINGLE_WORDS.has(key))) continue;
     if (FUEL.test(key)) continue;
     seen.add(key);
     out.push({ key, tokens, display: titleCase(proper) });
@@ -112,10 +118,14 @@ export function compileLearnedStores(stores: Iterable<string>): LearnedStore[] {
 
 /**
  * The store a bank line is at, if it is one worth asking a receipt for; else
- * null. Chains match anywhere in the line as whole words; a learned store
+ * null. Chains match anywhere in the line as whole words. A learned store
  * matches when its key and the line's key share a whole-token prefix — bank
  * lines and receipt headers both lead with the name and trail with numbers,
- * cities and noise ("HARRIS TEETER STORE 123 RALEIGH NC" vs "HARRIS TEETER").
+ * cities and noise ("HARRIS TEETER STORE 123 RALEIGH NC" vs "HARRIS TEETER")
+ * — or, for a bank that prefixes its payees ("PURCHASE AUTHORIZED ON 09 16
+ * CORNER MARKET"), when the whole learned key appears as a run of tokens.
+ * The label is capped at the words that matched, so a long header does not
+ * become a long row.
  */
 export function receiptCapableMerchant(normalizedMerchant: string, learned: readonly LearnedStore[] = []): string | null {
   const line = normalizeMerchant(normalizedMerchant);
@@ -127,17 +137,33 @@ export function receiptCapableMerchant(normalizedMerchant: string, learned: read
   if (learned.length === 0) return null;
   const lineTokens = normalizeStore(line).split(' ').filter((t) => t.length > 0);
   for (const store of learned) {
-    if (sharesPrefix(lineTokens, store.tokens)) return store.display;
+    const n = sharedPrefixLength(lineTokens, store.tokens);
+    if (n > 0) {
+      // The whole learned key matched: its proper spelling. Only the line's
+      // shorter head matched: the line's own words, title-cased.
+      return n === store.tokens.length ? store.display : titleCase(lineTokens.slice(0, n).join(' '));
+    }
+    if (containsRun(lineTokens, store.tokens)) return store.display;
   }
   return null;
 }
 
-/** The shorter token list is a whole-token prefix of the longer. */
-function sharesPrefix(a: readonly string[], b: readonly string[]): boolean {
+/** How many leading tokens the two lists share, if one is a whole-token prefix of the other; else 0. */
+function sharedPrefixLength(a: readonly string[], b: readonly string[]): number {
   const n = Math.min(a.length, b.length);
-  if (n === 0) return false;
-  for (let i = 0; i < n; i += 1) if (a[i] !== b[i]) return false;
-  return true;
+  if (n === 0) return 0;
+  for (let i = 0; i < n; i += 1) if (a[i] !== b[i]) return 0;
+  return n;
+}
+
+/** `needle` appears in `hay` as a contiguous run of whole tokens. */
+function containsRun(hay: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length === 0 || needle.length > hay.length) return false;
+  outer: for (let i = 0; i + needle.length <= hay.length; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) if (hay[i + j] !== needle[j]) continue outer;
+    return true;
+  }
+  return false;
 }
 
 function titleCase(key: string): string {

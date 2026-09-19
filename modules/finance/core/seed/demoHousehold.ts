@@ -17,8 +17,9 @@ import {
   transactions,
 } from '../../db/schema';
 
-// Stable hard-coded IDs — no Math.random / Date.now so the seed is
-// byte-identical across runs (ADR-001 drift guard). IDs match the
+// Stable hard-coded IDs — no Math.random / Date.now in ids or hashes, so the
+// seed is byte-identical across runs (ADR-001 drift guard). The one computed
+// value is txn-demo-004's posted date (see `daysAgoIso`). IDs match the
 // stub gateway in reconciliation/stub.ts so the public demo and
 // offline test gate show identical state.
 
