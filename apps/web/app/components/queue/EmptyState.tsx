@@ -1,3 +1,5 @@
+// Explicit React import for vitest/esbuild compatibility (classic JSX transform).
+import React from 'react';
 export function EmptyState() {
   return (
     <div

@@ -77,7 +77,7 @@ describe('seedDemoHousehold', () => {
     it('seeds the expected row counts', async () => {
       await seedDemoHousehold(db);
 
-      expect(await rowCount(transactions)).toBe(3);
+      expect(await rowCount(transactions)).toBe(4);
       expect(await rowCount(receipts)).toBe(2);
       expect(await rowCount(receiptItems)).toBe(1);
       expect(await rowCount(orders)).toBe(2);
@@ -93,7 +93,7 @@ describe('seedDemoHousehold', () => {
       expect(result).toEqual({
         householdId: DEMO_HOUSEHOLD_ID,
         accountId: DEMO_ACCOUNT_ID,
-        transactionCount: 3,
+        transactionCount: 4,
         receiptCount: 2,
         receiptItemCount: 1,
         orderCount: 2,
@@ -192,7 +192,7 @@ describe('seedDemoHousehold', () => {
 
       expect(await rowCount(households)).toBe(1);
       expect(await rowCount(accounts)).toBe(1);
-      expect(await rowCount(transactions)).toBe(3);
+      expect(await rowCount(transactions)).toBe(4);
       expect(await rowCount(receipts)).toBe(2);
       expect(await rowCount(receiptItems)).toBe(1);
       expect(await rowCount(orders)).toBe(2);
@@ -355,7 +355,7 @@ describe('seedDemoHousehold', () => {
       for (const t of txnRows) {
         expect(t.id).toMatch(/^txn-demo-/);
         // merchant names are generic, public-safe values
-        expect(['AMAZON', 'BEST BUY', 'WHOLE FOODS']).toContain(t.merchant);
+        expect(['AMAZON', 'BEST BUY', 'WHOLE FOODS', 'COSTCO WHSE']).toContain(t.merchant);
       }
 
       const rcptRows = await db

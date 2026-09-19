@@ -75,7 +75,7 @@ export function QueueItemActions({ item, onActed }: QueueItemActionsProps) {
     return (
       <div className="flex flex-col items-end gap-1">
         <div className="flex gap-1">
-          <Button size="sm" variant="outline" disabled={pending} asChild>
+          <Button size="sm" variant="outline" asChild>
             <a href={`/receipts?txn=${encodeURIComponent(item.id)}`} aria-label={`Upload the receipt for charge ${item.id}`}>
               Upload receipt
             </a>

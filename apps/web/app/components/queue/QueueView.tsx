@@ -1,3 +1,5 @@
+// Explicit React import for vitest/esbuild compatibility (classic JSX transform).
+import React from 'react';
 import type { ReactNode } from 'react';
 import {
   Table,
@@ -6,9 +8,41 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { TableCell } from '@/components/ui/table';
 import type { QueueItem } from '../../../../../modules/finance/core/queue/types';
 import { EmptyState } from './EmptyState';
 import { QueueItemRow } from './QueueItemRow';
+
+/** A charge, as a person says it: "$84.12", never "-$84.12". */
+function formatCharge(cents: number): string {
+  return `$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
+/** Store · date · amount, and the two things to do about it. No type column, no reason: the section says it once. */
+function OffersTable({ items, renderActions }: { items: QueueItem[]; renderActions?: (item: QueueItem) => ReactNode }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Store</TableHead>
+          <TableHead className="w-32">Date</TableHead>
+          <TableHead className="w-32 text-right">Amount</TableHead>
+          {renderActions && <TableHead className="w-48 text-right">Actions</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {items.map((item) => (
+          <TableRow key={`${item.type}::${item.id}`} data-queue-item-id={item.id} data-queue-item-type={item.type}>
+            <TableCell className="font-medium">{item.transaction?.merchant ?? item.reason}</TableCell>
+            <TableCell className="text-muted-foreground tabular-nums">{item.transaction?.postedDate ?? ''}</TableCell>
+            <TableCell className="text-right tabular-nums">{item.amountCents !== undefined ? formatCharge(item.amountCents) : null}</TableCell>
+            {renderActions && <TableCell className="text-right">{renderActions(item)}</TableCell>}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
 
 interface QueueViewProps {
   items: QueueItem[];
@@ -72,7 +106,7 @@ export function QueueView({ items, renderActions, headerSlot }: QueueViewProps) 
                 Recent charges at stores whose receipts break down into items. Upload a receipt and the charge
                 becomes items with categories; skip one and the charge simply stays as it is.
               </p>
-              <ItemsTable items={offers} renderActions={renderActions} />
+              <OffersTable items={offers} renderActions={renderActions} />
             </section>
           )}
         </div>

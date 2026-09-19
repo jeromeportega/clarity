@@ -1,3 +1,5 @@
+// Explicit React import for vitest/esbuild compatibility (classic JSX transform).
+import React from 'react';
 import type { ReactNode } from 'react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import type { QueueItem, QueueItemContext } from '../../../../../modules/finance/core/queue/types';

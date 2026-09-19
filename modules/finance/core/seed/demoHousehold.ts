@@ -41,8 +41,15 @@ export const DEMO_RI_1_ID = 'ri-demo-001';
 // Transaction IDs must match reconciliation/stub.ts
 export const DEMO_TXN_1_ID = 'txn-demo-001';
 export const DEMO_TXN_2_ID = 'txn-demo-002';
-/** No match row — an unmatched bank line (a "missing receipt" offer while it is recent). */
+/** No match row — an unmatched bank line; too old to be a "missing receipt" offer. */
 export const DEMO_TXN_3_ID = 'txn-demo-003';
+/**
+ * No match row and dated five days before the seed ran: the one row that
+ * shows the queue's "Receipts you could add" section. Its date is refreshed
+ * on every seed run (the only non-`onConflictDoNothing` write) so the demo's
+ * fresh charge stays fresh; the id stays fixed.
+ */
+export const DEMO_TXN_4_ID = 'txn-demo-004';
 
 // Match IDs must match reconciliation/stub.ts
 export const DEMO_MATCH_1_ID = 'match-demo-001';
@@ -63,15 +70,17 @@ export interface DemoSeedResult {
 /**
  * Seed the curated synthetic demo household into `db`.
  *
- * The seed is idempotent — every insert uses onConflictDoNothing on the PK,
+ * The seed is idempotent — every insert uses onConflictDoNothing on the PK
+ * (txn-demo-004 alone refreshes its posted date, see below),
  * so re-running against an already-seeded DB leaves row counts unchanged.
  *
  * The demo data includes one example of each of the four uncertainty
  * conditions so the queue is non-empty on first load:
  *   1. receipt_items.needs_review = 1  (ri-demo-001)
  *   2. ambiguous match candidates      (txn-demo-002 has two pending matches)
- *   3. unmatched transaction            (txn-demo-003 has no match row; a
- *      "missing receipt" offer in the queue only while the charge is recent)
+ *   3. unmatched transaction            (txn-demo-003 has no match row; too old
+ *      to be offered a receipt — txn-demo-004, dated five days ago, is the
+ *      "Receipts you could add" row)
  *   4. receipt arithmetic mismatch     (receipt-demo-002: subtotal+tax ≠ total)
  */
 export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> {
@@ -202,6 +211,8 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
   const txn1SourceHash = sha256Hex(DEMO_TXN_1_ID);
   const txn2SourceHash = sha256Hex(DEMO_TXN_2_ID);
   const txn3SourceHash = sha256Hex(DEMO_TXN_3_ID);
+  const txn4SourceHash = sha256Hex(DEMO_TXN_4_ID);
+  const txn4PostedDate = daysAgoIso(5);
 
   await db
     .insert(transactions)
@@ -256,6 +267,30 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
       },
     ])
     .onConflictDoNothing();
+
+  // txn-demo-004: the recent Costco charge with no receipt. Re-seeding moves
+  // its date forward so the demo keeps one "Receipts you could add" row.
+  const txn4 = {
+    id: DEMO_TXN_4_ID,
+    accountId: DEMO_ACCOUNT_ID,
+    postedDate: txn4PostedDate,
+    amountCents: -6423,
+    direction: 'debit' as const,
+    rawMerchant: 'COSTCO WHSE #0482',
+    normalizedMerchant: 'COSTCO WHSE',
+    sourceRowHash: txn4SourceHash,
+    dedupKey: transactionDedupKey({
+      accountId: DEMO_ACCOUNT_ID,
+      postedDate: txn4PostedDate,
+      amountCents: -6423,
+      normalizedMerchant: 'COSTCO WHSE',
+      sourceRowHash: txn4SourceHash,
+    }),
+  };
+  await db
+    .insert(transactions)
+    .values(txn4)
+    .onConflictDoUpdate({ target: transactions.id, set: { postedDate: txn4.postedDate, dedupKey: txn4.dedupKey } });
 
   // 8. Matches — must be inserted after all referenced rows exist
   // match-demo-001: txn-001 → oi-001, status='matched' (confirmed)
@@ -402,7 +437,7 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
   const [txnR] = await db
     .select({ c: count() })
     .from(transactions)
-    .where(inArray(transactions.id, [DEMO_TXN_1_ID, DEMO_TXN_2_ID, DEMO_TXN_3_ID]));
+    .where(inArray(transactions.id, [DEMO_TXN_1_ID, DEMO_TXN_2_ID, DEMO_TXN_3_ID, DEMO_TXN_4_ID]));
   const [rcptR] = await db
     .select({ c: count() })
     .from(receipts)
@@ -434,4 +469,9 @@ export async function seedDemoHousehold(db: FinanceDb): Promise<DemoSeedResult> 
     orderItemCount: oiR?.c ?? 0,
     matchCount: matchR?.c ?? 0,
   };
+}
+
+/** YYYY-MM-DD for `n` days before now (UTC) — the one date the seed computes. */
+function daysAgoIso(n: number): string {
+  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }

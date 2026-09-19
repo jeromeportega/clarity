@@ -20,6 +20,10 @@ test.describe('golden path', () => {
       .getByText(/wireless headphones|whole foods|ambiguous/i)
       .first();
     await expect(queueItem).toBeVisible();
+
+    // The seed's recent Costco charge with no receipt is offered, not flagged.
+    await expect(page.getByRole('heading', { name: /receipts you could add/i })).toBeVisible();
+    await expect(page.getByText(/unmatched/i)).toHaveCount(0);
   });
 
   test('true-spend renders a category breakdown', async ({ page }) => {

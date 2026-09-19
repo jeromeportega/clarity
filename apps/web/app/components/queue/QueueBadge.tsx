@@ -1,3 +1,5 @@
+// Explicit React import for vitest/esbuild compatibility (classic JSX transform).
+import React from 'react';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import type { QueueItemType } from '../../../../../modules/finance/core/queue/types';
 

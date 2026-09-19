@@ -332,6 +332,8 @@ describe('assembleQueue', () => {
       makeTxn(randomUUID(), HOUSEHOLD_A, 'PG E WEB PAYMENT'),
       makeTxn(randomUUID(), HOUSEHOLD_A, 'CHIPOTLE 1401'),
       makeTxn(randomUUID(), HOUSEHOLD_A, 'ACME STORE'),
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'COSTCO GAS 0021'), // fuel, even at a warehouse club
+      makeTxn(randomUUID(), HOUSEHOLD_A, 'BJS RESTAURANT BREWHOUSE'), // a namesake
     ]);
     expect(await assemble(scope, gw, db)).toEqual([]);
   });
@@ -352,7 +354,7 @@ describe('assembleQueue', () => {
   it('a store this household has uploaded a receipt from before counts as receipt-capable', async () => {
     const scope: HouseholdScope = { householdId: HOUSEHOLD_A };
     await seedHousehold(db, HOUSEHOLD_A);
-    await seedReceipt(db, HOUSEHOLD_A, { store: 'Corner Market' });
+    await seedReceipt(db, HOUSEHOLD_A, { store: 'Corner Market #12' }); // as the receipt header prints it
     const corner = makeTxn(randomUUID(), HOUSEHOLD_A, 'CORNER MARKET 123');
     const other = makeTxn(randomUUID(), HOUSEHOLD_A, 'CORNER BISTRO');
     const items = await assemble(scope, new ControlledGateway([], [corner, other]), db);

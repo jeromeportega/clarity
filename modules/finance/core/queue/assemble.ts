@@ -4,7 +4,7 @@ import type { FinanceDb } from '../../db/client';
 import { receiptItems, receipts, reviewDecisions } from '../../db/schema';
 import type { HouseholdScope } from '../scope';
 import type { ReconciliationGateway } from '../reconciliation/types';
-import { isWithinAskWindow, receiptCapableMerchant } from './receipt-capable';
+import { compileLearnedStores, isWithinAskWindow, receiptCapableMerchant } from './receipt-capable';
 import type { QueueItem, QueueItemType } from './types';
 
 /**
@@ -119,7 +119,9 @@ export async function assembleQueue(
       .selectDistinct({ store: receipts.store })
       .from(receipts)
       .where(eq(receipts.householdId, householdId));
-    const learnedStores = storeRows.map((r) => r.store).filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+    const learnedStores = compileLearnedStores(
+      storeRows.map((r) => r.store).filter((s): s is string => typeof s === 'string' && s.trim().length > 0),
+    );
     const today = now();
     for (const txn of unmatched) {
       // Defense-in-depth: drop any txn the gateway returned for the wrong household.
